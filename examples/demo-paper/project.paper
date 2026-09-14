@@ -1,0 +1,62 @@
+{
+  "assets": [],
+  "bibliographyPath": "references.bib",
+  "body": {
+    "sections": [
+      {
+        "blocks": [
+          {
+            "content": [
+              {
+                "text": "This is the first paragraph of the introduction.",
+                "type": "text"
+              }
+            ],
+            "id": "n3",
+            "type": "paragraph"
+          }
+        ],
+        "id": "n1",
+        "subsections": [],
+        "title": [
+          {
+            "text": "Introduction",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "blocks": [],
+        "id": "n2",
+        "subsections": [],
+        "title": [
+          {
+            "text": "Methodology",
+            "type": "text"
+          }
+        ]
+      }
+    ]
+  },
+  "frontMatter": {
+    "abstract": [
+      {
+        "text": "This paper presents a study conducted with PaperForge.",
+        "type": "text"
+      }
+    ],
+    "affiliations": [],
+    "authors": [],
+    "keywords": [],
+    "title": [
+      {
+        "text": "My Research Paper",
+        "type": "text"
+      }
+    ]
+  },
+  "projectId": "p1",
+  "revision": 5,
+  "schemaVersion": "1",
+  "template": "generic-article"
+}
