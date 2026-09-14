@@ -39,6 +39,24 @@ PF_TEST(DocumentVersionBumpsOnEdit) {
     PF_CHECK(doc.version().value == v0.value + 1);
 }
 
+PF_TEST(EditorTextPreservesCitationsAndCrossReferences) {
+    auto content = InlineFromEditorText(
+        "Prior work [cite:smith2024,doe2025] supports "
+        "[ref:figure-results].");
+    PF_CHECK(content.size() == 5);
+    PF_CHECK(std::holds_alternative<TextRun>(content[0]));
+    const auto* citation = std::get_if<Citation>(&content[1]);
+    PF_CHECK(citation != nullptr);
+    PF_CHECK(citation->keys.size() == 2);
+    PF_CHECK(citation->keys[0] == "smith2024");
+    const auto* reference = std::get_if<CrossReference>(&content[3]);
+    PF_CHECK(reference != nullptr);
+    PF_CHECK(reference->target == NodeId("figure-results"));
+    PF_CHECK(InlineToPlainText(content) ==
+             "Prior work [cite:smith2024,doe2025] supports "
+             "[ref:figure-results].");
+}
+
 PF_TEST(DocumentEditorInsertAndFindBlocks) {
     const Document doc = MakeSampleDoc();
     PF_CHECK(doc.body().sections.size() == 2);

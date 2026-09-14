@@ -43,15 +43,19 @@ int main(int argc, char* argv[]) {
                   .status == pf::EditStatus::Applied, "set abstract");
         auto sec = controller.InsertSection("Introduction");
         check(sec.status == pf::EditStatus::Applied, "insert section");
-        check(controller
-                  .InsertParagraph(sec.created_node,
-                                   "Paragraph inserted by GUI smoke test.")
-                  .status == pf::EditStatus::Applied, "insert paragraph");
+        auto paragraph_result = controller.InsertParagraph(
+            sec.created_node, "Paragraph inserted by GUI smoke test.");
+        check(paragraph_result.status == pf::EditStatus::Applied,
+              "insert paragraph");
+        auto inserted_after = controller.InsertParagraphAfter(
+            paragraph_result.created_node, "Inserted at the visual anchor.");
+        check(inserted_after.status == pf::EditStatus::Applied,
+              "insert paragraph after block");
         check(controller
                   .InsertEquation(sec.created_node, "e^{i\\pi} + 1 = 0", true)
                   .status == pf::EditStatus::Applied, "insert equation");
         // 2b. Author metadata (new flow-editor path)
-        check(controller.SetAuthorsText("Alice, Bob, Carol").status ==
+        check(controller.SetAuthorsText("Alice · Bob, Carol").status ==
                   pf::EditStatus::Applied, "set authors (flow row)");
         check(controller.SetAffiliationsText("University One; Institute Two")
                   .status == pf::EditStatus::Applied,
@@ -87,6 +91,29 @@ int main(int argc, char* argv[]) {
         check(!paragraph.empty(), "found paragraph for citation");
         check(controller.InsertCitation(paragraph, {"gui2024"})
                   .status == pf::EditStatus::Applied, "insert citation");
+        check(controller.InsertCrossReference(paragraph, sec.created_node)
+                  .status == pf::EditStatus::Applied,
+              "insert cross reference");
+        check(controller.EditParagraph(
+                  paragraph,
+                  "Edited [cite:gui2024] near [ref:" +
+                      QString::fromStdString(sec.created_node.value()) + "].")
+                  .status == pf::EditStatus::Applied,
+              "edit paragraph without flattening inline references");
+        {
+            const auto& blocks = controller.session()
+                                     .state()
+                                     .document()
+                                     .body()
+                                     .sections[0]
+                                     .blocks;
+            const auto* edited = std::get_if<pf::Paragraph>(&blocks[0]);
+            check(edited != nullptr && edited->content.size() == 5,
+                  "citation and cross reference remain semantic nodes");
+        }
+        check(controller.InsertTableAfter(paragraph).status ==
+                  pf::EditStatus::Applied,
+              "insert table after visual anchor");
 
         // 3. Undo/redo through the GUI path
         controller.Undo();
