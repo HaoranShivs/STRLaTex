@@ -37,6 +37,7 @@ const char* EditCommand::PayloadName() const {
             if constexpr (std::is_same_v<T, RenameSubsectionPayload>) return "RenameSubsection";
             if constexpr (std::is_same_v<T, MoveSubsectionPayload>) return "MoveSubsection";
             if constexpr (std::is_same_v<T, InsertSubsectionPayload>) return "InsertSubsection";
+            if constexpr (std::is_same_v<T, InsertSubsectionAfterPayload>) return "InsertSubsectionAfter";
             if constexpr (std::is_same_v<T, DeleteSubsectionPayload>) return "DeleteSubsection";
             if constexpr (std::is_same_v<T, InsertParagraphPayload>) return "InsertParagraph";
             if constexpr (std::is_same_v<T, InsertFigurePayload>) return "InsertFigure";
@@ -175,7 +176,22 @@ EditResult EditingSystem::ApplyDocumentPayload(const EditCommand& cmd,
     }
     if (const auto* p = std::get_if<SetAffiliationsPayload>(&payload)) {
         // Replace the affiliation list wholesale.
-        editor.doc().front_matter().affiliations = p->affiliations;
+        auto& front = editor.doc().front_matter();
+        front.affiliations = p->affiliations;
+        // Authors may only reference institutions that still exist; without
+        // this, shortening the list would leave dangling affiliation ids.
+        for (auto& author : front.authors) {
+            std::vector<AffiliationId> kept;
+            for (const auto& id : author.affiliations) {
+                for (const auto& candidate : front.affiliations) {
+                    if (candidate.id == id) {
+                        kept.push_back(id);
+                        break;
+                    }
+                }
+            }
+            author.affiliations = std::move(kept);
+        }
         editor.doc().BumpVersion();
         ProjectRevision rev = host_.bump_revision();
         Notify(cmd, cmd.base_revision, rev, {}, {ChangeKind::MetadataChanged});
@@ -205,6 +221,9 @@ EditResult EditingSystem::ApplyDocumentPayload(const EditCommand& cmd,
     }
     if (const auto* p = std::get_if<InsertSubsectionPayload>(&payload)) {
         return finish(editor.InsertSubsection(p->section_index, p->index, p->title));
+    }
+    if (const auto* p = std::get_if<InsertSubsectionAfterPayload>(&payload)) {
+        return finish(editor.InsertSubsectionAfter(p->after, p->title));
     }
     if (const auto* p = std::get_if<DeleteSubsectionPayload>(&payload)) {
         return finishVoid(editor.DeleteSubsection(p->section_index, p->subsection_index), {},

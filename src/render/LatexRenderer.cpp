@@ -197,33 +197,66 @@ RenderResult LatexRenderer::Render(const RenderRequest& request) const {
     RenderInline(fm.title, &title);
     if (!title.empty()) tex += "\\title{" + title + "}\n";
 
-    // Author list with affiliation superscripts (\author block per author).
-    // Affiliation names are rendered as \thanks-like footnote blocks via
-    // \affiliation when supported, otherwise as a shared \author line with
-    // \inst markers. For maximum portability across article/IEEEtran we use
-    // the "authors + \thanks" convention for single-affiliation authors and
-    // an explicit affiliation list otherwise.
+    // Author / institution block: each institution is listed exactly once,
+    // numbered by position, and authors carry the matching superscripts.
+    // (Emitting one \thanks per author repeated shared institutions and let
+    // the footnote markers drift away from the list.)
     if (!fm.authors.empty()) {
+        const auto ordinal = [](size_t index) -> std::string {
+            static const char* kSupers[] = {"1", "2", "3", "4",
+                                            "5", "6", "7", "8", "9"};
+            if (index < 9) {
+                return std::string("\\textsuperscript{") + kSupers[index] +
+                       "}";
+            }
+            return {};
+        };
+        const auto slot_of = [&fm](const AffiliationId& id) -> int {
+            for (size_t i = 0; i < fm.affiliations.size(); ++i) {
+                if (fm.affiliations[i].id == id) {
+                    return static_cast<int>(i) + 1;
+                }
+            }
+            return 0;
+        };
+
         std::string authors;
+        std::string emails;
+        std::string institutions;
         for (size_t i = 0; i < fm.authors.size(); ++i) {
             const auto& author = fm.authors[i];
             if (i) authors += " \\and ";
             authors += EscapeLatex(author.name);
+            // Numbers in institution order, duplicates collapsed.
+            std::vector<int> slots;
             for (const auto& aff_id : author.affiliations) {
-                const Affiliation* aff = nullptr;
-                for (const auto& a : fm.affiliations) {
-                    if (a.id == aff_id) {
-                        aff = &a;
-                        break;
-                    }
+                const int slot = slot_of(aff_id);
+                if (slot > 0 && std::find(slots.begin(), slots.end(), slot) ==
+                                    slots.end()) {
+                    slots.push_back(slot);
                 }
-                if (aff) {
-                    authors += "\\thanks{" + EscapeLatex(aff->name) + "}";
-                }
+            }
+            std::sort(slots.begin(), slots.end());
+            for (size_t s = 0; s < slots.size(); ++s) {
+                if (s) authors += ",";
+                authors += ordinal(static_cast<size_t>(slots[s]) - 1);
             }
             if (author.email) {
-                authors += "\\thanks{Email: " + EscapeLatex(*author.email) + "}";
+                if (!emails.empty()) emails += " \\\\ ";
+                emails += "Email: " + EscapeLatex(*author.email);
             }
+        }
+        for (size_t i = 0; i < fm.affiliations.size(); ++i) {
+            if (i) institutions += " \\\\ ";
+            institutions += ordinal(i) + " " +
+                            EscapeLatex(fm.affiliations[i].name);
+        }
+        if (!institutions.empty() || !emails.empty()) {
+            authors += "\\thanks{";
+            authors += institutions;
+            if (!institutions.empty() && !emails.empty()) authors += " \\\\ ";
+            authors += emails;
+            authors += "}";
         }
         tex += "\\author{" + authors + "}\n";
     }

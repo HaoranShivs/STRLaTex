@@ -42,6 +42,9 @@ private:
     QTreeWidget* outline_;
     // References tab
     QLineEdit* ref_search_;
+
+    // Re-applies the current reference search term to the list contents.
+    void ApplyReferenceFilter();
     QListWidget* ref_list_;
     QLabel* ref_count_;
     std::vector<BibEntry> references_;

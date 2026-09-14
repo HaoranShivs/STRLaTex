@@ -7,6 +7,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
+#include <QMimeData>
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -17,10 +18,19 @@
 #include <QTextBlockFormat>
 #include <QTextCursor>
 #include <QTimer>
+#include <QDrag>
+#include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QToolButton>
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QVBoxLayout>
+#include <QPainter>
+#include <QCursor>
+#include <functional>
 #include <initializer_list>
 
 #include "app/Theme.h"
@@ -34,11 +44,42 @@ using theme::kAccent;
 QString ToQ(const std::string& s) { return QString::fromStdString(s); }
 std::string ToStd(const QString& s) { return s.toStdString(); }
 
+// Reordering uses a private mime type so the editor ignores drags from
+// outside (files, text) and other apps ignore ours.
+constexpr const char* kBlockMime = "application/x-paperforge-block";
+
+// Block kinds offered by the insert affordances, in menu order.
+struct InsertEntry {
+    const char* label;
+    const char* kind;
+};
+
+std::vector<InsertEntry> InsertEntries(bool body_empty) {
+    if (body_empty) {
+        // A paragraph needs a section to live in, and a section needs no
+        // anchor, so an empty body can only start with a section.
+        return {{"Section", "section"}};
+    }
+    return {{"Paragraph", "paragraph"}, {"Section", "section"},
+            {"Subsection", "subsection"}, {"Equation", "equation"},
+            {"Figure", "figure"},         {"Table", "table"}};
+}
+
+// Rows whose content is a run of prose: they re-flow to the block width, so a
+// hard-wrapped paste has to be softened (see ReflowHardWrappedText).
+bool IsProseRole(const QString& role) {
+    return role == QLatin1String("abstract") ||
+           role == QLatin1String("paragraph") ||
+           role == QLatin1String("caption");
+}
+
 // Editor that sizes itself to its content and exposes key events for / and @.
 class BlockEdit : public QPlainTextEdit {
     Q_OBJECT
 
 public:
+    void setReflowOnPaste(bool enabled) { reflow_on_paste_ = enabled; }
+
     explicit BlockEdit(bool single_line, QWidget* parent = nullptr)
         : QPlainTextEdit(parent), single_line_(single_line) {
         setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -46,29 +87,97 @@ public:
         setWordWrapMode(QTextOption::WordWrap);
         setFrameShape(QFrame::NoFrame);
         document()->setDocumentMargin(6);
-        typing_timer_.setSingleShot(true);
-        typing_timer_.setInterval(400);
+        // NOTE: deliberately no idle/"typing" timer. An auto-commit a few
+        // hundred milliseconds after the last keystroke made every pause in
+        // typing rewrite the document, which rebuilt every row and destroyed
+        // the text still being entered. Edits are committed on focus-out,
+        // Enter and Ctrl+Enter only (design: no implicit content refresh).
         connect(this, &QPlainTextEdit::textChanged, this, [this]() {
             Resize();
-            if (!loading_) typing_timer_.start();
+            if (!loading_) dirty_ = true;
         });
-        connect(&typing_timer_, &QTimer::timeout, this,
-                &BlockEdit::CommitRequested);
+        // Re-fit when the layout changes for any other reason: a width change
+        // that re-wraps the text, or a font/zoom change.
+        connect(document()->documentLayout(),
+                &QAbstractTextDocumentLayout::documentSizeChanged, this,
+                [this](const QSizeF&) { Resize(); });
         Resize();
     }
 
+    // Programmatic load from the document: never marks the row dirty and
+    // never triggers a commit.
     void SetInitialText(const QString& text) {
         loading_ = true;
         setPlainText(text);
-        typing_timer_.stop();
         loading_ = false;
+        dirty_ = false;
+    }
+
+    bool IsDirty() const { return dirty_; }
+    void MarkClean() { dirty_ = false; }
+    void MarkDirty() { dirty_ = true; }
+    // Wrap programmatic formatting (alignment, fonts, hints) so it cannot be
+    // mistaken for user input.
+    void BeginProgrammaticEdit() { loading_ = true; }
+    void EndProgrammaticEdit() {
+        loading_ = false;
+        dirty_ = false;
+    }
+
+    // Adopt model text while keeping the caret roughly in place.
+    void SetTextFromModel(const QString& text) {
+        loading_ = true;
+        const int position = textCursor().position();
+        setPlainText(text);
+        QTextCursor cursor = textCursor();
+        cursor.setPosition(qMin(position, text.length()));
+        setTextCursor(cursor);
+        loading_ = false;
+        dirty_ = false;
+    }
+
+    void SetMinimumContentHeight(int px) {
+        min_height_ = px;
+        Resize();
+    }
+
+    // Grow/shrink to fit the wrapped text exactly. Nothing here scrolls: the
+    // single vertical scrollbar lives on the editor pane around all blocks.
+    // Height of the wrapped text in pixels.
+    //
+    // Two Qt traps live here. QPlainTextDocumentLayout's documentSize() and
+    // QTextDocument::size() report the *line count* (1, 2, 3 ...), not a
+    // height; and per-block bounding rects are only meaningful for blocks the
+    // layout has actually processed, so reading the last block's bottom gave
+    // one line for a pasted multi-line abstract. Measuring the plain text with
+    // the widget's own font is reliable; the sum of laid-out block heights is
+    // a second opinion for what font metrics cannot see (tab stops, per-block
+    // formats).
+    qreal ContentHeight() const {
+        QTextDocument* doc = document();
+        const QAbstractTextDocumentLayout* layout = doc->documentLayout();
+        qreal per_block = 0.0;
+        for (QTextBlock block = doc->begin(); block.isValid();
+             block = block.next()) {
+            per_block += layout->blockBoundingRect(block).height();
+        }
+        const int wrap_width = qMax(1, viewport()->width());
+        const qreal measured =
+            fontMetrics()
+                .boundingRect(QRect(0, 0, wrap_width, 0), Qt::TextWordWrap,
+                              toPlainText())
+                .height();
+        return qMax(measured, per_block) + 2.0 * doc->documentMargin();
     }
 
     void Resize() {
-        qreal doc_height =
-            document()->documentLayout()->documentSize().height();
-        setFixedHeight(qMax(qCeil(doc_height) + 10,
-                            fontMetrics().height() + 12));
+        const qreal doc_height = ContentHeight();
+        const int target =
+            qMax(qMax(static_cast<int>(qCeil(doc_height)) + 2 * frameWidth() +
+                          6,
+                      fontMetrics().height() + 12),
+                 min_height_);
+        if (height() != target) setFixedHeight(target);
         updateGeometry();
     }
 
@@ -95,14 +204,12 @@ protected:
         }
         if ((event->modifiers() & Qt::ControlModifier) &&
             (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
-            typing_timer_.stop();
             emit CommitRequested();
             emit NewBlockAfter();
             return;
         }
         if (single_line_ &&
             (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
-            typing_timer_.stop();
             emit CommitRequested();
             return;
         }
@@ -112,14 +219,37 @@ protected:
 
     void focusOutEvent(QFocusEvent* event) override {
         QPlainTextEdit::focusOutEvent(event);
-        typing_timer_.stop();
         emit CommitRequested();
+    }
+
+    void resizeEvent(QResizeEvent* event) override {
+        QPlainTextEdit::resizeEvent(event);
+        Resize();
+    }
+
+    // Undo the hard wrapping a PDF copy brings along, so the paragraph can
+    // re-flow to the block width instead of staying a fixed column wide.
+    void insertFromMimeData(const QMimeData* source) override {
+        if (reflow_on_paste_ && source && source->hasText()) {
+            const QString pasted = source->text();
+            const QString reflowed =
+                ToQ(pf::ReflowHardWrappedText(ToStd(pasted)));
+            if (reflowed != pasted) {
+                QMimeData adjusted;
+                adjusted.setText(reflowed);
+                QPlainTextEdit::insertFromMimeData(&adjusted);
+                return;
+            }
+        }
+        QPlainTextEdit::insertFromMimeData(source);
     }
 
 private:
     bool single_line_ = false;
     bool loading_ = false;
-    QTimer typing_timer_;
+    bool dirty_ = false;  // user typed something not yet in the document
+    bool reflow_on_paste_ = false;  // long-text rows re-flow pasted text
+    int min_height_ = 0;
 };
 
 class InlineTokenHighlighter final : public QSyntaxHighlighter {
@@ -141,6 +271,176 @@ protected:
             setFormat(match.capturedStart(), match.capturedLength(), format);
         }
     }
+};
+
+// The "\u22ee\u22ee" grip in a card header. Dragging it starts a reorder; the gaps
+// between blocks accept the drop.
+class DragHandle : public QWidget {
+    Q_OBJECT
+
+public:
+    DragHandle(const QString& node_id, QWidget* parent)
+        : QWidget(parent), node_id_(node_id) {
+        setFixedWidth(18);
+        setCursor(Qt::OpenHandCursor);
+        setToolTip(QStringLiteral("Drag to move this block"));
+        setFocusPolicy(Qt::NoFocus);
+        setAttribute(Qt::WA_Hover, true);
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(QPen(QColor(theme::kDisabledText), 1.4));
+        // The two columns of a grip.
+        const int cx = width() / 2;
+        for (int dx : {-2, 2}) {
+            painter.drawLine(cx + dx, 4, cx + dx, height() - 4);
+        }
+    }
+
+    void mousePressEvent(QMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            press_pos_ = event->pos();
+            pressed_ = true;
+        }
+        QWidget::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent* event) override {
+        if (!pressed_ || node_id_.isEmpty()) return;
+        if ((event->pos() - press_pos_).manhattanLength() < 6) return;
+        pressed_ = false;
+
+        auto* mime = new QMimeData();
+        mime->setData(kBlockMime, node_id_.toUtf8());
+        auto* drag = new QDrag(this);
+        drag->setMimeData(mime);
+        // A small pixmap so the cursor shows what is being carried.
+        QPixmap preview(120, 18);
+        preview.fill(QColor(theme::kAccentSoft));
+        QPainter painter(&preview);
+        painter.setPen(QColor(theme::kAccent));
+        painter.drawRect(0, 0, preview.width() - 1, preview.height() - 1);
+        painter.drawText(6, 13, QStringLiteral("moving block"));
+        drag->setPixmap(preview);
+        drag->exec(Qt::MoveAction);
+    }
+
+    void mouseReleaseEvent(QMouseEvent* event) override {
+        pressed_ = false;
+        QWidget::mouseReleaseEvent(event);
+    }
+
+private:
+    QString node_id_;
+    QPoint press_pos_;
+    bool pressed_ = false;
+};
+
+// The strip between two blocks. It always reserves its height (so nothing
+// jumps when the pointer arrives) and reveals an insert button on hover, which
+// is how a block is added without hunting for a toolbar. The last block gets
+// one too, and an empty body gets one after the front matter.
+class BlockGap : public QWidget {
+    Q_OBJECT
+
+public:
+    BlockGap(std::function<void(QWidget*)> on_activate,
+             std::function<void(const QString&)> on_drop, QWidget* parent)
+        : QWidget(parent),
+          on_activate_(std::move(on_activate)),
+          on_drop_(std::move(on_drop)) {
+        setAcceptDrops(true);
+        setFixedHeight(16);
+        setFocusPolicy(Qt::NoFocus);
+        setCursor(Qt::PointingHandCursor);
+        setToolTip(QStringLiteral("Insert a block here"));
+        setAttribute(Qt::WA_Hover, true);
+    }
+
+protected:
+    void enterEvent(QEnterEvent* event) override {
+        QWidget::enterEvent(event);
+        hovered_ = true;
+        update();
+    }
+
+    void leaveEvent(QEvent* event) override {
+        QWidget::leaveEvent(event);
+        hovered_ = false;
+        update();
+    }
+
+    void paintEvent(QPaintEvent*) override {
+        if (!hovered_ && !drop_active_) return;
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        const int mid = height() / 2;
+        // A hairline across the content width, with the button in the middle.
+        const int inset = 12;
+        QColor line(theme::kAccent);
+        line.setAlpha(drop_active_ ? 255 : 70);
+        painter.setPen(QPen(line, drop_active_ ? 2 : 1));
+        painter.drawLine(inset, mid, width() - inset, mid);
+        if (drop_active_) return;  // the line alone marks the drop target
+
+        const QPoint centre(width() / 2, mid);
+        const int radius = 7;
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(theme::kAccent));
+        painter.drawEllipse(centre, radius, radius);
+        painter.setPen(QPen(Qt::white, 1.6));
+        painter.drawLine(centre.x() - 3, centre.y(), centre.x() + 3, centre.y());
+        painter.drawLine(centre.x(), centre.y() - 3, centre.x(), centre.y() + 3);
+    }
+
+    void mousePressEvent(QMouseEvent* event) override {
+        if (on_activate_) on_activate_(this);
+        event->accept();
+    }
+
+    void dragEnterEvent(QDragEnterEvent* event) override {
+        if (event->mimeData()->hasFormat(kBlockMime)) {
+            drop_active_ = true;
+            update();
+            event->acceptProposedAction();
+        }
+    }
+
+    void dragMoveEvent(QDragMoveEvent* event) override {
+        if (event->mimeData()->hasFormat(kBlockMime)) {
+            event->acceptProposedAction();
+        }
+    }
+
+    void dragLeaveEvent(QDragLeaveEvent* event) override {
+        drop_active_ = false;
+        update();
+        QWidget::dragLeaveEvent(event);
+    }
+
+    void dropEvent(QDropEvent* event) override {
+        drop_active_ = false;
+        update();
+        if (!event->mimeData()->hasFormat(kBlockMime)) return;
+        event->acceptProposedAction();
+        applyDrop(QString::fromUtf8(event->mimeData()->data(kBlockMime)));
+    }
+
+public slots:
+    // What a completed drop does. Split out so the reorder can be driven
+    // without Qt's drag manager, which needs a real pointer device.
+    void applyDrop(const QString& node_id) {
+        if (on_drop_) on_drop_(node_id);
+    }
+
+private:
+    std::function<void(QWidget*)> on_activate_;
+    std::function<void(const QString&)> on_drop_;
+    bool hovered_ = false;
+    bool drop_active_ = false;
 };
 
 }  // namespace
@@ -183,9 +483,7 @@ QWidget* BlockEditor::MakeCard(const QString& node_id, const QString& kind,
     auto* header_layout = new QHBoxLayout(header);
     header_layout->setContentsMargins(0, 0, 0, 0);
     header_layout->setSpacing(6);
-    auto* handle = new QLabel("⋮⋮", header);
-    handle->setFixedWidth(18);
-    handle->setStyleSheet(QString("color: %1; font-weight: 700;").arg(theme::kDisabledText));
+    auto* handle = new DragHandle(node_id, header);
     auto* type_label = new QLabel(kind, header);
     type_label->setStyleSheet(QString("color: %1; font-size: 8pt; font-weight: 700;")
                                   .arg(theme::kSecondaryText));
@@ -201,39 +499,55 @@ QWidget* BlockEditor::MakeCard(const QString& node_id, const QString& kind,
     more->setStyleSheet(QString("QToolButton { color: %1; border: none; }"
                                 "QToolButton:hover { background: %2; border-radius: 4px; }")
                             .arg(theme::kSecondaryText, theme::kAccentSoft));
-    connect(more, &QToolButton::clicked, this, [this, more, node_id]() {
-        if (node_id.isEmpty()) return;
-        QMenu menu(this);
-        QMenu* insert_menu = menu.addMenu("Insert Block Below");
-        for (const auto& entry :
-             std::initializer_list<std::pair<const char*, const char*>>{
-                 {"Paragraph", "paragraph"},
-                 {"Section", "section"},
-                 {"Subsection", "subsection"},
-                 {"Equation", "equation"},
-                 {"Figure", "figure"},
-                 {"Table", "table"}}) {
-            QAction* action = insert_menu->addAction(entry.first);
-            action->setData(entry.second);
-        }
-        menu.addSeparator();
-        QAction* up = menu.addAction("Move Up");
-        QAction* down = menu.addAction("Move Down");
-        menu.addSeparator();
-        QAction* del = menu.addAction("Delete");
-        QAction* chosen_action = menu.exec(more->mapToGlobal(QPoint(0, 18)));
-        if (chosen_action == nullptr) return;
-        if (chosen_action->parent() == insert_menu) {
-            emit InsertBlockRequested(chosen_action->data().toString(),
-                                      node_id);
-        } else if (chosen_action == up) {
-            emit MoveBlockRequested(node_id, -1);
-        } else if (chosen_action == down) {
-            emit MoveBlockRequested(node_id, +1);
-        } else if (chosen_action == del) {
-            emit DeleteBlockRequested(node_id);
-        }
-    });
+    const bool can_restructure = !node_id.isEmpty();
+    const bool can_reflow = IsProseRole(commit_role);
+    more->setVisible(false);
+    connect(more, &QToolButton::clicked, this,
+            [this, more, card, node_id, can_restructure, can_reflow]() {
+                if (!can_restructure && !can_reflow) return;
+                QMenu menu(this);
+                QMenu* insert_menu = nullptr;
+                QAction* up = nullptr;
+                QAction* down = nullptr;
+                QAction* del = nullptr;
+                QAction* reflow = nullptr;
+                if (can_restructure) {
+                    insert_menu = menu.addMenu("Insert Block Below");
+                    for (const auto& entry : InsertEntries(false)) {
+                        QAction* action =
+                            insert_menu->addAction(QString::fromUtf8(entry.label));
+                        action->setData(QString::fromUtf8(entry.kind));
+                    }
+                }
+                if (can_reflow) {
+                    reflow = menu.addAction("Reflow Text");
+                    reflow->setToolTip(
+                        "Undo the hard line breaks of a pasted paragraph so it "
+                        "wraps to the block width");
+                }
+                if (can_restructure) {
+                    menu.addSeparator();
+                    up = menu.addAction("Move Up");
+                    down = menu.addAction("Move Down");
+                    menu.addSeparator();
+                    del = menu.addAction("Delete");
+                }
+                QAction* chosen_action =
+                    menu.exec(more->mapToGlobal(QPoint(0, 18)));
+                if (chosen_action == nullptr) return;
+                if (insert_menu && chosen_action->parent() == insert_menu) {
+                    emit InsertBlockRequested(chosen_action->data().toString(),
+                                              node_id);
+                } else if (chosen_action == up) {
+                    emit MoveBlockRequested(node_id, -1);
+                } else if (chosen_action == down) {
+                    emit MoveBlockRequested(node_id, +1);
+                } else if (chosen_action == del) {
+                    emit DeleteBlockRequested(node_id);
+                } else if (chosen_action == reflow) {
+                    ReflowRow(card, node_id);
+                }
+            });
     header_layout->addWidget(more);
 
     card_layout->addWidget(header);
@@ -272,17 +586,65 @@ QPlainTextEdit* BlockEditor::NewEditor(QWidget* card, const QString& text,
         "QPlainTextEdit { background: transparent; border: none; color: %1;"
         " padding: 0; selection-background-color: %2; }")
                             .arg(theme::kPrimaryText, theme::kAccentSoft));
-    // Minimum height for placeholders.
-    int min_h = edit->fontMetrics().height() * min_lines + 12;
-    edit->setMinimumHeight(min_h);
+    // Minimum height for placeholders (the abstract asks for three lines).
+    const int min_h = edit->fontMetrics().height() * min_lines + 12;
+    if (auto* block_edit = qobject_cast<BlockEdit*>(edit)) {
+        block_edit->SetMinimumContentHeight(min_h);
+    }
     edit->installEventFilter(this);
     AddEditorToCard(card, edit);
     return edit;
 }
 
+void BlockEditor::ReflowRow(QWidget* card, const QString& node_id) {
+    if (!card) return;
+    QPlainTextEdit* editor = card->findChild<QPlainTextEdit*>();
+    if (!editor) return;
+    Block* target = nullptr;
+    for (auto& block : blocks_) {
+        if (block.editor == editor) {
+            target = &block;
+            break;
+        }
+    }
+    if (!target) return;
+    const QString before = editor->toPlainText();
+    const QString after = ToQ(pf::ReflowHardWrappedText(ToStd(before)));
+    if (after == before) return;
+    const int caret = editor->textCursor().position();
+    auto* block_edit = qobject_cast<BlockEdit*>(editor);
+    if (block_edit) block_edit->BeginProgrammaticEdit();
+    editor->setPlainText(after);
+    QTextCursor cursor = editor->textCursor();
+    cursor.setPosition(qMin(caret, static_cast<int>(after.size())));
+    editor->setTextCursor(cursor);
+    if (block_edit) block_edit->EndProgrammaticEdit();
+    // Commit at once: the point of the action is to persist the re-flow, not
+    // to leave it waiting for a focus change.
+    CommitBlock(*target);
+    RevealNode(node_id);
+}
+
 void BlockEditor::CommitBlock(Block& block) {
     if (rebuilding_ || !block.editor) return;
+    auto* edit = qobject_cast<BlockEdit*>(block.editor);
     QString text = block.editor->toPlainText();
+    // Prose may still carry the hard line breaks of a paste; softening them is
+    // output-neutral (LaTeX treats a single break as a space) and lets the
+    // paragraph re-flow to the block width.
+    if (IsProseRole(block.commit_role)) {
+        text = ToQ(pf::ReflowHardWrappedText(ToStd(text)));
+    }
+    // Nothing changed since the document last saw this row: no edit, so no
+    // documentChanged -> no rebuild. This is what stops restyling or simply
+    // focusing a row from cycling into a full editor rebuild.
+    if (text == block.committed_text) {
+        if (edit) edit->MarkClean();
+        emit RowCommitted();
+        return;
+    }
+    block.committed_text = text;
+    if (edit) edit->MarkClean();
     const QString& role = block.commit_role;
     if (role == "title") emit TitleEdited(text);
     else if (role == "authors") emit AuthorsEdited(text);
@@ -294,6 +656,7 @@ void BlockEditor::CommitBlock(Block& block) {
     else if (role == "section") emit SectionRenamed(block.node_id, text);
     else if (role == "subsection") emit SubsectionRenamed(block.node_id, text);
     else if (role == "caption") emit CaptionEdited(block.node_id, text);
+    emit RowCommitted();
 }
 
 bool BlockEditor::eventFilter(QObject* watched, QEvent* event) {
@@ -305,11 +668,8 @@ bool BlockEditor::eventFilter(QObject* watched, QEvent* event) {
             auto* header = card->property("header").value<QWidget*>();
             if (header) {
                 for (QObject* child : header->children()) {
-                    if (auto* label = qobject_cast<QLabel*>(child)) {
-                        label->setVisible(hover || label->text() != QStringLiteral("⋮⋮"));
-                        if (label->text() == QStringLiteral("⋮⋮")) {
-                            label->setVisible(hover);
-                        }
+                    if (auto* grip = qobject_cast<DragHandle*>(child)) {
+                        grip->setVisible(hover);
                     }
                     if (auto* button = qobject_cast<QToolButton*>(child)) {
                         button->setVisible(
@@ -332,6 +692,153 @@ bool BlockEditor::eventFilter(QObject* watched, QEvent* event) {
         }
     }
     return QWidget::eventFilter(watched, event);
+}
+
+void BlockEditor::BuildAuthorBindingPanel(QWidget* card,
+                                          const FrontMatter& front) {
+    if (card == nullptr) return;
+    auto* card_layout = qobject_cast<QVBoxLayout*>(card->layout());
+    if (card_layout == nullptr) return;
+
+    auto* panel = new QWidget(card);
+    panel->setObjectName("authorBindingPanel");
+    auto* panel_layout = new QVBoxLayout(panel);
+    panel_layout->setContentsMargins(2, 0, 2, 2);
+    panel_layout->setSpacing(1);
+
+    auto* caption = new QLabel("Institution links", panel);
+    caption->setStyleSheet(QString("color: %1; font-size: 8pt;"
+                                   " font-weight: 700; letter-spacing: 0.5px;")
+                               .arg(theme::kDisabledText));
+    panel_layout->addWidget(caption);
+
+    if (front.authors.empty()) {
+        auto* hint = new QLabel("Add an author above to link institutions.",
+                                panel);
+        hint->setStyleSheet(
+            QString("color: %1; font-size: 9pt;").arg(theme::kDisabledText));
+        panel_layout->addWidget(hint);
+    } else if (front.affiliations.empty()) {
+        auto* hint = new QLabel(
+            "Add an institution above, then link each author to it here.",
+            panel);
+        hint->setStyleSheet(
+            QString("color: %1; font-size: 9pt;").arg(theme::kDisabledText));
+        panel_layout->addWidget(hint);
+    } else {
+        for (size_t i = 0; i < front.authors.size(); ++i) {
+            const auto& author = front.authors[i];
+            auto* row = new QWidget(panel);
+            auto* row_layout = new QHBoxLayout(row);
+            row_layout->setContentsMargins(0, 0, 0, 0);
+            row_layout->setSpacing(6);
+
+            auto* name = new QLabel(ToQ(author.name), row);
+            name->setMinimumWidth(120);
+            name->setStyleSheet(QString("color: %1; font-size: 9pt;")
+                                    .arg(theme::kPrimaryText));
+            row_layout->addWidget(name);
+
+            // The button shows the current numbers, so the binding is visible
+            // without opening anything.
+            QStringList current;
+            for (size_t a = 0; a < front.affiliations.size(); ++a) {
+                for (const auto& link : author.affiliations) {
+                    if (link == front.affiliations[a].id) {
+                        static const char* kSupers[] = {"\u00b9", "\u00b2",
+                                                        "\u00b3", "\u2074",
+                                                        "\u2075", "\u2076",
+                                                        "\u2077", "\u2078",
+                                                        "\u2079"};
+                        current << (a < 9 ? QString::fromUtf8(kSupers[a])
+                                          : QString::number(a + 1));
+                    }
+                }
+            }
+            auto* pick = new QToolButton(row);
+            pick->setObjectName("authorAffiliationPicker");
+            pick->setText(current.isEmpty() ? QStringLiteral("link…")
+                                            : current.join(QLatin1Char(' ')));
+            pick->setToolTip("Which institutions does this author belong to?");
+            pick->setCursor(Qt::PointingHandCursor);
+            pick->setFocusPolicy(Qt::NoFocus);
+            pick->setStyleSheet(
+                QString("QToolButton { color: %1; background: %2;"
+                        " border: 1px solid %3; border-radius: 9px;"
+                        " padding: 1px 8px; font-size: 9pt; }"
+                        "QToolButton:hover { border-color: %4; }")
+                    .arg(theme::kSecondaryText, theme::kSidePanel,
+                         theme::kDivider, theme::kAccent));
+            row_layout->addWidget(pick);
+            row_layout->addStretch(1);
+            panel_layout->addWidget(row);
+
+            const int author_index = static_cast<int>(i);
+            connect(pick, &QToolButton::clicked, this,
+                    [this, pick, front, author_index]() {
+                        QMenu menu(this);
+                        for (size_t a = 0; a < front.affiliations.size(); ++a) {
+                            const auto& affiliation = front.affiliations[a];
+                            const bool linked = std::any_of(
+                                front.authors[author_index].affiliations.begin(),
+                                front.authors[author_index].affiliations.end(),
+                                [&](const AffiliationId& id) {
+                                    return id == affiliation.id;
+                                });
+                            QAction* action = menu.addAction(
+                                QStringLiteral("%1  %2")
+                                    .arg(a + 1)
+                                    .arg(ToQ(affiliation.name)));
+                            action->setCheckable(true);
+                            action->setChecked(linked);
+                            const QString id = ToQ(affiliation.id.value());
+                            connect(action, &QAction::triggered, this,
+                                    [this, author_index, id](bool checked) {
+                                        emit AuthorAffiliationToggled(
+                                            author_index, id, checked);
+                                    });
+                        }
+                        menu.exec(pick->mapToGlobal(QPoint(0, pick->height())));
+                    });
+        }
+    }
+    card_layout->addWidget(panel);
+}
+
+QWidget* BlockEditor::MakeGap(const QString& anchor) {
+    auto* gap = new BlockGap(
+        [this, anchor](QWidget* source) { ShowInsertMenu(anchor, source); },
+        [this, anchor](const QString& node) {
+            if (anchor.isEmpty()) {
+                // The body is empty, so there is nothing to reorder into.
+                return;
+            }
+            if (node == anchor) return;
+            emit MoveBlockToRequested(node, anchor);
+        },
+        host_);
+    gap->setProperty("gap_anchor", anchor);
+    gap->setProperty("body_gap", anchor.isEmpty());
+    return gap;
+}
+
+void BlockEditor::ShowInsertMenu(const QString& anchor, QWidget* source) {
+    const bool body_empty = anchor.isEmpty();
+    QMenu menu(this);
+    if (body_empty) {
+        QAction* hint =
+            menu.addAction("The body is empty — start with a section");
+        hint->setEnabled(false);
+        menu.addSeparator();
+    }
+    for (const auto& entry : InsertEntries(body_empty)) {
+        QAction* action = menu.addAction(QString::fromUtf8(entry.label));
+        action->setData(QString::fromUtf8(entry.kind));
+    }
+    QAction* chosen = menu.exec(
+        source->mapToGlobal(QPoint(source->width() / 2, source->height())));
+    if (chosen == nullptr || !chosen->data().isValid()) return;
+    emit InsertBlockRequested(chosen->data().toString(), anchor);
 }
 
 void BlockEditor::OpenSlashMenu(QPlainTextEdit* origin) {
@@ -408,40 +915,80 @@ void BlockEditor::OpenAtMenu(QPlainTextEdit* origin) {
 }
 
 void BlockEditor::RebuildFromDocument(const Document& doc) {
-    // Save focus.
+    // Save focus, and the live text of a row the user is still editing. That
+    // text wins over the document: a rebuild triggered from anywhere else
+    // must never discard what is currently being typed.
     focus_node_.clear();
     focus_pos_ = 0;
+    QString pending_key;
+    QString pending_text;
+    bool has_pending = false;
     if (auto* edit = qobject_cast<BlockEdit*>(focusWidget())) {
         focus_node_ = edit->property("row_focus_key").toString();
         focus_pos_ = edit->textCursor().position();
+        if (edit->IsDirty()) {
+            pending_key = focus_node_;
+            pending_text = edit->toPlainText();
+            has_pending = true;
+        }
     }
 
     rebuilding_ = true;
-    // Clear.
-    for (const auto& block : blocks_) {
-        if (block.card) {
-            host_->layout()->removeWidget(block.card);
-            block.card->hide();
-            block.card->deleteLater();
-        }
+    auto* host_layout = qobject_cast<QVBoxLayout*>(host_->layout());
+    // Clear every widget from the previous pass, keeping only the trailing
+    // stretch. Rows and gaps are both created per rebuild, and a survivor
+    // would keep stealing hover and clicks from the rows drawn over it.
+    for (int i = host_layout->count() - 1; i >= 0; --i) {
+        QLayoutItem* item = host_layout->itemAt(i);
+        if (item == nullptr || item->widget() == nullptr) continue;
+        host_layout->takeAt(i);
+        QWidget* widget = item->widget();
+        widget->hide();
+        widget->deleteLater();
+        delete item;
     }
     blocks_.clear();
-
+    // A gap follows every body block (including the last), so the pointer
+    // never has to travel to a toolbar to add the next one.
+    auto append_gap = [&](const QString& anchor) {
+        host_layout->insertWidget(host_layout->count() - 1, MakeGap(anchor));
+    };
     auto add = [&](const QString& node_id, const QString& kind,
                    const QString& commit_role, const QString& text,
                    bool mono = false, bool header_inline = true,
-                   int min_lines = 1, bool single_line = false) {
+                   int min_lines = 1, bool single_line = false) -> QWidget* {
         QWidget* card = MakeCard(node_id, kind, commit_role, header_inline);
-        QPlainTextEdit* edit =
-            NewEditor(card, text, mono, min_lines, single_line);
-        edit->setProperty("row_node", node_id);
-        edit->setProperty(
-            "row_focus_key",
+        const QString focus_key =
             node_id.isEmpty() ? QStringLiteral("front:") + commit_role
-                              : node_id);
+                              : node_id;
+        const bool restore_pending = has_pending && focus_key == pending_key;
+        QString row_text = restore_pending ? pending_text : text;
+        if (IsProseRole(commit_role) && !restore_pending) {
+            // Never re-flow while the user is typing in the row.
+            row_text = ToQ(pf::ReflowHardWrappedText(ToStd(row_text)));
+        }
+        QPlainTextEdit* edit =
+            NewEditor(card, row_text, mono, min_lines, single_line);
+        if (auto* block_edit = qobject_cast<BlockEdit*>(edit)) {
+            if (restore_pending) {
+                // The model text is the baseline so the user's text is still
+                // committed on focus-out.
+                block_edit->BeginProgrammaticEdit();
+                block_edit->EndProgrammaticEdit();
+                block_edit->MarkClean();
+            }
+        }
+        if (auto* block_edit = qobject_cast<BlockEdit*>(edit)) {
+            block_edit->setReflowOnPaste(IsProseRole(commit_role));
+            block_edit->MarkClean();
+        }
+        edit->setProperty("row_node", node_id);
+        edit->setProperty("row_focus_key", focus_key);
         edit->setProperty("commands_enabled", !node_id.isEmpty());
         edit->setProperty("references_enabled", commit_role == "paragraph");
         auto center_text = [edit]() {
+            auto* block_edit = qobject_cast<BlockEdit*>(edit);
+            if (block_edit) block_edit->BeginProgrammaticEdit();
             QTextCursor cursor = edit->textCursor();
             cursor.select(QTextCursor::Document);
             QTextBlockFormat format;
@@ -449,6 +996,7 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
             cursor.mergeBlockFormat(format);
             cursor.clearSelection();
             edit->setTextCursor(cursor);
+            if (block_edit) block_edit->EndProgrammaticEdit();
         };
         if (kind == "Title") {
             edit->setFont(theme::UiFont(22, true));
@@ -484,6 +1032,13 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
         block.card = card;
         block.editor = edit;
         block.commit_role = commit_role;
+        block.committed_text = text;  // what the document holds for this row
+        if (restore_pending) {
+            // Keep it dirty: the user's uncommitted text is still pending.
+            if (auto* restored = qobject_cast<BlockEdit*>(edit)) {
+                restored->MarkDirty();
+            }
+        }
         // Commit on Enter (commit signal) - the BlockEdit emits
         // CommitRequested on Enter AND focusOut; we want focus-out commit,
         // Enter just moves on. Wire it:
@@ -503,9 +1058,10 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
         connect(block_edit, &BlockEdit::NewBlockAfter, this, [this, node_id]() {
             emit InsertBlockRequested("paragraph", node_id);
         });
-        qobject_cast<QVBoxLayout*>(host_->layout())
-            ->insertWidget(host_->layout()->count() - 1, card);
+        host_layout->insertWidget(host_layout->count() - 1, card);
+        if (!node_id.isEmpty()) append_gap(node_id);
         blocks_.push_back(std::move(block));
+        return card;
     };
 
     // Front matter.
@@ -527,7 +1083,11 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
             }
         }
     }
-    add("", "Authors", "authors", authors, false, true, 1, true);
+    {
+        QWidget* authors_card =
+            add("", "Authors", "authors", authors, false, true, 1, true);
+        BuildAuthorBindingPanel(authors_card, fm);
+    }
     QString affiliations;
     for (size_t i = 0; i < fm.affiliations.size(); ++i) {
         if (i) affiliations += "; ";
@@ -548,6 +1108,10 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
     add("", "Keywords", "keywords", keywords, false, true, 1, true);
 
     // Body.
+    if (doc.body().sections.empty()) {
+        // Nothing to hover between yet: offer to start the body.
+        append_gap(QString());
+    }
     for (const auto& section : doc.body().sections) {
         add(ToQ(section.id.value()), "Section", "section",
             ToQ(pf::InlineToPlainText(section.title)), false, true, 1, true);
@@ -583,14 +1147,20 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
                 }
                 card_layout->addWidget(image);
                 auto* caption = NewEditor(
-                    card, ToQ(pf::InlineToPlainText(figure->caption)), false,
-                    1);
+                    card,
+                    ToQ(pf::ReflowHardWrappedText(
+                        pf::InlineToPlainText(figure->caption))),
+                    false, 1);
+                if (auto* caption_edit = qobject_cast<BlockEdit*>(caption)) {
+                    caption_edit->setReflowOnPaste(true);
+                }
                 caption->setPlaceholderText("Figure caption");
                 caption->setProperty("row_node", ToQ(figure->id.value()));
                 caption->setProperty("row_focus_key", ToQ(figure->id.value()));
                 caption->setProperty("commands_enabled", true);
                 Block gui_block{ToQ(figure->id.value()), "Figure", card,
-                                caption, "caption"};
+                                caption, "caption",
+                                ToQ(pf::InlineToPlainText(figure->caption))};
                 auto* block_edit = qobject_cast<BlockEdit*>(caption);
                 connect(block_edit, &BlockEdit::CommitRequested, this,
                         [this, caption]() {
@@ -601,8 +1171,8 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
                                 }
                             }
                         });
-                qobject_cast<QVBoxLayout*>(host_->layout())
-                    ->insertWidget(host_->layout()->count() - 1, card);
+                host_layout->insertWidget(host_layout->count() - 1, card);
+                append_gap(ToQ(figure->id.value()));
                 blocks_.push_back(std::move(gui_block));
             } else if (const auto* table = std::get_if<pf::Table>(&block)) {
                 QWidget* card = MakeCard(ToQ(table->id.value()), "Table",
@@ -623,13 +1193,20 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
                 }
                 qobject_cast<QVBoxLayout*>(card->layout())->addWidget(grid);
                 auto* caption = NewEditor(
-                    card, ToQ(pf::InlineToPlainText(table->caption)), false, 1);
+                    card,
+                    ToQ(pf::ReflowHardWrappedText(
+                        pf::InlineToPlainText(table->caption))),
+                    false, 1);
+                if (auto* caption_edit = qobject_cast<BlockEdit*>(caption)) {
+                    caption_edit->setReflowOnPaste(true);
+                }
                 caption->setPlaceholderText("Table caption");
                 caption->setProperty("row_node", ToQ(table->id.value()));
                 caption->setProperty("row_focus_key", ToQ(table->id.value()));
                 caption->setProperty("commands_enabled", true);
                 Block gui_block{ToQ(table->id.value()), "Table", card,
-                                caption, "caption"};
+                                caption, "caption",
+                                ToQ(pf::InlineToPlainText(table->caption))};
                 auto* block_edit = qobject_cast<BlockEdit*>(caption);
                 connect(block_edit, &BlockEdit::CommitRequested, this,
                         [this, caption]() {
@@ -640,8 +1217,8 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
                                 }
                             }
                         });
-                qobject_cast<QVBoxLayout*>(host_->layout())
-                    ->insertWidget(host_->layout()->count() - 1, card);
+                host_layout->insertWidget(host_layout->count() - 1, card);
+                append_gap(ToQ(table->id.value()));
                 blocks_.push_back(std::move(gui_block));
             }
         }
@@ -728,6 +1305,26 @@ void BlockEditor::SetAssetPathResolver(
     asset_path_resolver_ = std::move(resolver);
 }
 
+bool BlockEditor::HasUncommittedFocus() const {
+    if (auto* edit = qobject_cast<BlockEdit*>(focusWidget())) {
+        return edit->IsDirty();
+    }
+    return false;
+}
+
+void BlockEditor::RefreshHints() { ApplyHints(); }
+
+void BlockEditor::CommitFocused() {
+    auto* edit = qobject_cast<BlockEdit*>(focusWidget());
+    if (!edit) return;
+    for (auto& block : blocks_) {
+        if (block.editor == edit) {
+            CommitBlock(block);
+            return;
+        }
+    }
+}
+
 std::optional<QString> BlockEditor::FocusedNodeId() const {
     if (auto* edit = qobject_cast<BlockEdit*>(focusWidget())) {
         QString node = edit->property("row_node").toString();
@@ -738,7 +1335,13 @@ std::optional<QString> BlockEditor::FocusedNodeId() const {
 
 void BlockEditor::RevealNode(const QString& node_id) {
     for (const auto& block : blocks_) {
-        if (block.node_id == node_id && block.card) {
+        // Front-matter rows (Abstract, Title) are addressed by their row key,
+        // real blocks by their node id.
+        const bool matches = block.node_id == node_id ||
+                             (block.editor &&
+                              block.editor->property("row_focus_key")
+                                      .toString() == node_id);
+        if (matches && block.card) {
             scroll_->ensureWidgetVisible(block.card, 0, 80);
             block.card->setStyleSheet(QString(
                 "QFrame#blockCard { border-left: 3px solid %1; border-radius: 4px; }")

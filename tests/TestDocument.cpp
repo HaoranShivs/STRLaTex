@@ -140,6 +140,97 @@ PF_TEST(DocumentEditorMoveBlock) {
     PF_CHECK(InlineToPlainText(p->content) == "A");
 }
 
+PF_TEST(InsertSubsectionAfterAnchor) {
+    Document doc;
+    DocumentEditor editor(doc);
+    const Document& cd = doc;  // read-only view: body() is const-only outside
+    auto sec = editor.InsertSection(cd.body().sections.size(),
+                                    InlineFromText("S"));
+    PF_CHECK(sec.ok());
+    const NodeId section = sec.value();
+
+    Paragraph a;
+    a.content = InlineFromText("one");
+    Paragraph b;
+    b.content = InlineFromText("two");
+    Paragraph c;
+    c.content = InlineFromText("three");
+    auto pa = editor.InsertBlock(section, std::nullopt, a);
+    auto pb = editor.InsertBlock(section, std::nullopt, b);
+    auto pc = editor.InsertBlock(section, std::nullopt, c);
+    PF_CHECK(pa.ok() && pb.ok() && pc.ok());
+
+    // Inserting a heading after "one" must move "two" and "three" into it, so
+    // the heading really appears between "one" and "two".
+    auto sub = editor.InsertSubsectionAfter(pa.value(), InlineFromText("Sub"));
+    PF_CHECK(sub.ok());
+    {
+        const Section& s = cd.body().sections.front();
+        PF_CHECK(s.blocks.size() == 1);
+        PF_CHECK(s.subsections.size() == 1);
+        PF_CHECK(InlineToPlainText(s.subsections[0].title) == "Sub");
+        PF_CHECK(s.subsections[0].blocks.size() == 2);
+        const auto* first = std::get_if<Paragraph>(&s.subsections[0].blocks[0]);
+        const auto* second =
+            std::get_if<Paragraph>(&s.subsections[0].blocks[1]);
+        PF_CHECK(first && InlineToPlainText(first->content) == "two");
+        PF_CHECK(second && InlineToPlainText(second->content) == "three");
+    }
+
+    // A heading after a block inside a subsection follows that subsection.
+    const NodeId inner = std::visit([](const auto& v) { return v.id; },
+                                    cd.body()
+                                        .sections.front()
+                                        .subsections[0]
+                                        .blocks[0]);
+    PF_CHECK(editor.InsertSubsectionAfter(inner, InlineFromText("Deeper")).ok());
+    {
+        const Section& s = cd.body().sections.front();
+        PF_CHECK(s.subsections.size() == 2);
+        PF_CHECK(InlineToPlainText(s.subsections[1].title) == "Deeper");
+        PF_CHECK(s.subsections[1].blocks.size() == 1);
+    }
+
+    // After a subsection heading nothing moves.
+    PF_CHECK(editor
+                 .InsertSubsectionAfter(cd.body().sections.front()
+                                            .subsections[0]
+                                            .id,
+                                        InlineFromText("Sibling"))
+                 .ok());
+    PF_CHECK(cd.body().sections.front().subsections.size() == 3);
+    PF_CHECK(InlineToPlainText(
+                 cd.body().sections.front().subsections[1].title) ==
+             "Sibling");
+
+    // After a section title the whole body of the section becomes the
+    // subsection's content.
+    Document second;
+    DocumentEditor editor2(second);
+    const Document& cd2 = second;
+    auto sec2 = editor2.InsertSection(cd2.body().sections.size(),
+                                      InlineFromText("T"));
+    Paragraph p1;
+    p1.content = InlineFromText("alpha");
+    Paragraph p2;
+    p2.content = InlineFromText("beta");
+    editor2.InsertBlock(sec2.value(), std::nullopt, p1);
+    editor2.InsertBlock(sec2.value(), std::nullopt, p2);
+    PF_CHECK(editor2
+                 .InsertSubsectionAfter(sec2.value(), InlineFromText("First"))
+                 .ok());
+    {
+        const Section& s = cd2.body().sections.front();
+        PF_CHECK(s.blocks.empty());
+        PF_CHECK(s.subsections.size() == 1);
+        PF_CHECK(s.subsections[0].blocks.size() == 2);
+    }
+
+    // An unknown anchor is rejected instead of silently appending.
+    PF_CHECK(!editor2.InsertSubsectionAfter(NodeId("nope"), InlineFromText("x"))
+                  .ok());
+}
+
 PF_TEST(DocumentEditorSubsectionStructure) {
     Document doc;
     DocumentEditor editor(doc);
@@ -197,6 +288,60 @@ PF_TEST(InlineTextHelpers) {
     SetMark(bold.marks, TextMark::Strong, true);
     PF_CHECK(HasMark(bold.marks, TextMark::Strong));
     PF_CHECK(!HasMark(bold.marks, TextMark::Emphasis));
+}
+
+PF_TEST(ReflowHardWrappedText) {
+    // A paragraph copied out of a PDF arrives pre-wrapped at a fixed column;
+    // the single breaks have to become spaces so it can re-flow.
+    const std::string pasted =
+        "The success of deep learning in infrared small\n"
+        "target detection relies on large-scale annotations, yet\n"
+        "their acquisition cost impedes further progress.";
+    const std::string reflowed = ReflowHardWrappedText(pasted);
+    PF_CHECK(reflowed.find('\n') == std::string::npos);
+    PF_CHECK(reflowed.find("infrared small target detection") !=
+             std::string::npos);
+    PF_CHECK(reflowed.find("  ") == std::string::npos);
+
+    // Blank lines are real paragraph breaks and must survive.
+    const std::string two_paragraphs =
+        "First paragraph that is long enough to look wrapped.\n"
+        "It continues here on a second line of the same paragraph.\n"
+        "\n"
+        "Second paragraph that is also long enough to look wrapped.\n"
+        "And it has a continuation line as well, right here.";
+    const std::string joined = ReflowHardWrappedText(two_paragraphs);
+    PF_CHECK(joined.find("\n\n") != std::string::npos);
+    PF_CHECK(joined.find("First paragraph that is long enough to look "
+                         "wrapped. It continues here") != std::string::npos);
+    PF_CHECK(joined.find("Second paragraph that is also long enough") !=
+             std::string::npos);
+
+    // Deliberate structure is never rewritten.
+    const std::string bullets =
+        "- first item of a list that is long enough to wrap somewhere\n"
+        "- second item of the same list, also long enough to wrap\n"
+        "- third item, likewise long enough to look like a hard wrap";
+    PF_CHECK(ReflowHardWrappedText(bullets) == bullets);
+
+    const std::string enumerated =
+        "1. first numbered item that is long enough to look wrapped\n"
+        "2. second numbered item, also long enough to look wrapped\n"
+        "3. third numbered item, likewise long enough to be wrapped";
+    PF_CHECK(ReflowHardWrappedText(enumerated) == enumerated);
+
+    // An explicit LaTeX break is content, not wrapping.
+    const std::string explicit_break =
+        "first line that ends with an explicit break\\\\\n"
+        "second line that is long enough to look like a hard wrap\n"
+        "third line that is also long enough to be considered wrapped";
+    PF_CHECK(ReflowHardWrappedText(explicit_break) == explicit_break);
+
+    // Too short to be a pre-wrapped block: leave it exactly as typed.
+    const std::string typed = "line one\nline two";
+    PF_CHECK(ReflowHardWrappedText(typed) == typed);
+    PF_CHECK(ReflowHardWrappedText("single line") == "single line");
+    PF_CHECK(ReflowHardWrappedText("") == "");
 }
 
 PF_TEST(StrongIdsAreDistinct) {

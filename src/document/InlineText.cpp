@@ -116,4 +116,93 @@ InlineContent InlineFromEditorText(std::string text) {
     return content;
 }
 
+namespace {
+
+// A line that starts like a list item, heading or quote keeps its own line.
+bool StartsStructuredLine(const std::string& line) {
+    if (line.empty()) return false;
+    const char first = line[0];
+    if (first == '-' || first == '*' || first == '+' || first == '>' ||
+        first == '#' || first == '|') {
+        return true;
+    }
+    // "1." / "1)" / "1、" style enumerations.
+    size_t digits = 0;
+    while (digits < line.size() &&
+           std::isdigit(static_cast<unsigned char>(line[digits]))) {
+        ++digits;
+    }
+    if (digits > 0 && digits < line.size()) {
+        const char next = line[digits];
+        if (next == '.' || next == ')') return true;
+        // "、" (U+3001) as an enumeration separator.
+        if (line.compare(digits, 3, "\xe3\x80\x81") == 0) return true;
+    }
+    return false;
+}
+
+std::string Trim(const std::string& text) {
+    const size_t first = text.find_first_not_of(" \t\r");
+    if (first == std::string::npos) return {};
+    const size_t last = text.find_last_not_of(" \t\r");
+    return text.substr(first, last - first + 1);
+}
+
+bool EndsWithBackslashBreak(const std::string& text) {
+    return text.size() >= 2 && text.compare(text.size() - 2, 2, "\\\\") == 0;
+}
+
+}  // namespace
+
+std::string ReflowHardWrappedText(std::string_view text) {
+    std::vector<std::string> lines;
+    std::string current;
+    for (const char ch : text) {
+        if (ch == '\n') {
+            lines.push_back(current);
+            current.clear();
+        } else {
+            current.push_back(ch);
+        }
+    }
+    lines.push_back(current);
+    if (lines.size() < 3) return std::string(text);  // not hard-wrapped
+
+    // Anything carrying deliberate line structure is left alone.
+    size_t short_lines = 0;
+    for (const auto& raw : lines) {
+        const std::string line = Trim(raw);
+        if (line.empty()) continue;
+        if (StartsStructuredLine(line)) return std::string(text);
+        if (EndsWithBackslashBreak(line)) return std::string(text);
+        if (line.size() < 20) ++short_lines;
+    }
+    if (short_lines * 2 > lines.size()) return std::string(text);
+
+    // Merge single breaks into spaces; blank lines stay paragraph breaks.
+    std::string out;
+    bool append_space = false;
+    bool paragraph_break = false;
+    for (const auto& raw : lines) {
+        const std::string line = Trim(raw);
+        if (line.empty()) {
+            append_space = false;
+            paragraph_break = !out.empty();
+            continue;
+        }
+        if (out.empty()) {
+            out = line;
+        } else if (paragraph_break) {
+            out += "\n\n";
+            out += line;
+        } else {
+            if (append_space && out.back() != ' ') out += ' ';
+            out += line;
+        }
+        append_space = true;
+        paragraph_break = false;
+    }
+    return out;
+}
+
 }  // namespace pf

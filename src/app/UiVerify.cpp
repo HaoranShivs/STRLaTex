@@ -2,6 +2,8 @@
 // of the main window states (welcome, workspace, slash menu, problems).
 #include <QApplication>
 #include <QFileDialog>
+#include <QElapsedTimer>
+#include <QPlainTextEdit>
 #include <QTimer>
 #include <filesystem>
 #include <iostream>
@@ -28,7 +30,14 @@ int main(int argc, char* argv[]) {
         ProjectController* controller = window.controller();
         check(controller != nullptr, "controller reachable");
 
-        QString dir = "/tmp/pf-ui-demo";
+        // PF_UI_PROJECT opens an existing project instead of building the
+        // demo one, so a real manuscript can be inspected as it renders.
+        const QString existing = qEnvironmentVariable("PF_UI_PROJECT");
+        QString dir = existing.isEmpty() ? QStringLiteral("/tmp/pf-ui-demo")
+                                        : existing;
+        if (!existing.isEmpty()) {
+            check(window.OpenProjectDir(dir), "open existing project");
+        } else {
         check(controller->NewProject(dir), "new project");
         controller->StartAutosave();
         // Switch the main window into workspace view programmatically.
@@ -45,20 +54,112 @@ int main(int argc, char* argv[]) {
             std::cout << "  open error: " << err << "\n";
         }
         check(opened, "open via window (workspace shown)");
+        }
+
+        if (!existing.isEmpty()) {
+            // Existing project: capture it as opened, then show what the
+            // re-flow and the hover insert affordance look like on real
+            // content.
+            QTimer::singleShot(1800, [&window]() {
+                window.grab().save("/tmp/pf-ui-workspace.png");
+                std::cout << "[ SAVE ] workspace (as opened)\n";
+
+                auto pump = [](int ms) {
+                    QElapsedTimer timer;
+                    timer.start();
+                    while (timer.elapsed() < ms) {
+                        QApplication::processEvents(QEventLoop::AllEvents, 20);
+                    }
+                };
+                auto find_row = [&window](const QString& key) -> QPlainTextEdit* {
+                    for (QPlainTextEdit* edit :
+                         window.findChildren<QPlainTextEdit*>()) {
+                        if (edit->isVisible() &&
+                            edit->property("row_focus_key").toString() ==
+                                key) {
+                            return edit;
+                        }
+                    }
+                    return nullptr;
+                };
+
+                // Clicking into the abstract and leaving it commits the row,
+                // which is the path that softens a hard-wrapped paste.
+                if (QPlainTextEdit* abstract = find_row("front:abstract")) {
+                    abstract->setFocus(Qt::MouseFocusReason);
+                    pump(150);
+                    if (QPlainTextEdit* again = find_row("front:abstract")) {
+                        again->clearFocus();
+                    }
+                    pump(600);
+                    window.grab().save("/tmp/pf-ui-reflowed.png");
+                    std::cout << "[ SAVE ] abstract after commit (re-flowed)\n";
+                }
+
+                // Hover the insert strip after the last block.
+                std::vector<QWidget*> gaps;
+                for (QWidget* w : window.findChildren<QWidget*>()) {
+                    if (w->property("gap_anchor").isValid() && w->isVisible()) {
+                        gaps.push_back(w);
+                    }
+                }
+                std::cout << "[ INFO ] live gaps: " << gaps.size() << "\n";
+                if (!gaps.empty()) {
+                    QWidget* gap = gaps.back();
+                    QEvent enter(QEvent::Enter);
+                    QApplication::sendEvent(gap, &enter);
+                    pump(400);
+                    window.grab().save("/tmp/pf-ui-gap.png");
+                    std::cout << "[ SAVE ] hover insert affordance\n";
+                }
+                QApplication::exit(0);
+            });
+            return;
+        }
 
         controller->SetTitle("Weakly Supervised Infrared Small Target Detection");
-        controller->SetAuthorsText("Tanran Shi · Author B · Author C");
-        controller->SetAffiliationsText("University One; Institute Two");
+        controller->SetAffiliationsText(
+            "School of Information and Communication Engineering, University "
+            "One; Institute of Optoelectronics, Institute Two");
+        controller->SetAuthorsText(
+            "Tanran Shi\u00b9\u00b2 · Author B\u00b9 · Author C\u00b2");
         controller->SetAbstract(
             "Infrared small target detection has attracted considerable "
-            "attention in recent years.");
+            "attention in recent years, yet robust detection under complex "
+            "backgrounds remains difficult because targets occupy only a few "
+            "pixels and carry almost no texture. This paper studies a weakly "
+            "supervised formulation that learns from image-level labels.");
+        controller->SetAuthorsText(
+            "Tanran Shi\u00b9\u00b2 · Author B\u00b9 · Author C\u00b2");
         controller->SetKeywordsText("infrared, small target, deep learning");
         auto sec = controller->InsertSection("Introduction");
+        // Long enough to reach a second page, so the preview shows the seam
+        // between sheet 1 and sheet 2.
+        for (int i = 0; i < 26; ++i) {
+            controller->InsertParagraph(
+                sec.created_node,
+                QString("Paragraph %1. Infrared small target detection under "
+                        "complex backgrounds remains difficult because "
+                        "targets occupy only a few pixels, carry almost no "
+                        "texture, and are easily confused with cloud edges, "
+                        "rooftops and wave crests in the surrounding scene.")
+                    .arg(i + 1));
+        }
         controller->InsertParagraph(
             sec.created_node,
             "Infrared small target detection has received considerable "
             "attention in recent years. Previous methods primarily rely on "
-            "hand-crafted features.");
+            "hand-crafted features, which degrade quickly when the target "
+            "contrast drops or when the background contains cluttered "
+            "structures such as cloud edges, rooftops and wave crests. Deep "
+            "models trained end to end have improved recall, but they still "
+            "need pixel-level annotations that are expensive to obtain and "
+            "inconsistent between annotators. We therefore investigate a "
+            "weakly supervised pipeline: image-level labels drive a "
+            "coarse-to-fine refinement stage, and a segmentation head "
+            "recovers the target mask without any per-pixel supervision. "
+            "Experiments on public benchmarks show consistent gains over "
+            "hand-crafted baselines while reducing annotation cost.");
         controller->InsertEquation(sec.created_node, "L = L_{seg} + \\lambda L_{aux}", true);
         controller->ImportBibliographyText(QString(
             "@article{wang2025, author={W. Wang}, title={Infrared Target "
@@ -96,7 +197,41 @@ int main(int argc, char* argv[]) {
                                                      std::cout
                                                          << "[ SAVE ] built "
                                                             "screenshot\n";
-                                                     QApplication::exit(0);
+                                                     // Zoom the preview and
+                                                     // capture the result.
+                                                     // Show the pages as a
+                                                     // continuous column.
+                                                     window.ZoomPreviewForTest(
+                                                         0.0, 0.0, 0.45);
+                                                     QTimer::singleShot(
+                                                         600, [&window]() {
+                                                             window.grab().save(
+                                                                 "/tmp/"
+                                                                 "pf-ui-pages."
+                                                                 "png");
+                                                             std::cout
+                                                                 << "[ SAVE ] "
+                                                                    "page seam"
+                                                                    " screenshot"
+                                                                    "\n";
+                                                             window.ZoomPreviewForTest(
+                                                                 2.5, 0.05,
+                                                                 0.12);
+                                                         });
+                                                     QTimer::singleShot(
+                                                         1500, [&window]() {
+                                                             window.grab().save(
+                                                                 "/tmp/"
+                                                                 "pf-ui-zoomed."
+                                                                 "png");
+                                                             std::cout
+                                                                 << "[ SAVE ] "
+                                                                    "zoomed "
+                                                                    "screenshot"
+                                                                    "\n";
+                                                             QApplication::
+                                                                 exit(0);
+                                                         });
                                                  });
                                          },
                                          Qt::QueuedConnection);

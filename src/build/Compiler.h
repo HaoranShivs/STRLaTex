@@ -48,7 +48,12 @@ public:
 
 class TectonicCompiler final : public ICompiler {
 public:
-    explicit TectonicCompiler(std::string executable);
+    // cache_dir, when it exists, is exported as TECTONIC_CACHE_DIR and HOME
+    // for the tectonic child process. That pins builds to the bundle shipped
+    // with the project instead of whatever cache the ambient $HOME holds,
+    // which keeps offline builds reproducible.
+    explicit TectonicCompiler(std::string executable,
+                              std::string cache_dir = {});
 
     CompileResult Compile(
         const CompileRequest& request,
@@ -56,6 +61,7 @@ public:
 
 private:
     std::string executable_;
+    std::string cache_dir_;
 };
 
 class MockCompiler final : public ICompiler {

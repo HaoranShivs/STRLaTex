@@ -64,6 +64,16 @@ public:
 
     Result<NodeId, EditError> InsertSubsection(size_t section_index, size_t index,
                                                InlineContent title, NodeId id = NodeId{});
+    // Insert a subsection heading directly after `anchor` in reading order.
+    //
+    // A section stores its own blocks before its subsections, so a heading can
+    // only appear at a position the model can express. "Insert here" therefore
+    // means: the blocks that follow the anchor become the new subsection's
+    // content, and the heading appears exactly where it was asked for. When
+    // the anchor is a subsection (or a block inside one) nothing moves.
+    Result<NodeId, EditError> InsertSubsectionAfter(const NodeId& anchor,
+                                                    InlineContent title,
+                                                    NodeId id = NodeId{});
     Result<void, EditError> DeleteSubsection(size_t section_index, size_t subsection_index);
     Result<void, EditError> MoveSubsection(size_t section_index, size_t from, size_t to);
 

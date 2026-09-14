@@ -54,6 +54,17 @@ public:
 
     std::optional<QString> FocusedNodeId() const;
 
+    // True while the focused row holds text the user has typed but that has
+    // not been committed to the document yet. Callers must not rebuild the
+    // rows while this is true, or the in-progress input would be destroyed.
+    bool HasUncommittedFocus() const;
+
+    // Restyle rows from the current template hints without touching editors.
+    void RefreshHints();
+
+    // Commit the focused row now (used before structural edits and builds).
+    void CommitFocused();
+
 signals:
     // Field edits (committed on focus-out / Enter).
     void TitleEdited(const QString& text);
@@ -66,6 +77,15 @@ signals:
     void SectionRenamed(const QString& node_id, const QString& text);
     void SubsectionRenamed(const QString& node_id, const QString& text);
     void CaptionEdited(const QString& node_id, const QString& text);
+
+    // Emitted after a row commits its text (changed or not). Lets the window
+    // run a refresh it deferred while the user was still typing.
+    void RowCommitted();
+    // Author <-> institution binding changed from the graphical panel.
+    void AuthorAffiliationToggled(int author_index, const QString& affiliation_id,
+                                  bool linked);
+    // Drag-and-drop reorder: put `node_id` directly after `anchor`.
+    void MoveBlockToRequested(const QString& node_id, const QString& anchor);
 
     // Structure ops from "/" menu, "+" between blocks, and block menus.
     void InsertBlockRequested(const QString& block_type, const QString& after_node);
@@ -85,6 +105,10 @@ private:
         QWidget* card = nullptr;
         QPlainTextEdit* editor = nullptr;  // null for figure/table-only blocks
         QString commit_role;  // which signal to emit on commit
+        // Text last known to be in the document for this row. Commits that
+        // would write the same value are dropped, which is what keeps a
+        // programmatic restyle from cycling into edit -> rebuild -> edit.
+        QString committed_text;
         bool required = false;
     };
 
@@ -94,6 +118,14 @@ private:
     QPlainTextEdit* NewEditor(QWidget* card, const QString& text, bool mono,
                               int min_lines, bool single_line = false);
     void CommitBlock(Block& block);
+    // Softens the hard line breaks of a pasted paragraph in one row and
+    // commits the result (used by the block menu's "Reflow Text").
+    void ReflowRow(QWidget* card, const QString& node_id);
+    // Hover affordance between blocks: creates the strip and the menu it opens.
+    QWidget* MakeGap(const QString& anchor);
+    void ShowInsertMenu(const QString& anchor, QWidget* source);
+    // One row per author under the Authors card: pick the institutions.
+    void BuildAuthorBindingPanel(QWidget* card, const FrontMatter& front);
     void OpenSlashMenu(QPlainTextEdit* origin);
     void OpenAtMenu(QPlainTextEdit* origin);
     void ApplyHints();

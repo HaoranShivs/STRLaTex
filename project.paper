@@ -1,0 +1,17 @@
+{
+  "assets": [],
+  "bibliographyPath": "references.bib",
+  "body": {
+    "sections": []
+  },
+  "frontMatter": {
+    "affiliations": [],
+    "authors": [],
+    "keywords": [],
+    "title": []
+  },
+  "projectId": "p1",
+  "revision": 579,
+  "schemaVersion": "1",
+  "template": "generic-article"
+}

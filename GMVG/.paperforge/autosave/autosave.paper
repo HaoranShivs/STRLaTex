@@ -1,0 +1,130 @@
+{
+  "assets": [],
+  "bibliographyPath": "references.bib",
+  "body": {
+    "sections": [
+      {
+        "blocks": [
+          {
+            "content": [
+              {
+                "text": "In recent years, infrared small target detection technologies have become increasingly significant in multiple fields, includ ing ecological environment monitoring[1], marine rescue[2], [3] and military surveillance[4], [5]. This is because infrared light exhibits a longer working range and stronger penetration capability compared to visible light. In IRSTD tasks, targets are generally very small, weak, and are often embedded in complex backgrounds. In IRSTD tasks, targets typically include drones, aerostats, and ships, which commonly exhibit the following characteristics[6]: (i) Low target energy: Due to severe signal attenuation over long-distance propagation, the received infrared signal is weak. This results in low contrast between the target and strong background clutter, making the target highly susceptible to being obscured by background noise. (ii) Small target size: At long imaging ranges, targets occupy only a few pixels in the image and lack discernible texture or structural details. (iii) Complex background: The operational environment often contains numerous interfering objects that introduce edges, corners, and other salient features, significantly complicating the accurate discrimination of small targets from the background. Some examples are shown in Fig. 1. Therefore, efficiently and accurately detecting infrared small targets remains a critical challenge.\nTo address these challenges, various IRSTD methods have been proposed. These solutions can generally be catego rized into two groups: model-driven methods and data-driven methods[7]. Model-driven approaches [8], [9], [10] intuitively incorporate prior knowledge of IRSTD and offer high in terpretability. However, they suffer from limited robustness across diverse scenarios and often require manual parameter tuning to achieve satisfactory performance[11]. In recent years, data-driven methods have become more popular among re searchers because of their better performance and robustness. However, developing data-driven methods heavily relies on the high quality and quantity of the training data[11], [12], [13], [14]. Nevertheless, experience data supports that pixel-level annotation for target detection is very costly[11].",
+                "type": "text"
+              }
+            ],
+            "id": "n2",
+            "type": "paragraph"
+          },
+          {
+            "content": [
+              {
+                "text": "To address these challenges, various IRSTD methods have been proposed. These solutions can generally be catego rized into two groups: model-driven methods and data-driven methods[7]. Model-driven approaches [8], [9], [10] intuitively incorporate prior knowledge of IRSTD and offer high in terpretability. However, they suffer from limited robustness across diverse scenarios and often require manual parameter tuning to achieve satisfactory performance[11]. In recent years, data-driven methods have become more popular among re searchers because of their better performance and robustness. However, developing data-driven methods heavily relies on the high quality and quantity of the training data[11], [12], [13], [14]. Nevertheless, experience data supports that pixel-level annotation for target detection is very costly[11].",
+                "type": "text"
+              }
+            ],
+            "id": "n3",
+            "type": "paragraph"
+          }
+        ],
+        "id": "n1",
+        "subsections": [
+          {
+            "blocks": [],
+            "id": "n12",
+            "title": []
+          },
+          {
+            "blocks": [],
+            "id": "n13",
+            "title": []
+          },
+          {
+            "blocks": [],
+            "id": "n14",
+            "title": []
+          }
+        ],
+        "title": [
+          {
+            "text": "Introduction",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "blocks": [
+          {
+            "content": [
+              {
+                "text": "sdfaas",
+                "type": "text"
+              }
+            ],
+            "id": "n6",
+            "type": "paragraph"
+          }
+        ],
+        "id": "n5",
+        "subsections": [],
+        "title": [
+          {
+            "text": "Relate Work",
+            "type": "text"
+          }
+        ]
+      }
+    ]
+  },
+  "frontMatter": {
+    "abstract": [
+      {
+        "text": "The success of deep learning in infrared small target detection (IRSTD) relies on large-scale, precise pixel-level annotations, yet their high acquisition cost and inevitable noise impede further progress. Recently, point-supervised learning has demonstrated remarkable potential in mitigating these issues in IRSTD. The dominant paradigm involves generating pixel level pseudo-labels from point annotations, then applied to train deep segmentation networks. However, some proposed pseudo label generation strategies rely on measuring intensity similarity and spatial proximity between pixels to classify them. This approach leads to an unreasonable target probability distribution wherein, even among pixels that truly belong to the target, those close to the certain point, typically annotated point, are assigned high probabilities, while those farther away receive significantly lower probabilities. To address this, we propose a shape-prior-driven framework—Gradient-Guided Minimum Variance Growth Filter with Deep Learning Refinement—that produces high-quality pseudo-labels by modeling edge intensity and closure, followed by iterative refinement with a deep seg mentation network. Leveraging structural consistency over pixel level similarity, our approach effectively handles irregular and low-saliency targets. Crucially, our method avoids distance-based assumptions, yielding robustness to point annotation deviations. The proposed method generally outperforms existing approaches as validated by plenty of experiments on three representative datasets.",
+        "type": "text"
+      }
+    ],
+    "affiliations": [
+      {
+        "id": "aff1",
+        "name": "GUET"
+      },
+      {
+        "id": "aff2",
+        "name": "GETU"
+      }
+    ],
+    "authors": [
+      {
+        "affiliations": [
+          "aff1",
+          "aff2"
+        ],
+        "name": "shihaoran"
+      },
+      {
+        "affiliations": [
+          "aff1"
+        ],
+        "name": "weiliushen"
+      },
+      {
+        "affiliations": [
+          "aff1"
+        ],
+        "name": "lvguangrui"
+      }
+    ],
+    "keywords": [
+      "IRSTD; WSL"
+    ],
+    "title": [
+      {
+        "text": "GMVG",
+        "type": "text"
+      }
+    ]
+  },
+  "projectId": "p1",
+  "revision": 92,
+  "schemaVersion": "1",
+  "template": "ieee-conference"
+}

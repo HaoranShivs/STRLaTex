@@ -1,0 +1,168 @@
+{
+  "assets": [
+    {
+      "fileSize": 109836,
+      "hash": "8a0862a6a871b3d8",
+      "height": 633,
+      "id": "a1",
+      "mediaType": "image/png",
+      "originalName": "Screenshot 2024-05-01 092636.png",
+      "path": "Screenshot 2024-05-01 092636.png",
+      "width": 1101
+    }
+  ],
+  "bibliographyPath": "references.bib",
+  "body": {
+    "sections": [
+      {
+        "blocks": [
+          {
+            "content": [],
+            "id": "n2",
+            "type": "paragraph"
+          },
+          {
+            "content": [
+              {
+                "text": "In recent years, infrared small target detection technologies\nhave become increasingly significant in multiple fields, includ\ning ecological environment monitoring[1], marine rescue[2],\n[3] and military surveillance[4], [5]. This is because infrared\nlight exhibits a longer working range and stronger penetration\ncapability compared to visible light. In IRSTD tasks, targets\nare generally very small, weak, and are often embedded\nin complex backgrounds. In IRSTD tasks, targets typically\ninclude drones, aerostats, and ships, which commonly exhibit\nthe following characteristics[6]: (i) Low target energy: Due to\nsevere signal attenuation over long-distance propagation, the\nreceived infrared signal is weak. This results in low contrast\nbetween the target and strong background clutter, making the\ntarget highly susceptible to being obscured by background\nnoise. (ii) Small target size: At long imaging ranges, targets\noccupy only a few pixels in the image and lack discernible\ntexture or structural details. (iii) Complex background: The\noperational environment often contains numerous interfering\nobjects that introduce edges, corners, and other salient features,\nsignificantly complicating the accurate discrimination of small\ntargets from the background. Some examples are shown in\nFig. 1. Therefore, efficiently and accurately detecting infrared\nsmall targets remains a critical challenge.",
+                "type": "text"
+              }
+            ],
+            "id": "n1",
+            "type": "paragraph"
+          },
+          {
+            "caption": [
+              {
+                "text": "tab.12",
+                "type": "text"
+              }
+            ],
+            "cells": [
+              [
+                [],
+                [],
+                []
+              ],
+              [
+                [],
+                [],
+                []
+              ],
+              [
+                [],
+                [],
+                []
+              ]
+            ],
+            "columns": [
+              "left",
+              "left",
+              "left"
+            ],
+            "hasHeaderRow": true,
+            "id": "n2",
+            "type": "table"
+          },
+          {
+            "alt": "",
+            "assetId": "a1",
+            "caption": [
+              {
+                "text": "Fig1",
+                "type": "text"
+              }
+            ],
+            "id": "n3",
+            "type": "figure",
+            "width": "100"
+          },
+          {
+            "id": "n5",
+            "math": "",
+            "numbered": true,
+            "type": "displayEquation"
+          },
+          {
+            "content": [],
+            "id": "n4",
+            "type": "paragraph"
+          },
+          {
+            "content": [],
+            "id": "n3",
+            "type": "paragraph"
+          },
+          {
+            "content": [
+              {
+                "text": "In recent years, infrared small target detection technologies\nhave become increasingly significant in multiple fields, includ\ning ecological environment monitoring[1], marine rescue[2],\n[3] and military surveillance[4], [5]. This is because infrared\nlight exhibits a longer working range and stronger penetration\ncapability compared to visible light. In IRSTD tasks, targets\nare generally very small, weak, and are often embedded\nin complex backgrounds. In IRSTD tasks, targets typically\ninclude drones, aerostats, and ships, which commonly exhibit\nthe following characteristics[6]: (i) Low target energy: Due to\nsevere signal attenuation over long-distance propagation, the\nreceived infrared signal is weak. This results in low contrast\nbetween the target and strong background clutter, making the\ntarget highly susceptible to being obscured by background\nnoise. (ii) Small target size: At long imaging ranges, targets\noccupy only a few pixels in the image and lack discernible\ntexture or structural details. (iii) Complex background: The\noperational environment often contains numerous interfering\nobjects that introduce edges, corners, and other salient features,\nsignificantly complicating the accurate discrimination of small\ntargets from the background. Some examples are shown in\nFig. 1. Therefore, efficiently and accurately detecting infrared\nsmall targets remains a critical challenge.",
+                "type": "text"
+              }
+            ],
+            "id": "n1",
+            "type": "paragraph"
+          }
+        ],
+        "id": "n1",
+        "subsections": [],
+        "title": [
+          {
+            "text": "Introduction",
+            "type": "text"
+          }
+        ]
+      }
+    ]
+  },
+  "frontMatter": {
+    "abstract": [
+      {
+        "text": "Abstract—The success of deep learning in infrared small\ntarget detection (IRSTD) relies on large-scale, precise pixel-level\nannotations, yet their high acquisition cost and inevitable noise\nimpede further progress. Recently, point-supervised learning has\ndemonstrated remarkable potential in mitigating these issues\nin IRSTD. The dominant paradigm involves generating pixel\nlevel pseudo-labels  point annotations, then applied to train\ndeep segmentation networks. However, some proposed pseudo\nlabel generation strategies rely on measuring intensity similarity\nand spatial proximity between pixels to classify them. This\napproach leads to an unreasonable target probability distribution\nwherein, even among pixels that truly belong to the target,\nthose close to the certain point, typically annotated point, are\nassigned high probabilities, while those farther away receive\nsignificantly lower probabilities. To address this, we propose\na shape-prior-driven framework—Gradient-Guided Minimumfrom\nVariance Growth Filter with Deep Learning Refinement—that\nproduces high-quality pseudo-labels by modeling edge intensity\nand closure, followed by iterative refinement with a deep seg\nmentation network. Leveraging structural consistency over pixel\nlevel similarity, our approach effectively handles irregular and\nlow-saliency targets. Crucially, our method avoids distance-based\nassumptions, yielding robustness to point annotation deviations.\nThe proposed method generally outperforms existing approaches\nas validated by plenty of experiments on three representative\ndatasets.",
+        "type": "text"
+      }
+    ],
+    "affiliations": [
+      {
+        "id": "aff3",
+        "name": "GETU"
+      },
+      {
+        "id": "aff1",
+        "name": "EGET"
+      }
+    ],
+    "authors": [
+      {
+        "affiliations": [],
+        "name": "Shi Haoran 12"
+      },
+      {
+        "affiliations": [],
+        "name": "Wei Liusheng 2"
+      },
+      {
+        "affiliations": [],
+        "name": "Lv GuangRui 2"
+      },
+      {
+        "affiliations": [],
+        "name": "Cai Guoyong 2"
+      }
+    ],
+    "keywords": [
+      "IRSTD",
+      "WSL"
+    ],
+    "title": [
+      {
+        "text": "GMVG",
+        "type": "text"
+      }
+    ]
+  },
+  "projectId": "p1",
+  "revision": 1682,
+  "schemaVersion": "1",
+  "template": "generic-article"
+}

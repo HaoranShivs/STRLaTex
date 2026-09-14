@@ -113,6 +113,26 @@ ProjectController::ResolveInsertionPoint(const NodeId& anchor) const {
     return std::nullopt;
 }
 
+namespace {
+
+// 1-based institution ordinal encoded by a superscript character: the
+// Institution row renders superscripts, so marker N means slot N.
+int SuperscriptOrdinal(QChar ch) {
+    switch (ch.unicode()) {
+        case 0x00B9: return 1;
+        case 0x00B2: return 2;
+        case 0x00B3: return 3;
+        case 0x2070: return 10;  // superscript zero: tenth institution
+        default: break;
+    }
+    if (ch.unicode() >= 0x2074 && ch.unicode() <= 0x2079) {
+        return ch.unicode() - 0x2074 + 4;  // superscripts four..nine
+    }
+    return 0;
+}
+
+}  // namespace
+
 bool ProjectController::NewProject(const QString& dir) {
     bool ok = session_->NewProject(ToStd(dir));
     if (ok) emit documentChanged();
@@ -139,9 +159,12 @@ bool ProjectController::OpenProjectWithRecovery(const QString& dir,
 
 void ProjectController::CloseProject() { session_->CloseProject(); }
 
+
 void ProjectController::Save() { session_->Save(); }
 
 void ProjectController::StartAutosave() { session_->StartAutosaveTimer(); }
+
+void ProjectController::StopAutosave() { session_->StopAutosaveTimer(); }
 
 void ProjectController::EmitDocumentChanged() {
     emit documentChanged();
@@ -171,33 +194,40 @@ EditResult ProjectController::SetAbstract(const QString& text) {
 }
 
 EditResult ProjectController::SetAuthorsText(const QString& comma_separated) {
-    // Parse "Alice, Bob, Carol" into author entries; preserve affiliation
-    // links by position when the count is unchanged.
-    const auto& fm_old = session_->state().document().front_matter();
-    std::vector<size_t> old_counts;
-    for (const auto& a : fm_old.authors) old_counts.push_back(a.affiliations.size());
-
+    // Parse "Alice, Bob, Carol" into author entries. Superscript markers keep
+    // their institution binding, so editing names never loses the link.
     QStringList names = comma_separated.split(
         QRegularExpression(QStringLiteral(R"([,\n\x{00B7}]+)")),
         Qt::SkipEmptyParts);
-    // Rebuild authors, carrying over affiliation markers (¹²³ parsed away).
     std::vector<Author> authors;
+    const auto& affiliations =
+        session_->state().document().front_matter().affiliations;
     for (const auto& raw : names) {
         Author author;
         QString name = raw.trimmed();
-        // Strip trailing superscript affiliation markers for the name.
-        static const QRegularExpression supers(
-            QStringLiteral(R"([\x{00B9}\x{00B2}\x{00B3}\x{2070}-\x{209F}]+$)"));
-        name.remove(supers);
-        author.name = ToStd(name.trimmed());
-        authors.push_back(std::move(author));
-    }
-    // Re-link affiliations round-robin to first author only when list changed
-    // size (V1 heuristic: keep simple).
-    if (authors.size() == old_counts.size()) {
-        for (size_t i = 0; i < authors.size(); ++i) {
-            (void)old_counts[i];  // links already lost on rebuild; see below
+        // Superscript markers after a name select institutions by their
+        // 1-based position in the Institution row: "Alice\u00b9, Bob\u00b2".
+        static const QRegularExpression markers(QStringLiteral(
+            R"(([\x{00B9}\x{00B2}\x{00B3}\x{2070}-\x{209F}]+)\s*$)"));
+        const auto match = markers.match(name);
+        if (match.hasMatch()) {
+            for (const QChar& marker : match.captured(1)) {
+                const int ordinal = SuperscriptOrdinal(marker);
+                if (ordinal >= 1 &&
+                    static_cast<size_t>(ordinal) <= affiliations.size()) {
+                    author.affiliations.push_back(
+                        affiliations[static_cast<size_t>(ordinal) - 1].id);
+                }
+            }
+            name.remove(match.capturedStart(0), match.capturedLength(0));
         }
+        author.name = ToStd(name.trimmed());
+        // With exactly one institution and no markers there is nothing to
+        // disambiguate, so everyone belongs to it.
+        if (author.affiliations.empty() && affiliations.size() == 1) {
+            author.affiliations.push_back(affiliations.front().id);
+        }
+        authors.push_back(std::move(author));
     }
 
     // Replace the author list via Remove/Add payloads (undoable snapshot
@@ -220,25 +250,73 @@ EditResult ProjectController::SetAuthorsText(const QString& comma_separated) {
     return r;
 }
 
+EditResult ProjectController::SetAuthorAffiliation(
+    size_t author_index, const AffiliationId& affiliation, bool linked) {
+    const auto& authors = session_->state().document().front_matter().authors;
+    if (author_index >= authors.size()) {
+        return EditResult::Fail(FailureReason::InvalidTarget,
+                                "author index out of range");
+    }
+    Author updated = authors[author_index];
+    std::vector<AffiliationId> links;
+    for (const auto& id : updated.affiliations) {
+        if (!(id == affiliation)) links.push_back(id);
+    }
+    if (linked) {
+        // Keep the document's institution order so the superscripts read 1,2.
+        const auto& all =
+            session_->state().document().front_matter().affiliations;
+        std::vector<AffiliationId> ordered;
+        for (const auto& candidate : all) {
+            if (candidate.id == affiliation) ordered.push_back(candidate.id);
+            for (const auto& existing : links) {
+                if (existing == candidate.id) ordered.push_back(existing);
+            }
+        }
+        if (ordered.size() != links.size() + 1) {
+            return EditResult::Fail(FailureReason::InvalidTarget,
+                                    "unknown institution");
+        }
+        links = std::move(ordered);
+    }
+    updated.affiliations = std::move(links);
+    UpdateAuthorPayload payload;
+    payload.index = author_index;
+    payload.author = std::move(updated);
+    auto result = ExecuteAndNotify(std::move(payload));
+    if (result.status == EditStatus::Applied) EmitDocumentChanged();
+    return result;
+}
+
 EditResult ProjectController::SetAffiliationsText(
     const QString& semicolon_separated) {
     SetAffiliationsPayload p;
     QStringList names = semicolon_separated.split(
         QRegularExpression(QStringLiteral(R"([;\n]+)")), Qt::SkipEmptyParts);
+    const auto& existing =
+        session_->state().document().front_matter().affiliations;
+    size_t slot = 0;
     for (const auto& raw : names) {
         QString name = raw.trimmed();
-        // Strip leading superscript markers (¹ ² ...).
-        static const QRegularExpression leading(
-            QStringLiteral(R"(^[\x{00B9}\x{00B2}\x{00B3}\x{2070}-\x{209F}]+\s*)"));
+        // Drop the leading ordinal marker so "1 University" and the
+        // superscript form both parse to the same institution.
+        static const QRegularExpression leading(QStringLiteral(
+            R"(^[\x{00B9}\x{00B2}\x{00B3}\x{2070}-\x{209F}]+\s*)"));
         name.remove(leading);
         if (name.isEmpty()) continue;
         Affiliation aff;
-        aff.id = AffiliationId(IdGenerator::NewAffiliationId());
+        // Reuse the id already occupying this slot. Affiliation ids are what
+        // authors reference, so minting a fresh one per keystroke would
+        // silently detach every author from its institution.
+        aff.id = slot < existing.size()
+                     ? existing[slot].id
+                     : AffiliationId(IdGenerator::NewAffiliationId());
         aff.name = ToStd(name);
-
         p.affiliations.push_back(std::move(aff));
+        ++slot;
     }
     auto r = session_->Execute(MakeCmd(std::move(p)));
+    // EditingSystem prunes author links that no longer resolve.
     if (r.status == EditStatus::Applied) EmitDocumentChanged();
     return r;
 }
@@ -307,39 +385,13 @@ EditResult ProjectController::InsertSubsection(size_t section_index,
 
 EditResult ProjectController::InsertSubsectionAfter(const NodeId& anchor,
                                                     const QString& title) {
-    const auto& sections = session_->state().document().body().sections;
-    for (size_t si = 0; si < sections.size(); ++si) {
-        bool belongs_to_section = sections[si].id == anchor;
-        if (!belongs_to_section) {
-            for (const auto& block : sections[si].blocks) {
-                belongs_to_section = std::visit(
-                    [&](const auto& value) { return value.id == anchor; },
-                    block);
-                if (belongs_to_section) break;
-            }
-        }
-        if (belongs_to_section) return InsertSubsection(si, title);
-        for (size_t ui = 0; ui < sections[si].subsections.size(); ++ui) {
-            const auto& subsection = sections[si].subsections[ui];
-            bool belongs_to_subsection = subsection.id == anchor;
-            if (!belongs_to_subsection) {
-                for (const auto& block : subsection.blocks) {
-                    belongs_to_subsection = std::visit(
-                        [&](const auto& value) { return value.id == anchor; },
-                        block);
-                    if (belongs_to_subsection) break;
-                }
-            }
-            if (!belongs_to_subsection) continue;
-            InsertSubsectionPayload payload;
-            payload.section_index = si;
-            payload.index = ui + 1;
-            payload.title = InlineFromText(ToStd(title));
-            return ExecuteAndNotify(std::move(payload));
-        }
-    }
-    return EditResult::Fail(FailureReason::InvalidTarget,
-                            "subsection insertion anchor not found");
+    // The core resolves the anchor and, for a block, hands the following
+    // blocks to the new subsection so the heading lands where it was asked
+    // for rather than at the end of the section.
+    InsertSubsectionAfterPayload payload;
+    payload.after = anchor;
+    payload.title = InlineFromText(ToStd(title));
+    return ExecuteAndNotify(std::move(payload));
 }
 
 EditResult ProjectController::InsertParagraph(const NodeId& parent,
@@ -513,6 +565,120 @@ EditResult ProjectController::DeleteNode(const NodeId& node) {
         }
     }
     return DeleteBlock(node);
+}
+
+EditResult ProjectController::MoveNodeAfter(const NodeId& node,
+                                            const NodeId& anchor) {
+    if (node == anchor) return EditResult::Fail(FailureReason::InvalidTarget,
+                                                "already in place");
+    const auto& sections = session_->state().document().body().sections;
+
+    // Where a node sits: its section, and the subsection/block slot inside it.
+    struct Location {
+        size_t section = 0;
+        int subsection = -1;  // -1: directly in the section
+        int block = -1;       // -1: not a block
+    };
+    const auto locate = [&sections](const NodeId& id) -> std::optional<Location> {
+        for (size_t s = 0; s < sections.size(); ++s) {
+            if (sections[s].id == id) return Location{s, -1, -1};
+            for (size_t b = 0; b < sections[s].blocks.size(); ++b) {
+                const NodeId block_id = std::visit(
+                    [](const auto& value) { return value.id; },
+                    sections[s].blocks[b]);
+                if (block_id == id) {
+                    return Location{s, -1, static_cast<int>(b)};
+                }
+            }
+            for (size_t u = 0; u < sections[s].subsections.size(); ++u) {
+                if (sections[s].subsections[u].id == id) {
+                    return Location{s, static_cast<int>(u), -1};
+                }
+                for (size_t b = 0;
+                     b < sections[s].subsections[u].blocks.size(); ++b) {
+                    const NodeId block_id = std::visit(
+                        [](const auto& value) { return value.id; },
+                        sections[s].subsections[u].blocks[b]);
+                    if (block_id == id) {
+                        return Location{s, static_cast<int>(u),
+                                        static_cast<int>(b)};
+                    }
+                }
+            }
+        }
+        return std::nullopt;
+    };
+
+    const auto source = locate(node);
+    const auto target = locate(anchor);
+    if (!source || !target) {
+        return EditResult::Fail(FailureReason::InvalidTarget,
+                                "move target not found");
+    }
+    const bool node_is_block = source->block >= 0;
+    const bool node_is_subsection = !node_is_block && source->subsection >= 0;
+
+    if (node_is_block) {
+        // The anchor's container is the destination list; a section or
+        // subsection anchor means "the start of that group".
+        const size_t section_index =
+            target->section;
+        const int target_subsection = target->subsection;
+        NodeId parent = sections[section_index].id;
+        if (target_subsection >= 0) {
+            parent = sections[section_index]
+                         .subsections[static_cast<size_t>(target_subsection)]
+                         .id;
+        }
+        size_t index = 0;
+        if (target->block >= 0) {
+            index = static_cast<size_t>(target->block) + 1;
+            // Moving an earlier block out of the same list shifts the anchor.
+            if (source->section == target->section &&
+                source->subsection == target->subsection &&
+                source->block < target->block) {
+                --index;
+            }
+        }
+        MoveBlockPayload payload;
+        payload.node = node;
+        payload.new_parent = parent;
+        payload.new_index = index;
+        return ExecuteAndNotify(std::move(payload));
+    }
+
+    if (node_is_subsection) {
+        if (source->section != target->section) {
+            return EditResult::Fail(
+                FailureReason::InvalidTarget,
+                "a subsection can only be reordered inside its section");
+        }
+        // MoveSubsection takes an insert-before index in the original list.
+        // After a subsection: right behind it. After a block of the section
+        // itself: the first subsection slot, which is the earliest the model
+        // can render. After the section title: append.
+        size_t to = 0;
+        if (target->subsection >= 0) {
+            to = static_cast<size_t>(target->subsection) + 1;
+        } else if (target->block < 0) {
+            to = sections[source->section].subsections.size();
+        }
+        MoveSubsectionPayload payload;
+        payload.section_index = source->section;
+        payload.from = static_cast<size_t>(source->subsection);
+        payload.to = to;
+        return ExecuteAndNotify(std::move(payload));
+    }
+
+    // A section moves among sections.
+    if (target->section == source->section) {
+        return EditResult::Fail(FailureReason::InvalidTarget,
+                                "already in place");
+    }
+    MoveSectionPayload payload;
+    payload.from = source->section;
+    payload.to = target->section + 1;
+    return ExecuteAndNotify(std::move(payload));
 }
 
 EditResult ProjectController::MoveNode(const NodeId& node, int direction) {

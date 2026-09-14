@@ -127,14 +127,52 @@ int RunCommand(const std::string& command,
 #endif
 }
 
+// Resolve the tectonic bundle cache:
+//   1. an explicitly configured directory,
+//   2. the ambient TECTONIC_CACHE_DIR / PAPERFORGE_TECTONIC_CACHE,
+//   3. the cache shipped next to the bundled tectonic binary
+//      (tools/bin/tectonic -> tools/tectonic-cache).
+// Pinning the cache keeps builds offline-reproducible instead of depending on
+// a writable $HOME/.cache/Tectonic.
+std::string ResolveCacheDir(const std::string& configured,
+                            const std::string& executable) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!configured.empty()) return configured;
+    for (const char* name :
+         {"TECTONIC_CACHE_DIR", "PAPERFORGE_TECTONIC_CACHE"}) {
+        const char* value = std::getenv(name);
+        if (value && *value && fs::exists(value, ec)) return value;
+    }
+    if (!executable.empty()) {
+        const fs::path exe(executable);
+        for (const fs::path& candidate :
+             {exe.parent_path().parent_path() / "tectonic-cache",
+              exe.parent_path() / "tectonic-cache"}) {
+            if (fs::exists(candidate / "indexes", ec) ||
+                fs::exists(candidate / ".cache", ec)) {
+                return candidate.string();
+            }
+        }
+    }
+    return {};
+}
+
 }  // namespace
 
-TectonicCompiler::TectonicCompiler(std::string executable)
-    : executable_(std::move(executable)) {
+TectonicCompiler::TectonicCompiler(std::string executable,
+                                 std::string cache_dir)
+    : executable_(std::move(executable)), cache_dir_(std::move(cache_dir)) {
     std::error_code ec;
     if (!executable_.empty() &&
         std::filesystem::exists(executable_, ec)) {
         executable_ = std::filesystem::absolute(executable_, ec).string();
+    }
+    cache_dir_ = ResolveCacheDir(cache_dir_, executable_);
+    if (!cache_dir_.empty() && std::filesystem::exists(cache_dir_, ec)) {
+        cache_dir_ = std::filesystem::absolute(cache_dir_, ec).string();
+    } else {
+        cache_dir_.clear();
     }
 }
 
@@ -160,9 +198,16 @@ CompileResult TectonicCompiler::Compile(
     }
 
     const auto log_path = request.workspace / "build.log";
+    // Pin the bundle cache when one was configured for this build.
+    std::string env_prefix;
+    if (!cache_dir_.empty()) {
+        env_prefix = "TECTONIC_CACHE_DIR=" + QuoteShell(cache_dir_) +
+                     " HOME=" + QuoteShell(cache_dir_) + " ";
+    }
     const std::string command =
         "cd " + QuoteShell(request.workspace.string()) + " && " +
-        QuoteShell(executable_) + " -X compile --keep-logs --outdir " +
+        env_prefix + QuoteShell(executable_) +
+        " -X compile --keep-logs --outdir " +
         QuoteShell(request.workspace.string()) + " " +
         QuoteShell(request.package.entry_file) + " >" +
         QuoteShell(log_path.string()) + " 2>&1";

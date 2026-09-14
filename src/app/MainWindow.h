@@ -19,6 +19,7 @@ namespace pf::gui {
 
 class BlockEditor;
 class OutlinePanel;
+class PdfPreview;
 class ProblemsPanel;
 class WelcomePage;
 
@@ -27,9 +28,13 @@ class MainWindow : public QMainWindow {
 
 public:
     explicit MainWindow(QWidget* parent = nullptr);
+    ~MainWindow() override;
     ProjectController* controller() { return controller_; }
     // Programmatic open (used by tests/tools): switches to the workspace.
     bool OpenProjectDir(const QString& dir);
+    // Programmatic preview zoom/scroll (used by the UI verification tool).
+    void ZoomPreviewForTest(double zoom, double scroll_x = 0.0,
+                            double scroll_y = 0.0);
 
 private slots:
     void OnNewProject();
@@ -42,6 +47,7 @@ private slots:
     void OnChangeTemplate(const QString& template_id);
 
     void RefreshDocumentView();
+    void RefreshSidePanels();
     void OnBuildFinished(bool success, const QString& pdf_path);
     void OnDiagnosticsUpdated(const QList<QString>& problems);
     void OnBuildStatusChanged(const QString& status);
@@ -69,7 +75,7 @@ private:
     QSplitter* vertical_splitter_ = nullptr;
     OutlinePanel* outline_;
     BlockEditor* editor_;
-    QLabel* preview_label_;
+    PdfPreview* preview_;
     QWidget* preview_container_;
     ProblemsPanel* problems_;
     // Status bar
@@ -78,6 +84,11 @@ private:
     QLabel* word_count_label_;
     QString current_pdf_path_;
     int last_build_revision_ = -1;
+    // Set once the window is being destroyed: editor signals and document
+    // refreshes must then be ignored entirely.
+    bool shutting_down_ = false;
+    // Set when a refresh had to be skipped because the user was typing.
+    bool pending_structural_refresh_ = false;
     // Recent projects (QSettings-backed)
     QStringList recent_projects_;
 };

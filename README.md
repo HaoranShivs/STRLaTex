@@ -40,7 +40,7 @@ src/
 └── cli/           paperforge 命令行工具
 src/app/           Qt6 GUI（paperforge-gui）：结构化编辑器 + Outline + Problems
 │                  + Build 状态 + PDF 预览（pdftoppm 渲染）
-tests/             53 个单元 + 端到端测试（含真实 Tectonic 构建、自动保存恢复、
+tests/             55 个单元 + 端到端测试（含真实 Tectonic 构建、自动保存恢复、
 │                  模板必填校验、GUI 控制器全流程冒烟）
 tools/
 ├── bin/tectonic         静态链接的 tectonic 0.15.0
@@ -88,24 +88,72 @@ cmake --build build
 结构化论文编辑工作台——用户只编辑论文语义，不编辑排版代码：
 
 - **三栏布局**（可拖动）：Outline | Editor | Preview + Problems（18/52/30）
+- **作者-机构绑定（图形化）**：Authors 卡片下方是 **Institution links** 面板，
+  每个作者一行，点右侧胶囊按钮勾选所属机构（可多选），选择结果实时反映到
+  Authors 行的上标编号；也可以直接在 Authors 行输入 `姓名²` 这样的上标，两条
+  路径等价
+- **拖动重排**：卡片左上角的 `⋮⋮` 手柄可**拖动**，块之间的空隙是放置目标
+  （拖动时该缝隙变粗高亮），松手即按落点重排；`⋯` 菜单里的 Move Up / Move
+  Down 仍然可用
 - **Block 卡片编辑器**：Title / Authors / Institution / Abstract / Keywords /
-  Section / Paragraph / Equation 都是卡片，行高随内容自适应，居中限宽 820px
+  Section / Paragraph / Equation 都是卡片，居中限宽 820px
+  - **长文本块（摘要/段落/图题表题）自适应高度与宽度**：行高按换行后的真实
+    文本高度计算，正文铺满整块宽度并随窗口宽度重新换行
+  - **硬换行会自动软化**：从 PDF 复制来的段落是被预先折行成固定列的，单行
+    换行在文档模型里没有意义（LaTeX 视其为空格），因此粘贴时、提交时、以及
+    打开项目渲染时都会把单换行合并为空格、空行保留为分段；列表、编号、`\\`
+    显式换行等有结构的内容原样保留。块菜单里也有 **Reflow Text** 可手动整理
+    已有内容（`ReflowHardWrappedText`，核心库纯函数，有单测）
+  - 卡片**没有内部滚动条**：超长内容由编辑区整体的一根侧边滚动条承担。
+    高度测量要注意两个 Qt 陷阱：
+    `QPlainTextDocumentLayout` 的 `documentSize()`（以及 `QTextDocument::size()`）
+    返回的是**行数**而不是像素；而按块测量只在块已被布局时才有效，粘贴进来
+    的多行文本会量成一行。因此以 `QFontMetrics` + `Qt::TextWordWrap` 测量
+    纯文本为准，再与各块高度之和取较大值
   - hover 显示拖拽手柄 + 类型标签 + `⋯` 菜单（Move Up / Down / Delete），
     空间预留不跳动
   - 聚焦块左侧强调线；模板必填但为空的卡片红边高亮
+- **块间插入按钮**：每个块上下之间都有固定高度的空隙（始终占位，不跳动），
+  鼠标移入时显示一条强调线和圆形 `+`，点击即弹出块类型菜单并在该位置插入；
+  **最后一个块之后也有**，所以正文为空时（只有标题/作者/机构/摘要/关键词）
+  仍有一个入口用来建立第一个 section，不需要先找到任何块的菜单
 - **`/` 斜杠命令**：空行输入 `/` 弹出块创建菜单（Basic/Academic 分组，
   键盘 Up/Down/Enter/Esc + 文本过滤），完全非模态
 - **`@` 引用菜单**：输入 `@` 弹出 References / Sections / Figures 分组菜单，
   双击 Outline 的 References Tab 条目也可插入引用
-- **Outline 双 Tab**：Document（章节树，点击滚动定位）/ References（文献库，
-  可搜索）
+- **Subsection 插到点击处**：subsection 标题插入后，**其下方的块会归入该
+  subsection**（文档模型把 section 自身的块排在 subsections 之前，不这样做
+  标题只能落到最后）。因此"在这里插入 subsection"就是所见即所得
+- **Outline 双 Tab**：Document（摘要 + 章节树，点击滚动定位）/ References
+  （文献库，可搜索）
 - **结构化 Problems**：severity 分组 + All/Errors/Warnings 过滤 + Build Log Tab
 - **Build 按钮**：`Build ▶` → `Building ◌` → `✓ Built`（绿）/ `! Build failed`
   （红），状态栏显示构建阶段与 Revision
 - **Welcome 页**：New / Open / 最近项目（QSettings 持久化）
 - **状态栏**：✓Saved / ●Unsaved、Build 状态、字数统计
 - **自动保存**：30 秒后台保存；崩溃后重开提示恢复
-- **PDF 预览**：构建成功后 pdftoppm 渲染页面图像
+- **PDF 预览（多页连续 + 可缩放）**：构建成功后渲染**每一页**，按阅读顺序纵向
+  排列，页与页之间留出可见的缝隙；工具条显示 `p. 当前 / 总数`
+  - **惰性渲染**：只为视口附近的页保留位图（超出 ±2 页即释放），因此十几页的
+    论文不会因为预览吃掉几百 MB
+  - 每页渲染分辨率随缩放变化（96 DPI × 缩放，上限 300 DPI，140ms 去抖）
+  - **滚轮缩放**，以光标位置为锚点（指针下的文字不会跑掉）；Shift+滚轮横向
+    平移；按住左键/中键拖动平移；工具条有 `−` / 百分比 / `+` / 适宽 / `1:1`
+  - 缩放范围 25%–800%；放大后按新分辨率**重新光栅化**（96 DPI × 缩放，
+    上限 400 DPI，140ms 去抖），先拉伸位图保证跟手、再换成清晰页面
+- **作者 / 机构**：Institution 行支持任意多个机构（换行或 `;` 分隔），
+  渲染为编号列表；Authors 行写 `姓名\u00b9` 这样的上标即可绑定机构，
+  上标会从姓名中剥离并写入 `Author::affiliations`。机构 id 按位置复用，
+  编辑列表不会打断已有绑定；缩短列表时失效的绑定由 `EditingSystem` 清理
+- **输入保护（重要）**：内容提交发生在**失焦、Enter、Ctrl+Enter** 时，
+  没有"打字停顿就自动提交并刷新"的行为。行重建只在结构变化（增删/移动
+  块、章节变更、打开项目、撤销重做）时发生；只要有未提交的输入，重建就
+  被推迟，输入文本与光标位置都会保留。窗口关闭时会先尽力提交当前行，
+  且禁止在销毁过程中重建（否则析构触发的失焦提交会在半销毁的控件树上
+  重建编辑器并崩溃）
+- **构建缓存固定**：编译时把 `TECTONIC_CACHE_DIR`/`HOME` 指向项目自带的
+  `tools/tectonic-cache`（可用 `PAPERFORGE_TECTONIC_CACHE` 覆盖），
+  因此离线构建不依赖 `~/.cache/Tectonic` 是否可写
 
 ### 命令行
 
@@ -131,8 +179,8 @@ MyPaper/
 ## 测试
 
 ```bash
-./build/tests/pf_tests          # 53 个测试
-ctest --test-dir build          # 或通过 CTest
+./build/tests/pf_tests          # 55 个测试
+ctest --test-dir build          # 或通过 CTest（pf_tests + gui_input_persistence）
 ```
 
 覆盖：Document schema/编辑器约束/Table 矩形性、Editing 协议（stale 拒绝、
@@ -145,6 +193,17 @@ ProjectSession 工作流、**真实 Tectonic 端到端 PDF 构建**，以及 GUI
 
 ```bash
 QT_QPA_PLATFORM=offscreen ./build/src/app/paperforge-gui-smoke
+```
+
+两个 GUI 回归测试（都可无头运行）：
+
+```bash
+# 输入保护、行高自适应、硬换行重排、块间插入、拖动重排、多页预览、
+# 预览缩放、作者机构绑定的 86 项检查
+QT_QPA_PLATFORM=offscreen ./build/src/app/paperforge-gui-persistence-test
+
+# 截图验证：/tmp/pf-ui-workspace.png、/tmp/pf-ui-built.png、/tmp/pf-ui-zoomed.png
+QT_QPA_PLATFORM=offscreen ./build/src/app/paperforge-ui-verify
 ```
 
 ## V1 范围外（按基线）

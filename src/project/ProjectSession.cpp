@@ -26,7 +26,8 @@ ProjectSession::ProjectSession(Config config)
     editing_.SetHost(std::move(ehost));
 
     // Compiler: use tectonic if available at the configured path.
-    compiler_ = std::make_unique<TectonicCompiler>(config_.tectonic_path);
+    compiler_ = std::make_unique<TectonicCompiler>(config_.tectonic_path,
+                                                   config_.tectonic_cache_dir);
 
     BuildCoordinator::Host bhost;
     bhost.project_id = [this] { return state_.id(); };

@@ -151,6 +151,66 @@ Result<NodeId, EditError> DocumentEditor::InsertSubsection(size_t section_index,
     return id;
 }
 
+Result<NodeId, EditError> DocumentEditor::InsertSubsectionAfter(
+    const NodeId& anchor, InlineContent title, NodeId id) {
+    if (id.empty()) id = IdGenerator::NewNode();
+
+    const auto place = [&](Section& section, size_t subsection_index,
+                           std::vector<Block> taken) -> Result<NodeId, EditError> {
+        Subsection sub;
+        sub.id = id;
+        sub.title = std::move(title);
+        sub.blocks = std::move(taken);
+        auto& subs = section.subsections;
+        subs.insert(subs.begin() + static_cast<long>(subsection_index),
+                    std::move(sub));
+        document_.BumpVersion();
+        return id;
+    };
+
+    // 1. A block directly inside a section: it takes the blocks below it, and
+    //    the heading goes before every existing subsection, which is the
+    //    earliest position the model can render.
+    if (auto pos = FindBlockPosition(anchor)) {
+        Section& section = document_.body().sections[pos->section_index];
+        if (pos->in_subsection) {
+            std::vector<Block>& blocks =
+                section.subsections[pos->subsection_index].blocks;
+            std::vector<Block> taken;
+            for (size_t i = pos->block_index + 1; i < blocks.size(); ++i) {
+                taken.push_back(std::move(blocks[i]));
+            }
+            blocks.resize(pos->block_index + 1);
+            return place(section, pos->subsection_index + 1, std::move(taken));
+        }
+        std::vector<Block>& blocks = section.blocks;
+        std::vector<Block> taken;
+        for (size_t i = pos->block_index + 1; i < blocks.size(); ++i) {
+            taken.push_back(std::move(blocks[i]));
+        }
+        blocks.resize(pos->block_index + 1);
+        return place(section, 0, std::move(taken));
+    }
+
+    // 2. An existing subsection: the new heading follows it, nothing moves.
+    for (auto& section : document_.body().sections) {
+        for (size_t ui = 0; ui < section.subsections.size(); ++ui) {
+            if (section.subsections[ui].id == anchor) {
+                return place(section, ui + 1, {});
+            }
+        }
+    }
+
+    // 3. A section: everything it owns becomes the subsection's content, so
+    //    the heading lands directly under the section title.
+    if (Section* section = FindSection(anchor)) {
+        std::vector<Block> taken = std::move(section->blocks);
+        section->blocks.clear();
+        return place(*section, 0, std::move(taken));
+    }
+    return Unexpected(ToString(EditError::NotFound));
+}
+
 Result<void, EditError> DocumentEditor::DeleteSubsection(size_t section_index,
                                                          size_t subsection_index) {
     auto& sections = document_.body().sections;

@@ -255,6 +255,17 @@ PF_TEST(ValidatorTemplateRequiredFields) {
     PF_CHECK(!has("W-REQ-KEYWORDS"));
 }
 
+namespace {
+size_t CountOccurrences(const std::string& haystack, const std::string& needle) {
+    size_t count = 0;
+    for (size_t at = haystack.find(needle); at != std::string::npos;
+         at = haystack.find(needle, at + needle.size())) {
+        ++count;
+    }
+    return count;
+}
+}  // namespace
+
 PF_TEST(AuthorsAffiliationsRenderWithThanks) {
     Document doc;
     DocumentEditor editor(doc);
@@ -283,9 +294,17 @@ PF_TEST(AuthorsAffiliationsRenderWithThanks) {
     PF_CHECK(rendered.status == RenderResult::Status::Ok);
     PF_CHECK(!rendered.package.files.empty());
     const std::string& tex = rendered.package.files[0].content;
-    PF_CHECK(tex.find("\\author{Alice\\thanks{University One}") !=
+
+    // Authors carry the number of their institution.
+    PF_CHECK(tex.find("\\author{Alice\\textsuperscript{1} \\and "
+                      "Bob\\textsuperscript{2}") != std::string::npos);
+    // Both institutions are listed once, numbered, inside a single \thanks.
+    PF_CHECK(tex.find("\\thanks{\\textsuperscript{1} University One \\\\ "
+                      "\\textsuperscript{2} Institute Two}") !=
              std::string::npos);
-    PF_CHECK(tex.find("Bob\\thanks{Institute Two}") != std::string::npos);
+    // ... and never repeated per author.
+    PF_CHECK(CountOccurrences(tex, "University One") == 1);
+    PF_CHECK(CountOccurrences(tex, "Institute Two") == 1);
     PF_CHECK(tex.find("Keywords:") != std::string::npos);
 }
 
@@ -315,4 +334,49 @@ PF_TEST(SetAffiliationsPayloadEditing) {
     PF_CHECK(state.document().front_matter().affiliations.size() == 1);
     PF_CHECK(state.document().front_matter().affiliations[0].name ==
              "University One");
+
+    // A second institution can be added, and authors pointing at the first one
+    // keep a resolving link.
+    // The front matter is only mutable through the editing system, so the
+    // author goes in the same way the GUI adds one.
+    {
+        Author author;
+        author.name = "Alice";
+        author.affiliations = {AffiliationId("aff0")};
+        EditCommand author_cmd;
+        author_cmd.operation_id = OperationId(IdGenerator::NewOperationId());
+        author_cmd.project_id = state.id();
+        author_cmd.base_revision = state.revision();
+        AddAuthorPayload add_author;
+        add_author.author = author;
+        author_cmd.payload = add_author;
+        PF_CHECK(editing.Apply(author_cmd).status == EditStatus::Applied);
+    }
+    Affiliation a2;
+    a2.id = AffiliationId("aff1");
+    a2.name = "Institute Two";
+    EditCommand add_cmd;
+    add_cmd.operation_id = OperationId(IdGenerator::NewOperationId());
+    add_cmd.project_id = state.id();
+    add_cmd.base_revision = state.revision();
+    SetAffiliationsPayload two;
+    two.affiliations = {a1, a2};
+    add_cmd.payload = two;
+    PF_CHECK(editing.Apply(add_cmd).status == EditStatus::Applied);
+    PF_CHECK(state.document().front_matter().affiliations.size() == 2);
+    PF_CHECK(state.document().front_matter().authors.size() == 1);
+    PF_CHECK(state.document().front_matter().authors[0].affiliations.size() == 1);
+    PF_CHECK(state.document().front_matter().authors[0].affiliations[0] ==
+             AffiliationId("aff0"));
+
+    // Shortening the list drops the link instead of leaving a dangling id.
+    EditCommand drop_cmd;
+    drop_cmd.operation_id = OperationId(IdGenerator::NewOperationId());
+    drop_cmd.project_id = state.id();
+    drop_cmd.base_revision = state.revision();
+    SetAffiliationsPayload only_second;
+    only_second.affiliations = {a2};
+    drop_cmd.payload = only_second;
+    PF_CHECK(editing.Apply(drop_cmd).status == EditStatus::Applied);
+    PF_CHECK(state.document().front_matter().authors[0].affiliations.empty());
 }

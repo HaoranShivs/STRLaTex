@@ -37,8 +37,10 @@ public:
     bool OpenProject(const QString& dir);
     bool OpenProjectWithRecovery(const QString& dir, bool* recovered);
     void CloseProject();
+
     void Save();
     void StartAutosave();
+    void StopAutosave();
 
     // Editing actions - build EditCommands from UI inputs.
     EditResult SetTitle(const QString& text);
@@ -48,6 +50,12 @@ public:
     // "University A; University B" -> affiliations; re-links existing authors
     // by their inline ¹²³ markers order (authors keep prior links where valid).
     EditResult SetAffiliationsText(const QString& semicolon_separated);
+
+    // Graphical author <-> institution binding: link or unlink one author
+    // from one institution, keeping the document's institution order.
+    EditResult SetAuthorAffiliation(size_t author_index,
+                                    const AffiliationId& affiliation,
+                                    bool linked);
     EditResult SetKeywordsText(const QString& comma_separated);
     EditResult InsertSection(const QString& title);
     EditResult InsertSectionAfter(const NodeId& anchor, const QString& title);
@@ -71,6 +79,10 @@ public:
     EditResult DeleteBlock(const NodeId& block);
     EditResult DeleteNode(const NodeId& node);
     EditResult MoveNode(const NodeId& node, int direction);
+
+    // Drag-and-drop reordering: put `node` directly after `anchor` (a block, a
+    // subsection or a section). Keeps the document order everywhere else.
+    EditResult MoveNodeAfter(const NodeId& node, const NodeId& anchor);
     EditResult DeleteSection(size_t index);
     EditResult InsertCitation(const NodeId& paragraph, const QStringList& keys);
     EditResult InsertCrossReference(const NodeId& paragraph,

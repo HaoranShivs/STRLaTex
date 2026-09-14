@@ -24,6 +24,7 @@
 
 #include "app/BlockEditor.h"
 #include "app/OutlinePanel.h"
+#include "app/PdfPreview.h"
 #include "app/ProblemsPanel.h"
 #include "app/Theme.h"
 #include "app/WelcomePage.h"
@@ -36,18 +37,6 @@ namespace {
 QString ToQ(const std::string& s) { return QString::fromStdString(s); }
 constexpr const char* kSettingsKey = "recent_projects";
 
-QString RenderPdfPageToPng(const QString& pdf_path, const QString& out_dir) {
-    QProcess process;
-    process.start("pdftoppm",
-                  {"-png", "-r", "100", "-f", "1", "-l", "1", pdf_path,
-                   out_dir + "/page"});
-    if (!process.waitForFinished(20000)) return {};
-    for (const char* name : {"page-1.png", "page-01.png"}) {
-        QString candidate = out_dir + "/" + name;
-        if (QFileInfo::exists(candidate)) return candidate;
-    }
-    return {};
-}
 }  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
@@ -65,6 +54,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     connect(controller_, &ProjectController::documentChanged, this,
             &MainWindow::RefreshDocumentView);
+    connect(editor_, &BlockEditor::RowCommitted, this, [this]() {
+        if (pending_structural_refresh_) RefreshDocumentView();
+    });
     connect(controller_, &ProjectController::buildFinished, this,
             &MainWindow::OnBuildFinished);
     connect(controller_, &ProjectController::diagnosticsUpdated, this,
@@ -126,33 +118,15 @@ void MainWindow::BuildUi() {
     if (!qEnvironmentVariable("PF_TRACE").isEmpty()) fprintf(stderr, "TRACE: editor created\n");
 
     vertical_splitter_ = new QSplitter(Qt::Vertical, splitter);
-    preview_container_ = new QWidget(vertical_splitter_);
-    auto* preview_layout = new QVBoxLayout(preview_container_);
-    preview_layout->setContentsMargins(0, 0, 0, 0);
-    auto* preview_header = new QLabel("PREVIEW", preview_container_);
-    preview_header->setObjectName("panelTitle");
-    preview_header->setContentsMargins(12, 8, 0, 4);
-    preview_layout->addWidget(preview_header);
-    auto* preview_scroll = new QScrollArea(preview_container_);
-    preview_scroll->setWidgetResizable(true);
-    preview_scroll->setFrameShape(QFrame::NoFrame);
-    preview_label_ = new QLabel(preview_scroll);
-    preview_label_->setAlignment(Qt::AlignCenter);
-    preview_label_->setWordWrap(true);
-    preview_label_->setStyleSheet(QString("background: %1; color: %2;")
-                                      .arg(theme::kSidePanel,
-                                           theme::kSecondaryText));
-    preview_scroll->setWidget(preview_label_);
-    preview_layout->addWidget(preview_scroll, 1);
-    preview_container_->setProperty("scroll",
-                                    QVariant::fromValue(static_cast<QWidget*>(
-                                        preview_scroll)));
-
+    preview_ = new PdfPreview(vertical_splitter_);
+    preview_container_ = preview_;
     if (!qEnvironmentVariable("PF_TRACE").isEmpty()) fprintf(stderr, "TRACE: preview created\n");
     problems_ = new ProblemsPanel(vertical_splitter_);
     if (!qEnvironmentVariable("PF_TRACE").isEmpty()) fprintf(stderr, "TRACE: problems created\n");
     vertical_splitter_->addWidget(preview_container_);
     vertical_splitter_->addWidget(problems_);
+    vertical_splitter_->setStretchFactor(0, 3);
+    vertical_splitter_->setStretchFactor(1, 1);
     vertical_splitter_->setSizes({420, 200});
 
     splitter->addWidget(outline_);
@@ -272,6 +246,7 @@ void MainWindow::WireEditor() {
             });
     connect(editor_, &BlockEditor::ParagraphEdited, this,
             [this, mark_unsaved](QString node, QString text) {
+                if (shutting_down_) return;
                 controller_->EditParagraph(NodeId(node.toStdString()),
                                            std::move(text));
                 mark_unsaved();
@@ -294,8 +269,48 @@ void MainWindow::WireEditor() {
                                               std::move(text));
                 mark_unsaved();
             });
+    connect(editor_, &BlockEditor::AuthorAffiliationToggled, this,
+            [this, mark_unsaved](int author_index, QString affiliation,
+                                 bool linked) {
+                if (shutting_down_) return;
+                const auto result = controller_->SetAuthorAffiliation(
+                    static_cast<size_t>(author_index),
+                    AffiliationId(affiliation.toStdString()), linked);
+                if (result.status == EditStatus::Applied) {
+                    mark_unsaved();
+                } else {
+                    statusBar()->showMessage(ToQ(result.detail), 3000);
+                }
+            });
+    connect(editor_, &BlockEditor::MoveBlockToRequested, this,
+            [this, mark_unsaved](QString node, QString anchor) {
+                if (shutting_down_) return;
+                const auto result = controller_->MoveNodeAfter(
+                    NodeId(node.toStdString()), NodeId(anchor.toStdString()));
+                if (result.status == EditStatus::Applied) {
+                    mark_unsaved();
+                } else {
+                    statusBar()->showMessage(ToQ(result.detail), 3000);
+                }
+            });
     connect(editor_, &BlockEditor::InsertBlockRequested, this,
             [this, mark_unsaved](QString type, QString after) {
+                if (after.isEmpty()) {
+                    // No anchor: the body has no blocks yet, so the only
+                    // meaningful insert is the first section.
+                    if (type == "section") {
+                        const EditResult created =
+                            controller_->InsertSection(QString());
+                        mark_unsaved();
+                        if (created.status == EditStatus::Applied &&
+                            !created.created_node.empty()) {
+                            editor_->RevealNode(
+                                QString::fromStdString(
+                                    created.created_node.value()));
+                        }
+                    }
+                    return;
+                }
                 const NodeId anchor(after.toStdString());
                 EditResult result;
                 if (type == "section") {
@@ -534,8 +549,10 @@ void MainWindow::OnSave() {
     }
 }
 
-void MainWindow::OnUndo() { controller_->Undo(); }
-void MainWindow::OnRedo() { controller_->Redo(); }
+// Undo/redo restore a whole document snapshot, so rows are re-read from the
+// document (their structure may be identical while the text is not).
+void MainWindow::OnUndo() { controller_->Undo(); RefreshDocumentView(); }
+void MainWindow::OnRedo() { controller_->Redo(); RefreshDocumentView(); }
 
 void MainWindow::OnBuild() {
     if (!controller_->has_project()) return;
@@ -567,14 +584,45 @@ void MainWindow::OnChangeTemplate(const QString& template_id) {
 
 // ---------------- Refresh ----------------
 
+MainWindow::~MainWindow() {
+    shutting_down_ = true;
+    // Best effort: keep whatever the user last typed.
+    if (editor_) editor_->CommitFocused();
+    // Late signals from widgets that are being destroyed must not reach us.
+    if (editor_) disconnect(editor_, nullptr, this, nullptr);
+    if (controller_) {
+        controller_->StopAutosave();
+        disconnect(controller_, nullptr, this, nullptr);
+    }
+}
+
 void MainWindow::RefreshDocumentView() {
+    if (shutting_down_) return;
     if (!controller_->has_project()) return;
-    editor_->RebuildFromDocument(controller_->session().state().document());
+    const Document& doc = controller_->session().state().document();
+    // Never tear the rows down while the user is mid-edit: rebuilding
+    // recreates every editor widget, which would throw away the text being
+    // typed. The refresh is deferred to the next commit instead.
+    if (editor_->HasUncommittedFocus()) {
+        pending_structural_refresh_ = true;
+        RefreshSidePanels();
+        return;
+    }
+    pending_structural_refresh_ = false;
+    editor_->RebuildFromDocument(doc);
+    RefreshSidePanels();
+}
+
+// Outline, required-field hints and word count: everything except the editor
+// rows, so it is always safe to run.
+void MainWindow::RefreshSidePanels() {
+    if (shutting_down_) return;
     outline_->RebuildFromDocument(controller_->session().state().document(),
                                   controller_->session()
                                       .bibliography()
                                       .Entries());
     UpdateRequiredHints();
+    editor_->RefreshHints();
     RefreshReferenceItems();
     word_count_label_->setText(QString::number(CountWords()) + " words");
 }
@@ -614,20 +662,17 @@ void MainWindow::OnBuildStatusChanged(const QString& status) {
     build_state_label_->setText("Build: " + status);
 }
 
+void MainWindow::ZoomPreviewForTest(double zoom, double scroll_x,
+                                    double scroll_y) {
+    // zoom <= 0 keeps the current zoom and only scrolls.
+    if (zoom > 0.0) preview_->SetZoom(zoom);
+    preview_->ScrollTo(scroll_x, scroll_y);
+}
+
 void MainWindow::RefreshPreview() {
     if (current_pdf_path_.isEmpty()) return;
-    QTemporaryDir temp_dir;
-    if (!temp_dir.isValid()) return;
-    QString png = RenderPdfPageToPng(current_pdf_path_, temp_dir.path());
-    if (png.isEmpty()) {
-        preview_label_->setText("PDF ready but page rendering unavailable.\n" +
-                                current_pdf_path_);
-        return;
-    }
-    QPixmap pixmap(png);
-    if (pixmap.isNull()) return;
-    preview_label_->setPixmap(
-        pixmap.scaledToWidth(380, Qt::SmoothTransformation));
+    // Keep the current zoom and scroll position; only the page changes.
+    preview_->SetDocument(current_pdf_path_);
 }
 
 }  // namespace pf::gui

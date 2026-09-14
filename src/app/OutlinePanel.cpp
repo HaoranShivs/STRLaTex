@@ -98,21 +98,39 @@ QWidget* OutlinePanel::BuildReferencesTab() {
     });
     layout->addWidget(ref_list_, 1);
 
-    connect(ref_search_, &QLineEdit::textChanged, this, [this](const QString& t) {
-        QString needle = t.toLower();
-        for (int i = 0; i < ref_list_->count(); ++i) {
-            auto* item = ref_list_->item(i);
-            item->setHidden(!needle.isEmpty() &&
-                            !item->text().toLower().contains(needle));
-        }
-    });
+    connect(ref_search_, &QLineEdit::textChanged, this,
+            [this](const QString&) { ApplyReferenceFilter(); });
     return page;
+}
+
+void OutlinePanel::ApplyReferenceFilter() {
+    if (!ref_search_ || !ref_list_) return;
+    const QString needle = ref_search_->text().toLower();
+    for (int i = 0; i < ref_list_->count(); ++i) {
+        auto* item = ref_list_->item(i);
+        item->setHidden(!needle.isEmpty() &&
+                        !item->text().toLower().contains(needle));
+    }
 }
 
 void OutlinePanel::RebuildFromDocument(
     const Document& doc, const std::vector<BibEntry>& references) {
-    // Outline: only structural blocks (design #17).
+    // Outline: front matter that readers navigate to, then the structure
+    // (design #17).
     outline_->clear();
+    const auto& front = doc.front_matter();
+    if (front.abstract_text && !pf::InlineIsBlank(*front.abstract_text)) {
+        auto* item = new QTreeWidgetItem(outline_);
+        item->setText(0, QStringLiteral("Abstract"));
+        // Front matter has no block node, so it is addressed by the editor
+        // row key, which RevealNode understands.
+        item->setData(0, Qt::UserRole, QStringLiteral("front:abstract"));
+        QFont font = item->font(0);
+        font.setItalic(true);
+        item->setFont(0, font);
+        item->setForeground(0, QColor(theme::kSecondaryText));
+        item->setToolTip(0, ToQ(pf::InlineToPlainText(*front.abstract_text)));
+    }
     for (const auto& section : doc.body().sections) {
         QString title = ToQ(pf::InlineToPlainText(section.title));
         if (title.isEmpty()) title = QStringLiteral("Untitled Section");
@@ -150,6 +168,8 @@ void OutlinePanel::RebuildFromDocument(
         item->setToolTip(ToQ(entry.title));
     }
     ref_count_->setText(QString("%1 references").arg(references.size()));
+    // Keep the user's search term in force over the freshly built list.
+    ApplyReferenceFilter();
 }
 
 void OutlinePanel::OnTabChanged(int index) { stack_->setCurrentIndex(index); }

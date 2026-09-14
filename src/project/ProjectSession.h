@@ -54,6 +54,8 @@ class ProjectSession {
 public:
     struct Config {
         std::string tectonic_path = "tectonic";
+        // Bundle cache for tectonic; empty disables the override.
+        std::string tectonic_cache_dir;
         std::filesystem::path workspace_root = "/tmp/paperforge-sessions";
         std::chrono::milliseconds debounce{800};
     };

@@ -89,7 +89,7 @@ target_link_libraries(paperforge PRIVATE pf_app)
 target_compile_definitions(paperforge PRIVATE PF_TECTONIC="${TECTONIC_BIN}")
 
 # Qt6 GUI (optional; enabled when Qt6 is available)
-find_package(Qt6 QUIET COMPONENTS Widgets)
+find_package(Qt6 QUIET COMPONENTS Widgets Test)
 if(Qt6_FOUND)
     message(STATUS "Qt6 found - building PaperForge GUI")
     add_subdirectory(app)

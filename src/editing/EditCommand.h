@@ -134,6 +134,14 @@ struct MoveBlockPayload {
     std::optional<size_t> new_index;
 };
 
+// Inserts a subsection heading directly after `after` in reading order; the
+// blocks below the anchor move into the new subsection (see
+// DocumentEditor::InsertSubsectionAfter).
+struct InsertSubsectionAfterPayload {
+    NodeId after;
+    InlineContent title;
+};
+
 struct EditParagraphPayload {
     NodeId paragraph;
     InlineContent content;
@@ -186,6 +194,7 @@ using EditPayload = std::variant<
     RenameSubsectionPayload,
     MoveSubsectionPayload,
     InsertSubsectionPayload,
+    InsertSubsectionAfterPayload,
     DeleteSubsectionPayload,
     InsertParagraphPayload,
     InsertFigurePayload,
@@ -218,6 +227,7 @@ using FullEditPayload = std::variant<
     RenameSubsectionPayload,
     MoveSubsectionPayload,
     InsertSubsectionPayload,
+    InsertSubsectionAfterPayload,
     DeleteSubsectionPayload,
     InsertParagraphPayload,
     InsertFigurePayload,
