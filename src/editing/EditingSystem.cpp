@@ -35,6 +35,7 @@ const char* EditCommand::PayloadName() const {
             if constexpr (std::is_same_v<T, MoveSectionPayload>) return "MoveSection";
             if constexpr (std::is_same_v<T, RenameSectionPayload>) return "RenameSection";
             if constexpr (std::is_same_v<T, RenameSubsectionPayload>) return "RenameSubsection";
+            if constexpr (std::is_same_v<T, MoveSubsectionPayload>) return "MoveSubsection";
             if constexpr (std::is_same_v<T, InsertSubsectionPayload>) return "InsertSubsection";
             if constexpr (std::is_same_v<T, DeleteSubsectionPayload>) return "DeleteSubsection";
             if constexpr (std::is_same_v<T, InsertParagraphPayload>) return "InsertParagraph";
@@ -196,6 +197,11 @@ EditResult EditingSystem::ApplyDocumentPayload(const EditCommand& cmd,
     if (const auto* p = std::get_if<RenameSubsectionPayload>(&payload)) {
         return finishVoid(editor.RenameSubsection(p->subsection, p->title),
                           {p->subsection}, ChangeKind::MetadataChanged);
+    }
+    if (const auto* p = std::get_if<MoveSubsectionPayload>(&payload)) {
+        return finishVoid(
+            editor.MoveSubsection(p->section_index, p->from, p->to), {},
+            ChangeKind::StructureChanged);
     }
     if (const auto* p = std::get_if<InsertSubsectionPayload>(&payload)) {
         return finish(editor.InsertSubsection(p->section_index, p->index, p->title));

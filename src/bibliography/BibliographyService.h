@@ -1,4 +1,6 @@
 #pragma once
+
+#include <cstdint>
 // BibTeX parsing + bibliography service (architecture section 18).
 
 #include <map>

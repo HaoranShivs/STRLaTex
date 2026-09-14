@@ -1,17 +1,27 @@
 #include "app/BlockEditor.h"
 
 #include <QFontMetrics>
+#include <QColor>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
+#include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QRegularExpression>
+#include <QSyntaxHighlighter>
+#include <QTextCharFormat>
 #include <QTextLayout>
+#include <QTextBlockFormat>
+#include <QTextCursor>
 #include <QTimer>
 #include <QToolButton>
+#include <QTableWidget>
+#include <QHeaderView>
 #include <QVBoxLayout>
+#include <initializer_list>
 
 #include "app/Theme.h"
 #include "document/InlineText.h"
@@ -29,14 +39,29 @@ class BlockEdit : public QPlainTextEdit {
     Q_OBJECT
 
 public:
-    explicit BlockEdit(QWidget* parent = nullptr) : QPlainTextEdit(parent) {
+    explicit BlockEdit(bool single_line, QWidget* parent = nullptr)
+        : QPlainTextEdit(parent), single_line_(single_line) {
         setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         setWordWrapMode(QTextOption::WordWrap);
         setFrameShape(QFrame::NoFrame);
         document()->setDocumentMargin(6);
-        connect(this, &QPlainTextEdit::textChanged, this, &BlockEdit::Resize);
+        typing_timer_.setSingleShot(true);
+        typing_timer_.setInterval(400);
+        connect(this, &QPlainTextEdit::textChanged, this, [this]() {
+            Resize();
+            if (!loading_) typing_timer_.start();
+        });
+        connect(&typing_timer_, &QTimer::timeout, this,
+                &BlockEdit::CommitRequested);
         Resize();
+    }
+
+    void SetInitialText(const QString& text) {
+        loading_ = true;
+        setPlainText(text);
+        typing_timer_.stop();
+        loading_ = false;
     }
 
     void Resize() {
@@ -56,22 +81,28 @@ signals:
 protected:
     void keyPressEvent(QKeyEvent* event) override {
         // "/" at line start with empty-ish context opens the block menu.
-        if (event->text() == QStringLiteral("/")) {
+        if (property("commands_enabled").toBool() &&
+            event->text() == QStringLiteral("/")) {
             if (toPlainText().trimmed().isEmpty()) {
                 emit TriggerSlash();
                 return;
             }
         }
-        if (event->text() == QStringLiteral("@")) {
+        if (property("references_enabled").toBool() &&
+            event->text() == QStringLiteral("@")) {
             emit TriggerAt();
             return;
         }
         if ((event->modifiers() & Qt::ControlModifier) &&
             (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
+            typing_timer_.stop();
+            emit CommitRequested();
             emit NewBlockAfter();
             return;
         }
-        if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        if (single_line_ &&
+            (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
+            typing_timer_.stop();
             emit CommitRequested();
             return;
         }
@@ -81,7 +112,34 @@ protected:
 
     void focusOutEvent(QFocusEvent* event) override {
         QPlainTextEdit::focusOutEvent(event);
+        typing_timer_.stop();
         emit CommitRequested();
+    }
+
+private:
+    bool single_line_ = false;
+    bool loading_ = false;
+    QTimer typing_timer_;
+};
+
+class InlineTokenHighlighter final : public QSyntaxHighlighter {
+public:
+    explicit InlineTokenHighlighter(QTextDocument* document)
+        : QSyntaxHighlighter(document) {}
+
+protected:
+    void highlightBlock(const QString& text) override {
+        static const QRegularExpression token_pattern(
+            QStringLiteral(R"(\[(?:cite|ref):[^\]]+\])"));
+        QTextCharFormat format;
+        format.setForeground(QColor(theme::kAccent));
+        format.setBackground(QColor(theme::kAccentSoft));
+        format.setFontWeight(QFont::DemiBold);
+        auto matches = token_pattern.globalMatch(text);
+        while (matches.hasNext()) {
+            const auto match = matches.next();
+            setFormat(match.capturedStart(), match.capturedLength(), format);
+        }
     }
 };
 
@@ -144,14 +202,31 @@ QWidget* BlockEditor::MakeCard(const QString& node_id, const QString& kind,
                                 "QToolButton:hover { background: %2; border-radius: 4px; }")
                             .arg(theme::kSecondaryText, theme::kAccentSoft));
     connect(more, &QToolButton::clicked, this, [this, more, node_id]() {
+        if (node_id.isEmpty()) return;
         QMenu menu(this);
+        QMenu* insert_menu = menu.addMenu("Insert Block Below");
+        for (const auto& entry :
+             std::initializer_list<std::pair<const char*, const char*>>{
+                 {"Paragraph", "paragraph"},
+                 {"Section", "section"},
+                 {"Subsection", "subsection"},
+                 {"Equation", "equation"},
+                 {"Figure", "figure"},
+                 {"Table", "table"}}) {
+            QAction* action = insert_menu->addAction(entry.first);
+            action->setData(entry.second);
+        }
+        menu.addSeparator();
         QAction* up = menu.addAction("Move Up");
         QAction* down = menu.addAction("Move Down");
         menu.addSeparator();
         QAction* del = menu.addAction("Delete");
         QAction* chosen_action = menu.exec(more->mapToGlobal(QPoint(0, 18)));
         if (chosen_action == nullptr) return;
-        if (chosen_action == up) {
+        if (chosen_action->parent() == insert_menu) {
+            emit InsertBlockRequested(chosen_action->data().toString(),
+                                      node_id);
+        } else if (chosen_action == up) {
             emit MoveBlockRequested(node_id, -1);
         } else if (chosen_action == down) {
             emit MoveBlockRequested(node_id, +1);
@@ -184,14 +259,19 @@ void BlockEditor::AddEditorToCard(QWidget* card, QPlainTextEdit* edit) {
 }
 
 QPlainTextEdit* BlockEditor::NewEditor(QWidget* card, const QString& text,
-                                       bool mono, int min_lines) {
-    auto* edit = new BlockEdit(card);
-    edit->setPlainText(text);
+                                       bool mono, int min_lines,
+                                       bool single_line) {
+    auto* edit = new BlockEdit(single_line, card);
+    edit->SetInitialText(text);
     if (mono) {
         edit->setFont(theme::MonoFont(10));
     } else {
         edit->setFont(theme::UiFont(11));
     }
+    edit->setStyleSheet(QString(
+        "QPlainTextEdit { background: transparent; border: none; color: %1;"
+        " padding: 0; selection-background-color: %2; }")
+                            .arg(theme::kPrimaryText, theme::kAccentSoft));
     // Minimum height for placeholders.
     int min_h = edit->fontMetrics().height() * min_lines + 12;
     edit->setMinimumHeight(min_h);
@@ -232,7 +312,9 @@ bool BlockEditor::eventFilter(QObject* watched, QEvent* event) {
                         }
                     }
                     if (auto* button = qobject_cast<QToolButton*>(child)) {
-                        button->setVisible(hover);
+                        button->setVisible(
+                            hover &&
+                            !card->property("row_node").toString().isEmpty());
                     }
                 }
             }
@@ -254,9 +336,7 @@ bool BlockEditor::eventFilter(QObject* watched, QEvent* event) {
 
 void BlockEditor::OpenSlashMenu(QPlainTextEdit* origin) {
     static const std::vector<std::pair<const char*, const char*>> commands = {
-        {"Title", "title"},       {"Authors", "authors"},
-        {"Institution", "affiliations"}, {"Abstract", "abstract"},
-        {"Keywords", "keywords"}, {"Section", "section"},
+        {"Section", "section"},
         {"Subsection", "subsection"}, {"Paragraph", "paragraph"},
         {"Equation", "equation"}, {"Figure", "figure"},
         {"Table", "table"},
@@ -276,16 +356,15 @@ void BlockEditor::OpenSlashMenu(QPlainTextEdit* origin) {
         items.push_back(std::move(item));
     }
 
-    auto* popup = new PopupList(this);
-    connect(popup, &PopupList::chosen, this, [this, origin](QString payload) {
-        QString after;
-        // Find the block owning this editor; empty means insert at end.
-        for (const auto& block : blocks_) {
-            if (block.editor == origin) {
-                after = block.node_id;
-                break;
-            }
+    QString after;
+    for (const auto& block : blocks_) {
+        if (block.editor == origin) {
+            after = block.node_id;
+            break;
         }
+    }
+    auto* popup = new PopupList(this);
+    connect(popup, &PopupList::chosen, this, [this, after](QString payload) {
         emit InsertBlockRequested(payload, after);
     });
     QPoint anchor = origin->mapToGlobal(QPoint(60, origin->height() + 4));
@@ -298,20 +377,30 @@ void BlockEditor::OpenAtMenu(QPlainTextEdit* origin) {
             {QStringLiteral("No references loaded — import a .bib file"),
              {}, {}, {}, {}});
     }
-    auto* popup = new PopupList(this);
-    connect(popup, &PopupList::chosen, this, [this, origin](QString payload) {
-        // payload format: "cite:<key>" or "xref:<node>"
-        QString after;
-        for (const auto& block : blocks_) {
-            if (block.editor == origin) {
-                after = block.node_id;
-                break;
-            }
+    QString paragraph;
+    for (const auto& block : blocks_) {
+        if (block.editor == origin) {
+            paragraph = block.node_id;
+            break;
         }
+    }
+    const QString editor_text = origin->toPlainText();
+    const int cursor_position = origin->textCursor().position();
+    auto* popup = new PopupList(this);
+    connect(popup, &PopupList::chosen, this,
+            [this, paragraph, editor_text,
+             cursor_position](QString payload) {
+        // payload format: "cite:<key>" or "xref:<node>"
+        QString token;
         if (payload.startsWith("cite:")) {
-            emit InsertCitationRequested(after, payload.mid(5));
+            token = "[cite:" + payload.mid(5) + "]";
         } else if (payload.startsWith("xref:")) {
-            emit InsertCrossRefRequested(after, payload.mid(5));
+            token = "[ref:" + payload.mid(5) + "]";
+        }
+        if (!token.isEmpty()) {
+            QString updated = editor_text;
+            updated.insert(qBound(0, cursor_position, updated.size()), token);
+            emit ParagraphEdited(paragraph, updated);
         }
     });
     QPoint anchor = origin->mapToGlobal(QPoint(60, origin->height() + 4));
@@ -323,24 +412,72 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
     focus_node_.clear();
     focus_pos_ = 0;
     if (auto* edit = qobject_cast<BlockEdit*>(focusWidget())) {
-        focus_node_ = edit->property("row_node").toString();
+        focus_node_ = edit->property("row_focus_key").toString();
         focus_pos_ = edit->textCursor().position();
     }
 
     rebuilding_ = true;
     // Clear.
     for (const auto& block : blocks_) {
-        if (block.card) block.card->deleteLater();
+        if (block.card) {
+            host_->layout()->removeWidget(block.card);
+            block.card->hide();
+            block.card->deleteLater();
+        }
     }
     blocks_.clear();
 
     auto add = [&](const QString& node_id, const QString& kind,
                    const QString& commit_role, const QString& text,
                    bool mono = false, bool header_inline = true,
-                   int min_lines = 1) {
+                   int min_lines = 1, bool single_line = false) {
         QWidget* card = MakeCard(node_id, kind, commit_role, header_inline);
-        QPlainTextEdit* edit = NewEditor(card, text, mono, min_lines);
+        QPlainTextEdit* edit =
+            NewEditor(card, text, mono, min_lines, single_line);
         edit->setProperty("row_node", node_id);
+        edit->setProperty(
+            "row_focus_key",
+            node_id.isEmpty() ? QStringLiteral("front:") + commit_role
+                              : node_id);
+        edit->setProperty("commands_enabled", !node_id.isEmpty());
+        edit->setProperty("references_enabled", commit_role == "paragraph");
+        auto center_text = [edit]() {
+            QTextCursor cursor = edit->textCursor();
+            cursor.select(QTextCursor::Document);
+            QTextBlockFormat format;
+            format.setAlignment(Qt::AlignHCenter);
+            cursor.mergeBlockFormat(format);
+            cursor.clearSelection();
+            edit->setTextCursor(cursor);
+        };
+        if (kind == "Title") {
+            edit->setFont(theme::UiFont(22, true));
+            edit->setPlaceholderText("Untitled paper");
+            center_text();
+        } else if (kind == "Authors") {
+            edit->setPlaceholderText("Author names — separate with commas");
+            center_text();
+        } else if (kind == "Institution") {
+            edit->setPlaceholderText("Affiliations — separate with semicolons");
+            center_text();
+        } else if (kind == "Abstract") {
+            edit->setPlaceholderText("Write the abstract…");
+        } else if (kind == "Keywords") {
+            edit->setPlaceholderText("Keywords — separate with commas");
+        } else if (kind == "Section") {
+            edit->setFont(theme::UiFont(17, true));
+            edit->setPlaceholderText("Section title");
+        } else if (kind == "Subsection") {
+            edit->setFont(theme::UiFont(14, true));
+            edit->setPlaceholderText("Subsection title");
+        } else if (kind == "Paragraph") {
+            edit->setPlaceholderText(
+                "Write text…  @ inserts a reference, Ctrl+Enter adds a block");
+            new InlineTokenHighlighter(edit->document());
+        } else if (kind == "Equation") {
+            edit->setPlaceholderText("LaTeX equation");
+        }
+        qobject_cast<BlockEdit*>(edit)->Resize();
         Block block;
         block.node_id = node_id;
         block.kind = kind;
@@ -351,10 +488,11 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
         // CommitRequested on Enter AND focusOut; we want focus-out commit,
         // Enter just moves on. Wire it:
         BlockEdit* block_edit = qobject_cast<BlockEdit*>(edit);
-        connect(block_edit, &BlockEdit::CommitRequested, this, [this, node_id]() {
+        connect(block_edit, &BlockEdit::CommitRequested, this, [this, edit]() {
             for (auto& b : blocks_) {
-                if (b.node_id == node_id && b.editor) {
+                if (b.editor == edit) {
                     CommitBlock(b);
+                    break;
                 }
             }
         });
@@ -372,7 +510,8 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
 
     // Front matter.
     const auto& fm = doc.front_matter();
-    add("", "Title", "title", ToQ(pf::InlineToPlainText(fm.title)));
+    add("", "Title", "title", ToQ(pf::InlineToPlainText(fm.title)), false,
+        true, 1, true);
     QString authors;
     for (size_t i = 0; i < fm.authors.size(); ++i) {
         if (i) authors += " · ";
@@ -388,14 +527,15 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
             }
         }
     }
-    add("", "Authors", "authors", authors);
+    add("", "Authors", "authors", authors, false, true, 1, true);
     QString affiliations;
     for (size_t i = 0; i < fm.affiliations.size(); ++i) {
         if (i) affiliations += "; ";
         const char* supers[] = {"¹ ", "² ", "³ ", "⁴ ", "⁵ "};
         affiliations += supers[i < 5 ? i : 4] + ToQ(fm.affiliations[i].name);
     }
-    add("", "Institution", "affiliations", affiliations);
+    add("", "Institution", "affiliations", affiliations, false, true, 1,
+        true);
     add("", "Abstract", "abstract",
         fm.abstract_text ? ToQ(pf::InlineToPlainText(*fm.abstract_text))
                          : QString(),
@@ -405,12 +545,12 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
         if (i) keywords += ", ";
         keywords += ToQ(fm.keywords[i]);
     }
-    add("", "Keywords", "keywords", keywords);
+    add("", "Keywords", "keywords", keywords, false, true, 1, true);
 
     // Body.
     for (const auto& section : doc.body().sections) {
         add(ToQ(section.id.value()), "Section", "section",
-            ToQ(pf::InlineToPlainText(section.title)));
+            ToQ(pf::InlineToPlainText(section.title)), false, true, 1, true);
         for (const auto& block : section.blocks) {
             if (const auto* para = std::get_if<pf::Paragraph>(&block)) {
                 add(ToQ(para->id.value()), "Paragraph", "paragraph",
@@ -418,11 +558,96 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
             } else if (const auto* eq = std::get_if<pf::DisplayEquation>(&block)) {
                 add(ToQ(eq->id.value()), "Equation", "equation",
                     ToQ(eq->math_source), true, true, 2);
+            } else if (const auto* figure = std::get_if<pf::Figure>(&block)) {
+                QWidget* card = MakeCard(ToQ(figure->id.value()), "Figure",
+                                         "caption", true);
+                auto* card_layout = qobject_cast<QVBoxLayout*>(card->layout());
+                auto* image = new QLabel(card);
+                image->setAlignment(Qt::AlignCenter);
+                image->setMinimumHeight(140);
+                image->setStyleSheet(QString(
+                    "background: %1; border: 1px solid %2; border-radius: 6px;"
+                    "color: %3;")
+                    .arg(theme::kSidePanel, theme::kDivider,
+                         theme::kSecondaryText));
+                QString path = asset_path_resolver_
+                                   ? asset_path_resolver_(figure->asset_id)
+                                   : QString();
+                QPixmap pixmap(path);
+                if (!pixmap.isNull()) {
+                    image->setPixmap(pixmap.scaled(
+                        680, 260, Qt::KeepAspectRatio,
+                        Qt::SmoothTransformation));
+                } else {
+                    image->setText("Image preview unavailable");
+                }
+                card_layout->addWidget(image);
+                auto* caption = NewEditor(
+                    card, ToQ(pf::InlineToPlainText(figure->caption)), false,
+                    1);
+                caption->setPlaceholderText("Figure caption");
+                caption->setProperty("row_node", ToQ(figure->id.value()));
+                caption->setProperty("row_focus_key", ToQ(figure->id.value()));
+                caption->setProperty("commands_enabled", true);
+                Block gui_block{ToQ(figure->id.value()), "Figure", card,
+                                caption, "caption"};
+                auto* block_edit = qobject_cast<BlockEdit*>(caption);
+                connect(block_edit, &BlockEdit::CommitRequested, this,
+                        [this, caption]() {
+                            for (auto& candidate : blocks_) {
+                                if (candidate.editor == caption) {
+                                    CommitBlock(candidate);
+                                    break;
+                                }
+                            }
+                        });
+                qobject_cast<QVBoxLayout*>(host_->layout())
+                    ->insertWidget(host_->layout()->count() - 1, card);
+                blocks_.push_back(std::move(gui_block));
+            } else if (const auto* table = std::get_if<pf::Table>(&block)) {
+                QWidget* card = MakeCard(ToQ(table->id.value()), "Table",
+                                         "caption", true);
+                auto* grid = new QTableWidget(
+                    static_cast<int>(table->RowCount()),
+                    static_cast<int>(table->ColumnCount()), card);
+                grid->setEditTriggers(QAbstractItemView::NoEditTriggers);
+                grid->horizontalHeader()->setSectionResizeMode(
+                    QHeaderView::Stretch);
+                grid->verticalHeader()->setVisible(false);
+                grid->setMaximumHeight(qMin(260, 34 + 32 * grid->rowCount()));
+                for (int row = 0; row < grid->rowCount(); ++row) {
+                    for (int column = 0; column < grid->columnCount(); ++column) {
+                        grid->setItem(row, column, new QTableWidgetItem(ToQ(
+                            pf::InlineToPlainText(table->cells[row][column].content))));
+                    }
+                }
+                qobject_cast<QVBoxLayout*>(card->layout())->addWidget(grid);
+                auto* caption = NewEditor(
+                    card, ToQ(pf::InlineToPlainText(table->caption)), false, 1);
+                caption->setPlaceholderText("Table caption");
+                caption->setProperty("row_node", ToQ(table->id.value()));
+                caption->setProperty("row_focus_key", ToQ(table->id.value()));
+                caption->setProperty("commands_enabled", true);
+                Block gui_block{ToQ(table->id.value()), "Table", card,
+                                caption, "caption"};
+                auto* block_edit = qobject_cast<BlockEdit*>(caption);
+                connect(block_edit, &BlockEdit::CommitRequested, this,
+                        [this, caption]() {
+                            for (auto& candidate : blocks_) {
+                                if (candidate.editor == caption) {
+                                    CommitBlock(candidate);
+                                    break;
+                                }
+                            }
+                        });
+                qobject_cast<QVBoxLayout*>(host_->layout())
+                    ->insertWidget(host_->layout()->count() - 1, card);
+                blocks_.push_back(std::move(gui_block));
             }
         }
         for (const auto& sub : section.subsections) {
             add(ToQ(sub.id.value()), "Subsection", "subsection",
-                ToQ(pf::InlineToPlainText(sub.title)));
+                ToQ(pf::InlineToPlainText(sub.title)), false, true, 1, true);
             for (const auto& block : sub.blocks) {
                 if (const auto* para = std::get_if<pf::Paragraph>(&block)) {
                     add(ToQ(para->id.value()), "Paragraph", "paragraph",
@@ -440,7 +665,9 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
     // Restore focus.
     if (!focus_node_.isEmpty()) {
         for (const auto& block : blocks_) {
-            if (block.node_id == focus_node_ && block.editor) {
+            if (block.editor &&
+                block.editor->property("row_focus_key").toString() ==
+                    focus_node_) {
                 auto cursor = block.editor->textCursor();
                 cursor.setPosition(qMin(focus_pos_,
                                         block.editor->toPlainText().length()));
@@ -494,6 +721,11 @@ void BlockEditor::ApplyHints() {
 
 void BlockEditor::SetReferenceItems(std::vector<PopupList::Item> items) {
     reference_items_ = std::move(items);
+}
+
+void BlockEditor::SetAssetPathResolver(
+    std::function<QString(const AssetId&)> resolver) {
+    asset_path_resolver_ = std::move(resolver);
 }
 
 std::optional<QString> BlockEditor::FocusedNodeId() const {

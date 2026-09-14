@@ -19,6 +19,8 @@ BuildSnapshot SnapshotFactory::CreateBuildSnapshot(
     // workspace staging).
     for (const auto& [id, meta] : assets_->registry().All()) {
         snapshot.asset_files[id.value()] = meta.relative_path;
+        snapshot.asset_sources[id.value() + ".img"] =
+            assets_->assets_dir() / meta.relative_path;
     }
     return snapshot;
 }

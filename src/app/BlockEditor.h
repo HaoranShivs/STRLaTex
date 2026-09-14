@@ -48,6 +48,10 @@ public:
     // Reference items for the "@" popup (label, detail, payload=key|node).
     void SetReferenceItems(std::vector<PopupList::Item> items);
 
+    // Resolve a document AssetId to a local image path for figure previews.
+    void SetAssetPathResolver(
+        std::function<QString(const AssetId&)> resolver);
+
     std::optional<QString> FocusedNodeId() const;
 
 signals:
@@ -88,7 +92,7 @@ private:
                       const QString& commit_role, bool header_inline);
     void AddEditorToCard(QWidget* card, QPlainTextEdit* edit);
     QPlainTextEdit* NewEditor(QWidget* card, const QString& text, bool mono,
-                              int min_lines);
+                              int min_lines, bool single_line = false);
     void CommitBlock(Block& block);
     void OpenSlashMenu(QPlainTextEdit* origin);
     void OpenAtMenu(QPlainTextEdit* origin);
@@ -100,6 +104,7 @@ private:
     std::vector<Block> blocks_;
     RequiredHints hints_;
     std::vector<PopupList::Item> reference_items_;
+    std::function<QString(const AssetId&)> asset_path_resolver_;
     bool rebuilding_ = false;
 
     // Focus preservation across rebuilds.

@@ -98,6 +98,24 @@ PF_TEST(EditingSystemInsertSectionAndEvent) {
     PF_CHECK(h.events[0].new_revision.value == 1);
 }
 
+PF_TEST(EditingSystemMovesSubsections) {
+    TestHost h;
+    auto section =
+        h.editing->Apply(h.Cmd(InsertSectionPayload{0, InlineFromText("S")}));
+    h.editing->Apply(h.Cmd(
+        InsertSubsectionPayload{0, 0, InlineFromText("First")}));
+    h.editing->Apply(h.Cmd(
+        InsertSubsectionPayload{0, 1, InlineFromText("Second")}));
+    auto moved =
+        h.editing->Apply(h.Cmd(MoveSubsectionPayload{0, 0, 2}));
+    PF_CHECK(moved.status == EditStatus::Applied);
+    const auto& subsections =
+        h.state.document().body().sections[0].subsections;
+    PF_CHECK(InlineToPlainText(subsections[0].title) == "Second");
+    PF_CHECK(InlineToPlainText(subsections[1].title) == "First");
+    (void)section;
+}
+
 PF_TEST(EditingSystemTemplateChangeKeepsDocumentVersion) {
     TestHost h;
     h.editing->Apply(h.Cmd(SetTitlePayload{InlineFromText("T")}));

@@ -83,6 +83,12 @@ struct RenameSubsectionPayload {
     InlineContent title;
 };
 
+struct MoveSubsectionPayload {
+    size_t section_index = 0;
+    size_t from = 0;
+    size_t to = 0;
+};
+
 struct DeleteSubsectionPayload {
     size_t section_index = 0;
     size_t subsection_index = 0;
@@ -178,6 +184,7 @@ using EditPayload = std::variant<
     MoveSectionPayload,
     RenameSectionPayload,
     RenameSubsectionPayload,
+    MoveSubsectionPayload,
     InsertSubsectionPayload,
     DeleteSubsectionPayload,
     InsertParagraphPayload,
@@ -209,6 +216,7 @@ using FullEditPayload = std::variant<
     MoveSectionPayload,
     RenameSectionPayload,
     RenameSubsectionPayload,
+    MoveSubsectionPayload,
     InsertSubsectionPayload,
     DeleteSubsectionPayload,
     InsertParagraphPayload,

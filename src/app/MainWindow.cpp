@@ -114,6 +114,15 @@ void MainWindow::BuildUi() {
     outline_ = new OutlinePanel(splitter);
     if (!qEnvironmentVariable("PF_TRACE").isEmpty()) fprintf(stderr, "TRACE: outline created\n");
     editor_ = new BlockEditor(splitter);
+    editor_->SetAssetPathResolver([this](const AssetId& id) {
+        if (!controller_->has_project()) return QString();
+        const auto* metadata =
+            controller_->session().assets().registry().Find(id);
+        if (!metadata) return QString();
+        return ToQ((controller_->session().paths().assets_dir /
+                    metadata->relative_path)
+                       .string());
+    });
     if (!qEnvironmentVariable("PF_TRACE").isEmpty()) fprintf(stderr, "TRACE: editor created\n");
 
     vertical_splitter_ = new QSplitter(Qt::Vertical, splitter);
@@ -286,30 +295,63 @@ void MainWindow::WireEditor() {
                 mark_unsaved();
             });
     connect(editor_, &BlockEditor::InsertBlockRequested, this,
-            [this](QString type, QString after) {
-                NodeId parent =
-                    after.isEmpty() ? NodeId() : NodeId(after.toStdString());
+            [this, mark_unsaved](QString type, QString after) {
+                const NodeId anchor(after.toStdString());
+                EditResult result;
                 if (type == "section") {
-                    controller_->InsertSection("");
+                    result = controller_->InsertSectionAfter(anchor, "");
+                } else if (type == "subsection") {
+                    result = controller_->InsertSubsectionAfter(anchor, "");
                 } else if (type == "paragraph") {
-                    controller_->InsertParagraph(parent, "");
+                    result = controller_->InsertParagraphAfter(anchor, "");
                 } else if (type == "equation") {
-                    controller_->InsertEquation(parent, "", true);
-                } else if (type == "authors") {
-                    controller_->SetAuthorsText("Author Name");
-                } else if (type == "affiliations") {
-                    controller_->SetAffiliationsText("Institution");
-                } else if (type == "keywords") {
-                    controller_->SetKeywordsText("keyword");
-                } else if (type == "abstract") {
-                    controller_->SetAbstract("");
+                    result = controller_->InsertEquationAfter(anchor, "", true);
+                } else if (type == "table") {
+                    result = controller_->InsertTableAfter(anchor);
                 } else if (type == "figure") {
                     QString path = QFileDialog::getOpenFileName(
                         this, "Insert Figure", {},
                         "Images (*.png *.jpg *.jpeg *.gif)");
                     if (!path.isEmpty()) {
-                        controller_->InsertFigure(parent, path);
+                        result = controller_->InsertFigureAfter(anchor, path);
+                    } else {
+                        return;
                     }
+                } else {
+                    return;
+                }
+                if (result.status == EditStatus::Applied) {
+                    mark_unsaved();
+                } else {
+                    statusBar()->showMessage(
+                        "Could not insert block: " + ToQ(result.detail), 5000);
+                }
+            });
+    connect(editor_, &BlockEditor::CaptionEdited, this,
+            [this, mark_unsaved](QString node, QString caption) {
+                auto result = controller_->EditCaption(
+                    NodeId(node.toStdString()), caption);
+                if (result.status == EditStatus::Applied) mark_unsaved();
+            });
+    connect(editor_, &BlockEditor::DeleteBlockRequested, this,
+            [this, mark_unsaved](QString node) {
+                auto result =
+                    controller_->DeleteNode(NodeId(node.toStdString()));
+                if (result.status == EditStatus::Applied) {
+                    mark_unsaved();
+                } else {
+                    statusBar()->showMessage(
+                        "Could not delete block: " + ToQ(result.detail), 5000);
+                }
+            });
+    connect(editor_, &BlockEditor::MoveBlockRequested, this,
+            [this, mark_unsaved](QString node, int direction) {
+                auto result = controller_->MoveNode(
+                    NodeId(node.toStdString()), direction);
+                if (result.status == EditStatus::Applied) {
+                    mark_unsaved();
+                } else {
+                    statusBar()->showMessage(ToQ(result.detail), 3000);
                 }
             });
     connect(editor_, &BlockEditor::InsertCitationRequested, this,
@@ -317,6 +359,13 @@ void MainWindow::WireEditor() {
                 controller_->InsertCitation(NodeId(paragraph.toStdString()),
                                             {key});
                 mark_unsaved();
+            });
+    connect(editor_, &BlockEditor::InsertCrossRefRequested, this,
+            [this, mark_unsaved](QString paragraph, QString target) {
+                auto result = controller_->InsertCrossReference(
+                    NodeId(paragraph.toStdString()),
+                    NodeId(target.toStdString()));
+                if (result.status == EditStatus::Applied) mark_unsaved();
             });
     connect(outline_, &OutlinePanel::NodeActivated, this,
             [this](QString node) { editor_->RevealNode(node); });
@@ -411,7 +460,9 @@ int MainWindow::CountWords() const {
             }
         }
     }
-    return text.split(QRegularExpression("\\\s+"), Qt::SkipEmptyParts).size();
+    return text.split(QRegularExpression(QStringLiteral(R"(\s+)")),
+                      Qt::SkipEmptyParts)
+        .size();
 }
 
 // ---------------- Actions ----------------
