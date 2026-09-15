@@ -23,14 +23,28 @@ ProjectSession::Config TestConfig() {
     return config;
 }
 
-bool WaitForBuild(ProjectSession& session, int timeout_ms = 180000) {
+// Build/save results are applied on the application thread, so a non-Qt driver
+// has to be that thread: pump the session's event queue until `done` holds.
+bool PumpUntil(ProjectSession& session, const std::function<bool()>& done,
+               int timeout_ms) {
     auto deadline = std::chrono::steady_clock::now() +
                     std::chrono::milliseconds(timeout_ms);
-    while (session.build_phase() != BuildPhase::Idle &&
-           std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    while (!done() && std::chrono::steady_clock::now() < deadline) {
+        session.WaitForApplicationEvent(std::chrono::milliseconds{20});
     }
-    return session.build_phase() == BuildPhase::Idle;
+    return done();
+}
+
+bool WaitForBuild(ProjectSession& session, const std::function<bool()>& done,
+                  int timeout_ms = 180000) {
+    return PumpUntil(session, done, timeout_ms);
+}
+
+// Enqueue + drain: keeps the tests reading one line while the write itself
+// happens on the save worker.
+SaveResult SaveAndFlush(ProjectSession& session) {
+    session.Save();
+    return session.FlushSaves();
 }
 
 }  // namespace
@@ -55,7 +69,7 @@ PF_TEST(SessionNewProjectWorkflow) {
     PF_CHECK(r.status == EditStatus::Applied);
     PF_CHECK(session.persistence_state() == PersistenceState::Dirty);
 
-    auto save = session.Save();
+    auto save = SaveAndFlush(session);
     PF_CHECK(save.status == SaveResult::Status::Ok);
     PF_CHECK(session.persistence_state() == PersistenceState::Clean);
     PF_CHECK(std::filesystem::exists(dir / "project.paper"));
@@ -124,7 +138,7 @@ PF_TEST(SessionBibliographyImportAndSearch) {
     session.ImportBibliography(bib + "\n@article{k2, title={Second}}");
     PF_CHECK(session.current_revision().value > before);
 
-    auto save = session.Save();
+    auto save = SaveAndFlush(session);
     PF_CHECK(save.status == SaveResult::Status::Ok);
     PF_CHECK(std::filesystem::exists(dir / "references.bib"));
     std::filesystem::remove_all(dir);
@@ -236,15 +250,24 @@ PF_TEST(EndToEndTectonicBuild) {
 
     session.ImportBibliography(
         "@article{ref1, author={Jane Doe}, title={Something}, year={2021}}");
-    session.Save();
+    (void)SaveAndFlush(session);
 
+    bool completed = false;
     std::optional<BuildResult> last_result;
-    session.SetBuildResultHandler([&](const BuildResult& r) { last_result = r; });
+    session.SetBuildResultHandler([&](const BuildResult& r) {
+        last_result = r;
+        completed = true;
+    });
     session.RequestBuild(true);
-    PF_CHECK(WaitForBuild(session));
+    PF_CHECK(WaitForBuild(session, [&] { return completed; }));
 
     PF_CHECK(last_result.has_value());
+    // The result carries the identity of the exact ask.
+    PF_CHECK(last_result->project_id == session.state().id());
+    PF_CHECK(!last_result->build_id.empty());
+    PF_CHECK(last_result->snapshot_id == session.latest_snapshot_id());
     if (last_result->outcome == BuildResult::Outcome::Success) {
+        PF_CHECK(session.preview_state() == PreviewState::Fresh);
         PF_CHECK(std::filesystem::exists(last_result->pdf_path));
         // PDF magic number
         std::ifstream pdf(last_result->pdf_path, std::ios::binary);
@@ -285,16 +308,17 @@ PF_TEST(SessionAutosaveAndCrashRecovery) {
             return cmd;
         };
         session.Execute(make_title_cmd("Saved Title"));
-        auto save = session.Save();
+        auto save = SaveAndFlush(session);
         PF_CHECK(save.status == SaveResult::Status::Ok);
 
         // Edit but do not save; then autosave.
         session.Execute(make_title_cmd("Unsaved Title"));
         PF_CHECK(session.persistence_state() == PersistenceState::Dirty);
 
-        // Manual autosave tick.
+        // Manual autosave tick: capture on this thread, write on the worker.
         auto autosave = session.Autosave();
-        PF_CHECK(autosave.status == SaveResult::Status::Ok);
+        PF_CHECK(autosave.status == SaveResult::Status::Queued);
+        PF_CHECK(session.FlushSaves().status == SaveResult::Status::Ok);
         PF_CHECK(session.HasRecoverySnapshot());
         // Autosave must NOT change Clean/Dirty (architecture 32).
         PF_CHECK(session.persistence_state() == PersistenceState::Dirty);
@@ -341,9 +365,15 @@ PF_TEST(SessionAutosaveTimer) {
     cmd.payload = p;
     session.Execute(cmd);
 
-    // Short interval: 300ms.
+    // Short interval: 300ms. The timer thread only posts a tick; this loop is
+    // the application thread that turns it into a snapshot.
     session.StartAutosaveTimer(std::chrono::milliseconds{300});
-    std::this_thread::sleep_for(std::chrono::milliseconds{700});
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::milliseconds{900};
+    while (std::chrono::steady_clock::now() < deadline) {
+        session.WaitForApplicationEvent(std::chrono::milliseconds{50});
+    }
+    session.FlushSaves();
     session.StopAutosaveTimer();
 
     PF_CHECK(std::filesystem::exists(dir / ".paperforge" / "autosave" /

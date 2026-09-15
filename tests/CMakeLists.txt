@@ -7,6 +7,8 @@ add_executable(pf_tests
     TestBibliography.cpp
     TestBuild.cpp
     TestEndToEnd.cpp
+    TestSessionAsync.cpp
+    TestStructure.cpp
 )
 
 target_include_directories(pf_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

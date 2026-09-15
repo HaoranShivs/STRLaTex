@@ -18,6 +18,7 @@
 
 #include "app/PopupList.h"
 #include "document/Document.h"
+#include "document/DocumentTraversal.h"
 
 class QPlainTextEdit;
 class QVBoxLayout;
@@ -32,6 +33,10 @@ public:
 
     // Replace all rows with the document's content; preserves focus/cursor.
     void RebuildFromDocument(const Document& doc);
+
+    // Heading depth the current template supports (plan §9). Controls whether
+    // the insert and "/" menus offer Subsubsection Title. 0 = unrestricted.
+    void SetMaxHeadingDepth(int depth) { max_heading_depth_ = depth; }
 
     struct RequiredHints {
         bool title = false;
@@ -76,6 +81,7 @@ signals:
     void EquationEdited(const QString& node_id, const QString& math);
     void SectionRenamed(const QString& node_id, const QString& text);
     void SubsectionRenamed(const QString& node_id, const QString& text);
+    void SubsubsectionRenamed(const QString& node_id, const QString& text);
     void CaptionEdited(const QString& node_id, const QString& text);
 
     // Emitted after a row commits its text (changed or not). Lets the window
@@ -100,8 +106,9 @@ protected:
 private:
     struct Block {
         QString node_id;      // empty for front-matter fields
-        QString kind;         // Title/Authors/Institution/Abstract/Keywords/
-                              // Section/Subsection/Paragraph/Equation/Figure/Table
+        QString kind;         // Paper Title/Authors/…/Section Title/
+                              // Subsection Title/Subsubsection Title/Text/
+                              // Equation/Figure/Table
         QWidget* card = nullptr;
         QPlainTextEdit* editor = nullptr;  // null for figure/table-only blocks
         QString commit_role;  // which signal to emit on commit
@@ -137,6 +144,10 @@ private:
     RequiredHints hints_;
     std::vector<PopupList::Item> reference_items_;
     std::function<QString(const AssetId&)> asset_path_resolver_;
+    // Document the insert menus consult for the container of an anchor. Only
+    // valid during RebuildFromDocument-driven use; refreshed on each rebuild.
+    const Document* container_document_ = nullptr;
+    int max_heading_depth_ = 3;
     bool rebuilding_ = false;
 
     // Focus preservation across rebuilds.

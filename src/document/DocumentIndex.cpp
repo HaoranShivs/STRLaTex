@@ -1,63 +1,50 @@
 #include "document/DocumentIndex.h"
 
+#include "document/DocumentTraversal.h"
+
 namespace pf {
 
 void DocumentIndex::Rebuild(const Document& document) {
     index_.clear();
-    const auto& sections = document.body().sections;
-    for (size_t si = 0; si < sections.size(); ++si) {
-        const auto& section = sections[si];
-        {
-            NodeLocation loc;
-            loc.kind = NodeKind::Section;
-            loc.section_index = si;
-            index_[section.id] = loc;
+    // One traversal produces every (node -> logical location) pair, so adding
+    // a heading level does not touch this file.
+    VisitNodes(document, [this, &document](const NodeAddress& address) {
+        NodeLocation loc;
+        loc.kind = address.kind;
+        if (address.section) loc.section_index = *address.section;
+        if (address.subsection) {
+            loc.in_subsection = true;
+            loc.subsection_index = *address.subsection;
         }
-        for (size_t bi = 0; bi < section.blocks.size(); ++bi) {
-            const auto& block = section.blocks[bi];
-            NodeLocation loc;
-            loc.kind = std::visit([](const auto& b) -> NodeKind {
-                using T = std::decay_t<decltype(b)>;
-                if constexpr (std::is_same_v<T, Paragraph>) return NodeKind::Paragraph;
-                if constexpr (std::is_same_v<T, Figure>) return NodeKind::Figure;
-                if constexpr (std::is_same_v<T, Table>) return NodeKind::Table;
-                return NodeKind::DisplayEquation;
-            }, block);
-            loc.parent = section.id;
-            loc.section_index = si;
-            loc.block_index = bi;
-            index_[std::visit([](const auto& b) { return b.id; }, block)] = loc;
+        if (address.subsubsection) {
+            loc.in_subsubsection = true;
+            loc.subsubsection_index = *address.subsubsection;
         }
-        for (size_t ui = 0; ui < section.subsections.size(); ++ui) {
-            const auto& sub = section.subsections[ui];
-            {
-                NodeLocation loc;
-                loc.kind = NodeKind::Subsection;
+        if (address.block) loc.block_index = *address.block;
+        if (!address.is_heading()) {
+            // Owning container id: the section, the subsection, or the
+            // subsubsection the node lives in. A subsubsection heading itself
+            // is owned by its subsection.
+            const auto& sections = document.body().sections;
+            const Section& section = sections[loc.section_index];
+            if (!address.subsection) {
                 loc.parent = section.id;
-                loc.section_index = si;
-                loc.in_subsection = true;
-                loc.subsection_index = ui;
-                index_[sub.id] = loc;
+            } else if (address.kind == NodeKind::Subsubsection) {
+                loc.parent = section.subsections[loc.subsection_index].id;
+            } else if (!address.subsubsection) {
+                loc.parent = section.subsections[loc.subsection_index].id;
+            } else {
+                loc.parent =
+                    section.subsections[loc.subsection_index]
+                        .subsubsections[loc.subsubsection_index]
+                        .id;
             }
-            for (size_t bi = 0; bi < sub.blocks.size(); ++bi) {
-                const auto& block = sub.blocks[bi];
-                NodeLocation loc;
-                loc.kind = std::visit([](const auto& b) -> NodeKind {
-                    using T = std::decay_t<decltype(b)>;
-                    if constexpr (std::is_same_v<T, Paragraph>) return NodeKind::Paragraph;
-                    if constexpr (std::is_same_v<T, Figure>) return NodeKind::Figure;
-                    if constexpr (std::is_same_v<T, Table>) return NodeKind::Table;
-                    return NodeKind::DisplayEquation;
-                }, block);
-                loc.parent = sub.id;
-                loc.section_index = si;
-                loc.in_subsection = true;
-                loc.subsection_index = ui;
-                loc.block_index = bi;
-                index_[std::visit([](const auto& b) { return b.id; }, block)] = loc;
-            }
+        } else if (address.kind == NodeKind::Subsubsection) {
+            const auto& sections = document.body().sections;
+            loc.parent = sections[loc.section_index].subsections[loc.subsection_index].id;
         }
-    }
+        index_[address.node] = loc;
+    });
 }
 
 std::optional<NodeLocation> DocumentIndex::Find(const NodeId& id) const {

@@ -25,11 +25,13 @@ struct InsertBlockSpec {
     std::optional<size_t> index;  // nullopt = append
 };
 
-// Position of a section/subsection within the document.
+// Position of a section/subsection/subsubsection within the document.
 struct SectionPath {
     size_t section_index = 0;
     bool in_subsection = false;
     size_t subsection_index = 0;
+    bool in_subsubsection = false;
+    size_t subsubsection_index = 0;
 };
 
 class DocumentEditor {
@@ -77,8 +79,25 @@ public:
     Result<void, EditError> DeleteSubsection(size_t section_index, size_t subsection_index);
     Result<void, EditError> MoveSubsection(size_t section_index, size_t from, size_t to);
 
+    // Third heading level. A subsubsection lives inside a subsection.
+    Result<NodeId, EditError> InsertSubsubsection(size_t section_index,
+                                                  size_t subsection_index, size_t index,
+                                                  InlineContent title,
+                                                  NodeId id = NodeId{});
+    // Insert after `anchor` in reading order; the blocks below the anchor move
+    // into the new subsubsection, mirroring InsertSubsectionAfter.
+    Result<NodeId, EditError> InsertSubsubsectionAfter(const NodeId& anchor,
+                                                       InlineContent title,
+                                                       NodeId id = NodeId{});
+    Result<void, EditError> DeleteSubsubsection(size_t section_index,
+                                                size_t subsection_index,
+                                                size_t subsubsection_index);
+    Result<void, EditError> MoveSubsubsection(size_t section_index, size_t subsection_index,
+                                              size_t from, size_t to);
+
     Result<void, EditError> RenameSection(const NodeId& id, const InlineContent& title);
     Result<void, EditError> RenameSubsection(const NodeId& id, const InlineContent& title);
+    Result<void, EditError> RenameSubsubsection(const NodeId& id, const InlineContent& title);
 
     // Block mutations
     Result<NodeId, EditError> InsertBlock(const NodeId& parent, std::optional<size_t> index,
@@ -110,19 +129,32 @@ public:
     // Lookup helpers (mutable access for editor internals only)
     Section* FindSection(const NodeId& id);
     Subsection* FindSubsection(const NodeId& id);
+    Subsubsection* FindSubsubsection(const NodeId& id);
+    // The subsection that owns subsubsection `id`, or nullptr.
+    Subsection* FindParentSubsubsection(const NodeId& id);
     Block* FindBlock(const NodeId& id);
-    // (section_index, subsection_index or npos, block index or npos)
+    // (section_index, subsection_index or npos, subsubsection_index or npos,
+    //  block index or npos)
     struct BlockPosition {
         size_t section_index;
-        bool in_subsection;
-        size_t subsection_index;  // only valid if in_subsection
+        bool in_subsection = false;
+        size_t subsection_index = 0;
+        bool in_subsubsection = false;
+        size_t subsubsection_index = 0;
         size_t block_index;
     };
     std::optional<BlockPosition> FindBlockPosition(const NodeId& id);
+    // Container ids for a block, in insertion order (section, subsection,
+    // subsubsection). Used by move logic to reject cross-container moves.
+    std::vector<NodeId> BlockParents(const NodeId& id);
 
 private:
     [[noreturn]] void Throw(EditError e) const;
     static std::vector<std::vector<TableCell>> MakeCells(size_t rows, size_t cols);
+    // The blocks vector of a section/subsection/subsubsection id.
+    std::vector<Block>* FindBlockListForParent(const NodeId& parent);
+    // The blocks vector that holds node `id`, plus its address.
+    std::vector<Block>* FindBlockListForNode(const NodeId& id);
 
     Document& document_;
 };

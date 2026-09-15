@@ -10,6 +10,7 @@ BuildSnapshot SnapshotFactory::CreateBuildSnapshot(
     BuildSnapshot snapshot;
     snapshot.project_id = state.id();
     snapshot.snapshot_id = IdGenerator::NewSnapshotId();
+    snapshot.build_id = BuildId(IdGenerator::NewBuildId());
     snapshot.revision = state.revision();
     // Immutable deep copy of the document.
     snapshot.document = std::make_shared<const Document>(state.document());
@@ -25,9 +26,8 @@ BuildSnapshot SnapshotFactory::CreateBuildSnapshot(
     return snapshot;
 }
 
-ProjectSnapshotData SnapshotFactory::CreateProjectSnapshot(
-    const ProjectState& state) const {
-    ProjectSnapshotData data;
+SaveSnapshot SnapshotFactory::CreateSaveSnapshot(const ProjectState& state) const {
+    SaveSnapshot data;
     data.project_id = state.id();
     data.revision = state.revision();
     data.serialized.project_id = state.id().value();

@@ -291,6 +291,15 @@ RenderResult LatexRenderer::Render(const RenderRequest& request) const {
             for (const auto& block : sub.blocks) {
                 RenderBlock(block, &tex, &smap);
             }
+            for (const auto& subsub : sub.subsubsections) {
+                std::string subsub_title;
+                RenderInline(subsub.title, &subsub_title);
+                tex += "\\subsubsection{" + subsub_title + "}\\label{" +
+                       subsub.id.value() + "}\n\n";
+                for (const auto& block : subsub.blocks) {
+                    RenderBlock(block, &tex, &smap);
+                }
+            }
         }
     }
 
@@ -330,7 +339,10 @@ RenderResult LatexRenderer::Render(const RenderRequest& request) const {
             }
         };
         collect(section.blocks);
-        for (const auto& sub : section.subsections) collect(sub.blocks);
+        for (const auto& sub : section.subsections) {
+            collect(sub.blocks);
+            for (const auto& subsub : sub.subsubsections) collect(subsub.blocks);
+        }
     }
 
     result.status = RenderResult::Status::Ok;

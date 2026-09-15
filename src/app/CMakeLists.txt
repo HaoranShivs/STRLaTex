@@ -3,6 +3,7 @@ set(CMAKE_AUTOMOC ON)
 
 add_executable(paperforge-gui
     main.cpp
+    EditorItemKind.cpp
     MainWindow.cpp
     ProjectController.cpp
     BlockEditor.cpp
@@ -25,6 +26,7 @@ target_compile_definitions(paperforge-gui PRIVATE PF_TECTONIC_BIN="${TECTONIC_BI
 
 # GUI end-to-end smoke test (offscreen-capable).
 add_executable(paperforge-gui-smoke
+    EditorItemKind.cpp
     GuiSmokeTest.cpp
     ProjectController.cpp
 )
@@ -34,6 +36,7 @@ target_compile_definitions(paperforge-gui-smoke PRIVATE PF_TECTONIC_BIN="${TECTO
 
 # UI verification tool (screenshots of real window states).
 add_executable(paperforge-ui-verify
+    EditorItemKind.cpp
     UiVerify.cpp
     MainWindow.cpp
     ProjectController.cpp
@@ -53,6 +56,7 @@ target_compile_definitions(paperforge-ui-verify PRIVATE PF_TECTONIC_BIN="${TECTO
 # Regression test: input typed into a row must survive idle time (no periodic
 # rebuild wiping the editor).
 add_executable(paperforge-gui-persistence-test
+    EditorItemKind.cpp
     EditorPersistenceTest.cpp
     MainWindow.cpp
     ProjectController.cpp

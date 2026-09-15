@@ -19,6 +19,13 @@ struct TemplateRequiredFields {
     bool author_affiliations = false;  // each author needs >=1 affiliation
 };
 
+// What a template is able to express. Drives the insert menu (a template that
+// only supports two levels offers no Subsubsection Title) and the validator.
+struct TemplateCapabilities {
+    // Section = 1, Subsection = 2, Subsubsection = 3. Clamped to [1, 3].
+    int max_heading_depth = 3;
+};
+
 struct TemplateDefinition {
     std::string id;
     std::string name;
@@ -29,6 +36,7 @@ struct TemplateDefinition {
     // Additional preamble lines required by the template.
     std::vector<std::string> preamble_lines;
     TemplateRequiredFields required;
+    TemplateCapabilities capabilities;
 };
 
 class TemplateRegistry {

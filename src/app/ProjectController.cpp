@@ -1,9 +1,12 @@
 #include "app/ProjectController.h"
 
 #include <chrono>
+#include <QMetaObject>
 #include <QRegularExpression>
+#include <QTimer>
 
 #include "core/IdGenerator.h"
+#include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
 
 namespace pf::gui {
@@ -32,6 +35,8 @@ const char* ToString(PreviewState state) {
 }  // namespace
 
 ProjectController::ProjectController(QObject* parent) : QObject(parent) {
+    qRegisterMetaType<pf::PreviewUpdate>("pf::PreviewUpdate");
+
     ProjectSession::Config config;
     config.tectonic_path = PF_TECTONIC_BIN;
     config.workspace_root = std::filesystem::temp_directory_path() /
@@ -39,6 +44,14 @@ ProjectController::ProjectController(QObject* parent) : QObject(parent) {
     config.debounce = std::chrono::milliseconds{800};
 
     session_ = std::make_unique<ProjectSession>(config);
+
+    // Background workers wake the application thread through this hook; the
+    // queued invocation lands exactly where the mutable state lives.
+    session_->SetWakeHandler([this]() {
+        QMetaObject::invokeMethod(
+            this, [this]() { PumpEvents(); }, Qt::QueuedConnection);
+    });
+
     session_->SetPhaseHandler([this](BuildPhase, BuildPhase current) {
         QString text;
         switch (current) {
@@ -49,20 +62,44 @@ ProjectController::ProjectController(QObject* parent) : QObject(parent) {
         }
         emit buildStatusChanged(text);
     });
+    // Runs on the application thread, and only for results that passed the
+    // ProjectSession preview gate (project id + revision + build id).
     session_->SetBuildResultHandler([this](const BuildResult& result) {
-        if (result.revision != session_->current_revision()) return;  // stale
-        bool success = result.outcome == BuildResult::Outcome::Success;
-
         QList<QString> problems;
         for (const auto& d : result.diagnostics) {
             problems.append(ToQ(d.Summary()));
         }
         emit diagnosticsUpdated(problems);
-        emit buildFinished(success, ToQ(result.pdf_path));
     });
+    session_->SetPreviewUpdateHandler(
+        [this](const PreviewUpdate& update) { emit previewUpdated(update); });
+    session_->SetSaveResultHandler([this](const SaveResult& result, SaveKind) {
+        emit saveFinished(result.status == SaveResult::Status::Ok,
+                          ToQ(result.detail));
+        emit stateChanged(ToString(session_->persistence_state()),
+                          ToString(session_->preview_state()),
+                          QString::number(session_->current_revision().value));
+    });
+
+    // Backstop: the wake handler already delivers events promptly, so this is
+    // only a safety net against a missed wake-up. Kept slow enough not to spin
+    // the event loop when the app is idle.
+    pump_timer_ = new QTimer(this);
+    pump_timer_->setInterval(100);
+    connect(pump_timer_, &QTimer::timeout, this, [this]() { PumpEvents(); });
+    pump_timer_->start();
 }
 
-ProjectController::~ProjectController() = default;
+ProjectController::~ProjectController() {
+    shutting_down_ = true;
+    if (pump_timer_) pump_timer_->stop();
+    session_.reset();
+}
+
+void ProjectController::PumpEvents() {
+    if (shutting_down_ || !session_) return;
+    session_->ProcessApplicationEvents();
+}
 
 EditCommand ProjectController::MakeCmd(FullEditPayload payload) const {
     EditCommand cmd;
@@ -161,6 +198,10 @@ void ProjectController::CloseProject() { session_->CloseProject(); }
 
 
 void ProjectController::Save() { session_->Save(); }
+
+void ProjectController::FlushSaves() {
+    if (session_) session_->FlushSaves();
+}
 
 void ProjectController::StartAutosave() { session_->StartAutosaveTimer(); }
 
@@ -394,6 +435,54 @@ EditResult ProjectController::InsertSubsectionAfter(const NodeId& anchor,
     return ExecuteAndNotify(std::move(payload));
 }
 
+EditResult ProjectController::InsertSubsubsection(size_t section_index,
+                                                  size_t subsection_index,
+                                                  const QString& title) {
+    InsertSubsubsectionPayload p;
+    p.section_index = section_index;
+    p.subsection_index = subsection_index;
+    const auto& subsubsections =
+        session_->state().document().body().sections[section_index]
+            .subsections[subsection_index]
+            .subsubsections;
+    p.index = subsubsections.size();
+    p.title = InlineFromText(ToStd(title));
+    auto r = session_->Execute(MakeCmd(std::move(p)));
+    if (r.status == EditStatus::Applied) EmitDocumentChanged();
+    return r;
+}
+
+EditResult ProjectController::InsertSubsubsectionAfter(const NodeId& anchor,
+                                                       const QString& title) {
+    InsertSubsubsectionAfterPayload payload;
+    payload.after = anchor;
+    payload.title = InlineFromText(ToStd(title));
+    return ExecuteAndNotify(std::move(payload));
+}
+
+EditResult ProjectController::RenameSubsubsection(const NodeId& subsubsection,
+                                                  const QString& title) {
+    RenameSubsubsectionPayload p;
+    p.subsubsection = subsubsection;
+    p.title = InlineFromText(ToStd(title));
+    auto r = session_->Execute(MakeCmd(std::move(p)));
+    if (r.status == EditStatus::Applied) EmitDocumentChanged();
+    return r;
+}
+
+EditResult ProjectController::DeleteSubsubsection(const NodeId& subsubsection) {
+    auto address = LocateNode(session_->state().document(), subsubsection);
+    if (!address || address->kind != NodeKind::Subsubsection) {
+        return EditResult::Fail(FailureReason::InvalidTarget,
+                                "subsubsection not found");
+    }
+    DeleteSubsubsectionPayload p;
+    p.section_index = *address->section;
+    p.subsection_index = *address->subsection;
+    p.subsubsection_index = *address->subsubsection;
+    return ExecuteAndNotify(std::move(p));
+}
+
 EditResult ProjectController::InsertParagraph(const NodeId& parent,
                                               const QString& text) {
     InsertParagraphPayload p;
@@ -544,110 +633,136 @@ EditResult ProjectController::DeleteBlock(const NodeId& block) {
 }
 
 EditResult ProjectController::DeleteNode(const NodeId& node) {
-    const auto& sections = session_->state().document().body().sections;
-    for (size_t section_index = 0; section_index < sections.size();
-         ++section_index) {
-        if (sections[section_index].id == node) {
-            DeleteSectionPayload payload;
-            payload.index = section_index;
-            return ExecuteAndNotify(std::move(payload));
-        }
-        for (size_t subsection_index = 0;
-             subsection_index < sections[section_index].subsections.size();
-             ++subsection_index) {
-            if (sections[section_index].subsections[subsection_index].id ==
-                node) {
-                DeleteSubsectionPayload payload;
-                payload.section_index = section_index;
-                payload.subsection_index = subsection_index;
-                return ExecuteAndNotify(std::move(payload));
-            }
-        }
+    // One traversal answers "what kind of node is this, and where" for every
+    // branch below.
+    auto address = LocateNode(session_->state().document(), node);
+    if (!address) return DeleteBlock(node);
+    if (address->kind == NodeKind::Section) {
+        DeleteSectionPayload payload;
+        payload.index = *address->section;
+        return ExecuteAndNotify(std::move(payload));
+    }
+    if (address->kind == NodeKind::Subsection) {
+        DeleteSubsectionPayload payload;
+        payload.section_index = *address->section;
+        payload.subsection_index = *address->subsection;
+        return ExecuteAndNotify(std::move(payload));
+    }
+    if (address->kind == NodeKind::Subsubsection) {
+        DeleteSubsubsectionPayload payload;
+        payload.section_index = *address->section;
+        payload.subsection_index = *address->subsection;
+        payload.subsubsection_index = *address->subsubsection;
+        return ExecuteAndNotify(std::move(payload));
     }
     return DeleteBlock(node);
 }
 
 EditResult ProjectController::MoveNodeAfter(const NodeId& node,
                                             const NodeId& anchor) {
-    if (node == anchor) return EditResult::Fail(FailureReason::InvalidTarget,
-                                                "already in place");
-    const auto& sections = session_->state().document().body().sections;
-
-    // Where a node sits: its section, and the subsection/block slot inside it.
-    struct Location {
-        size_t section = 0;
-        int subsection = -1;  // -1: directly in the section
-        int block = -1;       // -1: not a block
-    };
-    const auto locate = [&sections](const NodeId& id) -> std::optional<Location> {
-        for (size_t s = 0; s < sections.size(); ++s) {
-            if (sections[s].id == id) return Location{s, -1, -1};
-            for (size_t b = 0; b < sections[s].blocks.size(); ++b) {
-                const NodeId block_id = std::visit(
-                    [](const auto& value) { return value.id; },
-                    sections[s].blocks[b]);
-                if (block_id == id) {
-                    return Location{s, -1, static_cast<int>(b)};
-                }
-            }
-            for (size_t u = 0; u < sections[s].subsections.size(); ++u) {
-                if (sections[s].subsections[u].id == id) {
-                    return Location{s, static_cast<int>(u), -1};
-                }
-                for (size_t b = 0;
-                     b < sections[s].subsections[u].blocks.size(); ++b) {
-                    const NodeId block_id = std::visit(
-                        [](const auto& value) { return value.id; },
-                        sections[s].subsections[u].blocks[b]);
-                    if (block_id == id) {
-                        return Location{s, static_cast<int>(u),
-                                        static_cast<int>(b)};
-                    }
-                }
-            }
-        }
-        return std::nullopt;
-    };
-
-    const auto source = locate(node);
-    const auto target = locate(anchor);
+    if (node == anchor) {
+        return EditResult::Fail(FailureReason::InvalidTarget, "already in place");
+    }
+    const Document& doc = session_->state().document();
+    const auto source = LocateNode(doc, node);
+    const auto target = LocateNode(doc, anchor);
     if (!source || !target) {
         return EditResult::Fail(FailureReason::InvalidTarget,
                                 "move target not found");
     }
-    const bool node_is_block = source->block >= 0;
-    const bool node_is_subsection = !node_is_block && source->subsection >= 0;
 
-    if (node_is_block) {
-        // The anchor's container is the destination list; a section or
-        // subsection anchor means "the start of that group".
-        const size_t section_index =
-            target->section;
-        const int target_subsection = target->subsection;
-        NodeId parent = sections[section_index].id;
-        if (target_subsection >= 0) {
-            parent = sections[section_index]
-                         .subsections[static_cast<size_t>(target_subsection)]
-                         .id;
-        }
-        size_t index = 0;
-        if (target->block >= 0) {
-            index = static_cast<size_t>(target->block) + 1;
+    // ---- A block: drop it into the anchor's container, after the anchor. ----
+    if (source->block) {
+        // A block anchor means "right after me, in my container"; a heading
+        // anchor means "at the start of that heading's own block list".
+        NodeId parent;
+        std::optional<size_t> index;
+        const NodeId* anchor_parent = nullptr;
+        if (target->block) {
+            switch (target->kind) {
+                case NodeKind::Subsubsection:
+                    anchor_parent = &doc.body()
+                                         .sections[*target->section]
+                                         .subsections[*target->subsection]
+                                         .subsubsections[*target->subsubsection]
+                                         .id;
+                    break;
+                case NodeKind::Subsection:
+                    anchor_parent = &doc.body()
+                                         .sections[*target->section]
+                                         .subsections[*target->subsection]
+                                         .id;
+                    break;
+                default:
+                    anchor_parent = &doc.body().sections[*target->section].id;
+                    break;
+            }
+            index = *target->block + 1;
             // Moving an earlier block out of the same list shifts the anchor.
             if (source->section == target->section &&
                 source->subsection == target->subsection &&
-                source->block < target->block) {
-                --index;
+                source->subsubsection == target->subsubsection &&
+                *source->block < *target->block) {
+                --*index;
             }
+        } else {
+            // Anchor is a heading: its own blocks are the destination.
+            switch (target->kind) {
+                case NodeKind::Subsubsection:
+                    anchor_parent = &doc.body()
+                                          .sections[*target->section]
+                                          .subsections[*target->subsection]
+                                          .subsubsections[*target->subsubsection]
+                                          .id;
+                    break;
+                case NodeKind::Subsection:
+                    anchor_parent = &doc.body()
+                                          .sections[*target->section]
+                                          .subsections[*target->subsection]
+                                          .id;
+                    break;
+                case NodeKind::Section:
+                    anchor_parent = &doc.body().sections[*target->section].id;
+                    break;
+                default:
+                    return EditResult::Fail(FailureReason::InvalidTarget,
+                                            "move target not found");
+            }
+            index = 0;
         }
         MoveBlockPayload payload;
         payload.node = node;
-        payload.new_parent = parent;
+        payload.new_parent = *anchor_parent;
         payload.new_index = index;
         return ExecuteAndNotify(std::move(payload));
     }
 
-    if (node_is_subsection) {
+    // ---- A subsubsection moves inside its own subsection. ----
+    if (source->kind == NodeKind::Subsubsection) {
+        if (source->section != target->section ||
+            source->subsection != target->subsection) {
+            return EditResult::Fail(
+                FailureReason::InvalidTarget,
+                "a subsubsection can only be reordered inside its subsection");
+        }
+        const auto& subsubsections = doc.body()
+                                          .sections[*source->section]
+                                          .subsections[*source->subsection]
+                                          .subsubsections;
+        // After a sibling subsubsection: right behind it. Otherwise append.
+        const size_t to = target->kind == NodeKind::Subsubsection
+                              ? *target->subsubsection + 1
+                              : subsubsections.size();
+        MoveSubsubsectionPayload payload;
+        payload.section_index = *source->section;
+        payload.subsection_index = *source->subsection;
+        payload.from = *source->subsubsection;
+        payload.to = to;
+        return ExecuteAndNotify(std::move(payload));
+    }
+
+    // ---- A subsection moves inside its own section. ----
+    if (source->kind == NodeKind::Subsection) {
         if (source->section != target->section) {
             return EditResult::Fail(
                 FailureReason::InvalidTarget,
@@ -657,30 +772,27 @@ EditResult ProjectController::MoveNodeAfter(const NodeId& node,
         // After a subsection: right behind it. After a block of the section
         // itself: the first subsection slot, which is the earliest the model
         // can render. After the section title: append.
-        size_t to = 0;
-        if (target->subsection >= 0) {
-            to = static_cast<size_t>(target->subsection) + 1;
-        } else if (target->block < 0) {
-            to = sections[source->section].subsections.size();
-        }
+        const size_t to = target->kind == NodeKind::Subsection
+                              ? *target->subsection + 1
+                              : doc.body()
+                                        .sections[*source->section]
+                                        .subsections.size();
         MoveSubsectionPayload payload;
-        payload.section_index = source->section;
-        payload.from = static_cast<size_t>(source->subsection);
+        payload.section_index = *source->section;
+        payload.from = *source->subsection;
         payload.to = to;
         return ExecuteAndNotify(std::move(payload));
     }
 
-    // A section moves among sections.
-    if (target->section == source->section) {
-        return EditResult::Fail(FailureReason::InvalidTarget,
-                                "already in place");
+    // ---- A section moves among sections. ----
+    if (*source->section == *target->section) {
+        return EditResult::Fail(FailureReason::InvalidTarget, "already in place");
     }
     MoveSectionPayload payload;
-    payload.from = source->section;
-    payload.to = target->section + 1;
+    payload.from = *source->section;
+    payload.to = *target->section + 1;
     return ExecuteAndNotify(std::move(payload));
 }
-
 EditResult ProjectController::MoveNode(const NodeId& node, int direction) {
     if (direction != -1 && direction != 1) {
         return EditResult::Fail(FailureReason::ConstraintViolation,

@@ -146,6 +146,16 @@ void OutlinePanel::RebuildFromDocument(
             auto* sub_item = new QTreeWidgetItem(item);
             sub_item->setText(0, sub_title);
             sub_item->setData(0, Qt::UserRole, ToQ(sub.id.value()));
+            for (const auto& subsub : sub.subsubsections) {
+                QString subsub_title = ToQ(pf::InlineToPlainText(subsub.title));
+                if (subsub_title.isEmpty()) subsub_title = QStringLiteral("Untitled");
+                auto* subsub_item = new QTreeWidgetItem(sub_item);
+                subsub_item->setText(0, subsub_title);
+                subsub_item->setData(0, Qt::UserRole, ToQ(subsub.id.value()));
+                QFont subsub_font = subsub_item->font(0);
+                subsub_font.setItalic(true);
+                subsub_item->setFont(0, subsub_font);
+            }
         }
     }
 

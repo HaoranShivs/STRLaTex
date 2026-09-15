@@ -230,12 +230,16 @@ int main(int argc, char* argv[]) {
                   "subsection lands where it was inserted");
         }
 
-        // 4. Build and wait for the result signal
-        QObject::connect(&controller, &ProjectController::buildFinished,
-                         [&](bool success, const QString& pdf_path) {
-                             check(success, "build via GUI controller");
-                             check(std::filesystem::exists(
-                                       pdf_path.toStdString()),
+        // 4. Build and wait for the typed preview event
+        QObject::connect(&controller, &ProjectController::previewUpdated,
+                         [&](const pf::PreviewUpdate& update) {
+                             check(update.success, "build via GUI controller");
+                             check(update.revision ==
+                                       controller.current_revision(),
+                                   "preview update matches revision");
+                             check(update.pdf.valid() &&
+                                       std::filesystem::exists(
+                                           update.pdf.path),
                                    "pdf exists");
                              finished(failures == 0 ? 0 : 1);
                          });

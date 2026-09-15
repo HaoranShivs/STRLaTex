@@ -48,6 +48,9 @@ TemplateRegistry::TemplateRegistry() {
         t.required.author_affiliations = true;
         t.required.abstract_text = true;
         t.required.keywords = true;
+        // IEEEtran conference mode supports \\subsubsection, so all three
+        // heading levels are available.
+        t.capabilities.max_heading_depth = 3;
         templates_[t.id] = t;
     }
 }

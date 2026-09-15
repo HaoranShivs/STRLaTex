@@ -31,8 +31,11 @@ std::vector<std::string> ExtractBibliographyKeys(const std::string& bibtex) {
 }  // namespace
 
 BuildCoordinator::BuildCoordinator(Host host, ICompiler* compiler)
-    : host_(std::move(host)), compiler_(compiler),
-      worker_([this] { WorkerLoop(); }) {}
+    : host_(std::move(host)), compiler_(compiler) {
+    // Start the worker only after every member is initialized: the loop reads
+    // stopping_/phase_ immediately.
+    worker_ = std::thread([this] { WorkerLoop(); });
+}
 
 BuildCoordinator::~BuildCoordinator() {
     {
@@ -131,6 +134,11 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot& snapshot) {
     BuildResult result;
     result.project_id = snapshot.project_id;
     result.snapshot_id = snapshot.snapshot_id;
+    // Every attempt carries a build id, even one that fails validation before
+    // rendering, so the result is always attributable.
+    result.build_id = snapshot.build_id.empty()
+                          ? BuildId(IdGenerator::NewBuildId())
+                          : snapshot.build_id;
     result.revision = snapshot.revision;
 
     ValidationInput validation_input;
@@ -154,7 +162,7 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot& snapshot) {
     }
 
     RenderRequest render_request;
-    render_request.build_id = IdGenerator::NewBuildId();
+    render_request.build_id = result.build_id.value();
     render_request.snapshot_id = snapshot.snapshot_id;
     render_request.revision = snapshot.revision;
     render_request.document = snapshot.document.get();

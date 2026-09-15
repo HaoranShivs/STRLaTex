@@ -124,10 +124,18 @@ using Block = std::variant<Paragraph, Figure, Table, DisplayEquation>;
 
 // ---------------- Section model (section 5) ----------------
 
+// Third heading level. Lives inside a Subsection, owns its own blocks.
+struct Subsubsection {
+    NodeId id;
+    InlineContent title;
+    std::vector<Block> blocks;
+};
+
 struct Subsection {
     NodeId id;
     InlineContent title;
     std::vector<Block> blocks;
+    std::vector<Subsubsection> subsubsections;
 };
 
 struct Section {
@@ -174,6 +182,7 @@ struct BackMatter {
 enum class NodeKind : std::uint8_t {
     Section,
     Subsection,
+    Subsubsection,
     Paragraph,
     Figure,
     Table,
@@ -181,6 +190,27 @@ enum class NodeKind : std::uint8_t {
 };
 
 const char* ToString(NodeKind kind);
+
+// True for the three heading kinds.
+inline bool IsHeadingKind(NodeKind kind) noexcept {
+    return kind == NodeKind::Section || kind == NodeKind::Subsection ||
+           kind == NodeKind::Subsubsection;
+}
+
+// Section = 1, Subsection = 2, Subsubsection = 3; 0 for non-headings.
+inline int HeadingDepth(NodeKind kind) noexcept {
+    switch (kind) {
+        case NodeKind::Section: return 1;
+        case NodeKind::Subsection: return 2;
+        case NodeKind::Subsubsection: return 3;
+        default: return 0;
+    }
+}
+
+// Defined in DocumentTraversal.cpp. Grants the traversal layer the same
+// mutable container access DocumentEditor has: its job is to hand the editor
+// the exact blocks vector a node lives in.
+class DocumentMutableAccess;
 
 class Document {
 public:
@@ -199,6 +229,7 @@ private:
     friend class DocumentEditor;
     friend class ProjectSerializer;
     friend class EditingSystem;
+    friend class DocumentMutableAccess;
 
     FrontMatter& front_matter() noexcept { return front_matter_; }
     Body& body() noexcept { return body_; }

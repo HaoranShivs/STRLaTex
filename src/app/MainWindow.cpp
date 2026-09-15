@@ -57,8 +57,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(editor_, &BlockEditor::RowCommitted, this, [this]() {
         if (pending_structural_refresh_) RefreshDocumentView();
     });
-    connect(controller_, &ProjectController::buildFinished, this,
-            &MainWindow::OnBuildFinished);
+    connect(controller_, &ProjectController::previewUpdated, this,
+            &MainWindow::OnPreviewUpdated);
+    connect(controller_, &ProjectController::saveFinished, this,
+            &MainWindow::OnSaveFinished);
     connect(controller_, &ProjectController::diagnosticsUpdated, this,
             &MainWindow::OnDiagnosticsUpdated);
     connect(controller_, &ProjectController::buildStatusChanged, this,
@@ -269,6 +271,12 @@ void MainWindow::WireEditor() {
                                               std::move(text));
                 mark_unsaved();
             });
+    connect(editor_, &BlockEditor::SubsubsectionRenamed, this,
+            [this, mark_unsaved](QString node, QString text) {
+                controller_->RenameSubsubsection(NodeId(node.toStdString()),
+                                                 std::move(text));
+                mark_unsaved();
+            });
     connect(editor_, &BlockEditor::AuthorAffiliationToggled, this,
             [this, mark_unsaved](int author_index, QString affiliation,
                                  bool linked) {
@@ -317,7 +325,9 @@ void MainWindow::WireEditor() {
                     result = controller_->InsertSectionAfter(anchor, "");
                 } else if (type == "subsection") {
                     result = controller_->InsertSubsectionAfter(anchor, "");
-                } else if (type == "paragraph") {
+                } else if (type == "subsubsection") {
+                    result = controller_->InsertSubsubsectionAfter(anchor, "");
+                } else if (type == "text") {
                     result = controller_->InsertParagraphAfter(anchor, "");
                 } else if (type == "equation") {
                     result = controller_->InsertEquationAfter(anchor, "", true);
@@ -538,12 +548,23 @@ bool MainWindow::OpenProjectDir(const QString& dir) {
 void MainWindow::OnSave() {
     if (!controller_->has_project()) return;
     save_state_label_->setText("Saving…");
+    // Save is asynchronous: the snapshot is captured now and written by the
+    // save worker; OnSaveFinished reports the outcome on the app thread.
     auto result = controller_->session().Save();
-    if (result.status == SaveResult::Status::Ok) {
+    if (result.status != SaveResult::Status::Queued) {
+        save_state_label_->setText("! Save failed — " + ToQ(result.detail));
+        save_state_label_->setStyleSheet(
+            QString("color: %1;").arg(theme::kError));
+    }
+}
+
+void MainWindow::OnSaveFinished(bool success, const QString& detail) {
+    if (shutting_down_) return;
+    if (success) {
         save_state_label_->setText("✓ Saved");
         save_state_label_->setStyleSheet("");
     } else {
-        save_state_label_->setText("! Save failed — " + ToQ(result.detail));
+        save_state_label_->setText("! Save failed — " + detail);
         save_state_label_->setStyleSheet(
             QString("color: %1;").arg(theme::kError));
     }
@@ -600,6 +621,14 @@ void MainWindow::RefreshDocumentView() {
     if (shutting_down_) return;
     if (!controller_->has_project()) return;
     const Document& doc = controller_->session().state().document();
+    // The insert and "/" menus are filtered by what the current template can
+    // express (plan §9).
+    if (const auto* tpl = TemplateRegistry::Instance().Find(
+            controller_->session().state().template_selection())) {
+        editor_->SetMaxHeadingDepth(tpl->capabilities.max_heading_depth);
+    } else {
+        editor_->SetMaxHeadingDepth(3);
+    }
     // Never tear the rows down while the user is mid-edit: rebuilding
     // recreates every editor widget, which would throw away the text being
     // typed. The refresh is deferred to the next commit instead.
@@ -627,9 +656,17 @@ void MainWindow::RefreshSidePanels() {
     word_count_label_->setText(QString::number(CountWords()) + " words");
 }
 
-void MainWindow::OnBuildFinished(bool success, const QString& pdf_path) {
-    int revision = controller_->current_revision().value;
-    if (success) {
+void MainWindow::OnPreviewUpdated(const pf::PreviewUpdate& update) {
+    if (shutting_down_) return;
+    // The session's preview gate already dropped stale/foreign results; the
+    // identity is still asserted here so the pane never shows a PDF from a
+    // different project or revision.
+    if (!controller_->has_project()) return;
+    if (update.project_id != controller_->session().state().id()) return;
+    if (update.revision != controller_->current_revision()) return;
+
+    const int revision = static_cast<int>(update.revision.value);
+    if (update.success && update.pdf.valid()) {
         build_button_->setText("✓ Built");
         build_button_->setStyleSheet(QString(
             "QPushButton { background: %1; color: white; border: none;"
@@ -637,7 +674,7 @@ void MainWindow::OnBuildFinished(bool success, const QString& pdf_path) {
             .arg(theme::kOk));
         build_state_label_->setText(
             QString("Build: ✓ Revision %1").arg(revision));
-        current_pdf_path_ = pdf_path;
+        current_pdf_path_ = ToQ(update.pdf.path.string());
         last_build_revision_ = revision;
         RefreshPreview();
     } else {

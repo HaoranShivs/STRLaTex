@@ -138,7 +138,10 @@ int main(int argc, char* argv[]) {
 
     Check(window.controller()->NewProject(QString::fromStdString(dir.string())),
           "create project");
-    window.controller()->Save();  // persist project.paper before reopening
+    // Save is asynchronous (snapshot -> save worker), so flush to make sure
+    // project.paper is on disk before the test reopens the directory.
+    window.controller()->Save();
+    window.controller()->FlushSaves();
     Spin(100);
     Check(window.OpenProjectDir(QString::fromStdString(dir.string())),
           "open project shows the workspace");
@@ -508,9 +511,29 @@ int main(int argc, char* argv[]) {
                 auto* popup =
                     qobject_cast<QMenu*>(QApplication::activePopupWidget());
                 if (!popup) return;
-                const QList<QAction*> actions = popup->actions();
-                if (actions.isEmpty()) return;
-                popup->setActiveAction(actions.first());
+                // The menu is grouped (Structure / Content) with disabled
+                // group titles, so pick the first *enabled, actionable* entry
+                // rather than literally the first action.
+                QAction* target = nullptr;
+                for (QAction* action : popup->actions()) {
+                    if (action->isEnabled() && action->data().isValid()) {
+                        target = action;
+                        break;
+                    }
+                }
+                if (target == nullptr) return;
+                // Prefer the "Text" entry when it is offered; that is the
+                // insertion the test then verifies. Fall back to whatever
+                // else is actionable.
+                QAction* preferred = nullptr;
+                for (QAction* action : popup->actions()) {
+                    if (action->isEnabled() &&
+                        action->data().toString() == QStringLiteral("text")) {
+                        preferred = action;
+                        break;
+                    }
+                }
+                popup->setActiveAction(preferred ? preferred : target);
                 QTest::keyClick(popup, Qt::Key_Return);
             });
             picker->start(40);
@@ -519,7 +542,7 @@ int main(int argc, char* argv[]) {
             picker->deleteLater();
             Spin(400);
 
-            Check(got_kind == QStringLiteral("paragraph"),
+            Check(got_kind == QStringLiteral("text"),
                   "the gap menu offers block kinds");
             Check(got_anchor == paragraph_key,
                   "the gap inserts at its own position");

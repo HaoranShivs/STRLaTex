@@ -7,7 +7,10 @@
 #include <QString>
 #include <memory>
 
+#include "project/PreviewUpdate.h"
 #include "project/ProjectSession.h"
+
+class QTimer;
 
 namespace pf::gui {
 
@@ -39,6 +42,8 @@ public:
     void CloseProject();
 
     void Save();
+    // Block until queued saves are written (tests/tools only).
+    void FlushSaves();
     void StartAutosave();
     void StopAutosave();
 
@@ -62,6 +67,13 @@ public:
     EditResult InsertSubsection(size_t section_index, const QString& title);
     EditResult InsertSubsectionAfter(const NodeId& anchor,
                                      const QString& title);
+    EditResult InsertSubsubsection(size_t section_index, size_t subsection_index,
+                                   const QString& title);
+    EditResult InsertSubsubsectionAfter(const NodeId& anchor,
+                                        const QString& title);
+    EditResult RenameSubsubsection(const NodeId& subsubsection,
+                                   const QString& title);
+    EditResult DeleteSubsubsection(const NodeId& subsubsection);
     EditResult InsertParagraph(const NodeId& parent, const QString& text);
     EditResult InsertParagraphAfter(const NodeId& anchor, const QString& text);
     EditResult InsertEquation(const NodeId& parent, const QString& math,
@@ -100,8 +112,12 @@ public:
 signals:
     void documentChanged();
     void buildStatusChanged(QString phase_text);
-    void buildFinished(bool success, QString pdf_path);
+    // Typed replacement for buildFinished(bool, pdf_path): carries the
+    // project/build/revision identity of the PDF so the view can reject
+    // anything that no longer belongs to the current document.
+    void previewUpdated(const pf::PreviewUpdate& update);
     void diagnosticsUpdated(QList<QString> problems);
+    void saveFinished(bool success, QString detail);
     void stateChanged(QString persistence, QString preview, QString revision);
     void templateChanged(QString template_id);
 
@@ -112,13 +128,19 @@ private:
     };
 
     void EmitDocumentChanged();
+    // Application-thread drain of ProjectSession's event queue.
+    void PumpEvents();
     EditCommand MakeCmd(FullEditPayload payload) const;
     std::optional<InsertionPoint> ResolveInsertionPoint(
         const NodeId& anchor) const;
     EditResult ExecuteAndNotify(FullEditPayload payload);
 
     std::unique_ptr<ProjectSession> session_;
+    QTimer* pump_timer_ = nullptr;
+    bool shutting_down_ = false;
     bool build_in_flight_ = false;
 };
 
 }  // namespace pf::gui
+
+Q_DECLARE_METATYPE(pf::PreviewUpdate)

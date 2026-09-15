@@ -39,6 +39,11 @@ const char* EditCommand::PayloadName() const {
             if constexpr (std::is_same_v<T, InsertSubsectionPayload>) return "InsertSubsection";
             if constexpr (std::is_same_v<T, InsertSubsectionAfterPayload>) return "InsertSubsectionAfter";
             if constexpr (std::is_same_v<T, DeleteSubsectionPayload>) return "DeleteSubsection";
+            if constexpr (std::is_same_v<T, InsertSubsubsectionPayload>) return "InsertSubsubsection";
+            if constexpr (std::is_same_v<T, RenameSubsubsectionPayload>) return "RenameSubsubsection";
+            if constexpr (std::is_same_v<T, MoveSubsubsectionPayload>) return "MoveSubsubsection";
+            if constexpr (std::is_same_v<T, DeleteSubsubsectionPayload>) return "DeleteSubsubsection";
+            if constexpr (std::is_same_v<T, InsertSubsubsectionAfterPayload>) return "InsertSubsubsectionAfter";
             if constexpr (std::is_same_v<T, InsertParagraphPayload>) return "InsertParagraph";
             if constexpr (std::is_same_v<T, InsertFigurePayload>) return "InsertFigure";
             if constexpr (std::is_same_v<T, InsertTablePayload>) return "InsertTable";
@@ -227,6 +232,27 @@ EditResult EditingSystem::ApplyDocumentPayload(const EditCommand& cmd,
     }
     if (const auto* p = std::get_if<DeleteSubsectionPayload>(&payload)) {
         return finishVoid(editor.DeleteSubsection(p->section_index, p->subsection_index), {},
+                          ChangeKind::StructureChanged);
+    }
+    if (const auto* p = std::get_if<InsertSubsubsectionPayload>(&payload)) {
+        return finish(editor.InsertSubsubsection(p->section_index, p->subsection_index,
+                                                 p->index, p->title));
+    }
+    if (const auto* p = std::get_if<InsertSubsubsectionAfterPayload>(&payload)) {
+        return finish(editor.InsertSubsubsectionAfter(p->after, p->title));
+    }
+    if (const auto* p = std::get_if<RenameSubsubsectionPayload>(&payload)) {
+        return finishVoid(editor.RenameSubsubsection(p->subsubsection, p->title),
+                          {p->subsubsection}, ChangeKind::MetadataChanged);
+    }
+    if (const auto* p = std::get_if<MoveSubsubsectionPayload>(&payload)) {
+        return finishVoid(editor.MoveSubsubsection(p->section_index, p->subsection_index,
+                                                   p->from, p->to), {},
+                          ChangeKind::StructureChanged);
+    }
+    if (const auto* p = std::get_if<DeleteSubsubsectionPayload>(&payload)) {
+        return finishVoid(editor.DeleteSubsubsection(p->section_index, p->subsection_index,
+                                                     p->subsubsection_index), {},
                           ChangeKind::StructureChanged);
     }
     if (const auto* p = std::get_if<InsertParagraphPayload>(&payload)) {

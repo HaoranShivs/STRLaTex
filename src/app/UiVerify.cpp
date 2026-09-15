@@ -173,20 +173,18 @@ int main(int argc, char* argv[]) {
             window.grab().save("/tmp/pf-ui-workspace.png");
             std::cout << "[ SAVE ] workspace screenshot\n";
 
-            // 3. Build; the controller emits buildFinished when done.
+            // 3. Build; the controller emits the typed previewUpdated event
+            // (already on the application thread) when a build is accepted.
             // Setup edits drain through debounced auto-builds and can
             // supersede the first request (latest-wins), so retry a few
             // times until a build for the current revision succeeds.
             static int build_attempts = 0;
             ProjectController* ctl = controller;
-            QObject::connect(controller, &ProjectController::buildFinished,
-                             [&window, ctl](bool success, const QString&) {
-                                 std::cout << "[ EVNT ] buildFinished success="
-                                           << success << "\n";
-                                 if (success) {
-                                     // buildFinished arrives on the worker
-                                     // thread; hop to the main thread before
-                                     // touching widgets.
+            QObject::connect(controller, &ProjectController::previewUpdated,
+                             [&window, ctl](const pf::PreviewUpdate& update) {
+                                 std::cout << "[ EVNT ] previewUpdated success="
+                                           << update.success << "\n";
+                                 if (update.success) {
                                      QMetaObject::invokeMethod(
                                          &window,
                                          [&window]() {

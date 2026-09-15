@@ -49,6 +49,8 @@ std::string ToStd(const QString& s) { return s.toStdString(); }
 constexpr const char* kBlockMime = "application/x-paperforge-block";
 
 // Block kinds offered by the insert affordances, in menu order.
+// Superseded by InsertOptionsFor(), which filters by position and template
+// capability; kept only for the block menu's generic listing.
 struct InsertEntry {
     const char* label;
     const char* kind;
@@ -56,13 +58,13 @@ struct InsertEntry {
 
 std::vector<InsertEntry> InsertEntries(bool body_empty) {
     if (body_empty) {
-        // A paragraph needs a section to live in, and a section needs no
+        // A text block needs a heading to live in, and a section needs no
         // anchor, so an empty body can only start with a section.
-        return {{"Section", "section"}};
+        return {{"Section Title", "section"}};
     }
-    return {{"Paragraph", "paragraph"}, {"Section", "section"},
-            {"Subsection", "subsection"}, {"Equation", "equation"},
-            {"Figure", "figure"},         {"Table", "table"}};
+    return {{"Text", "text"}, {"Section Title", "section"},
+            {"Subsection Title", "subsection"}, {"Equation", "equation"},
+            {"Figure", "figure"}, {"Import Table…", "table"}};
 }
 
 // Rows whose content is a run of prose: they re-flow to the block width, so a
@@ -71,6 +73,73 @@ bool IsProseRole(const QString& role) {
     return role == QLatin1String("abstract") ||
            role == QLatin1String("paragraph") ||
            role == QLatin1String("caption");
+}
+
+// What may be inserted relative to `container_kind`, using the template's
+// heading capability (plan §3, §9). The names are EditorItemKind machine
+// names; MainWindow maps them onto edit commands.
+struct InsertOption {
+    const char* label;
+    const char* kind;     // EditorItemKindName
+    const char* group;    // menu group: Structure / Content
+};
+
+std::vector<InsertOption> InsertOptionsFor(bool body_empty,
+                                           NodeKind container_kind,
+                                           int max_heading_depth) {
+    const bool in_section = container_kind == NodeKind::Section;
+    const bool in_subsection = container_kind == NodeKind::Subsection;
+    const bool in_subsubsection = container_kind == NodeKind::Subsubsection;
+
+    if (body_empty) {
+        // A text block needs a heading to live in, and a section needs no
+        // anchor, so an empty body can only start with a section.
+        return {{"Section Title", "section", "Structure"}};
+    }
+
+    std::vector<InsertOption> options;
+    // A heading may only be inserted at a level the container can hold, and
+    // only if the template supports that depth.
+    const int container_depth = HeadingDepth(container_kind);
+    if (!in_subsubsection && 1 <= max_heading_depth) {
+        options.push_back({"Section Title", "section", "Structure"});
+    }
+    if (!in_subsubsection && 2 <= max_heading_depth) {
+        options.push_back({"Subsection Title", "subsection", "Structure"});
+    }
+    if ((in_section || in_subsection) && 3 <= max_heading_depth) {
+        options.push_back({"Subsubsection Title", "subsubsection", "Structure"});
+    }
+    (void)container_depth;
+    options.push_back({"Text", "text", "Content"});
+    options.push_back({"Equation", "equation", "Content"});
+    options.push_back({"Figure", "figure", "Content"});
+    options.push_back({"Import Table…", "table", "Content"});
+    return options;
+}
+
+// Which structural container an anchor node sits in, so the insert menu can
+// offer only what the model can express there. Blocks inherit the container
+// they live in; a heading is its own container.
+NodeKind ContainerKindFor(const Document& doc, const QString& anchor) {
+    if (anchor.isEmpty()) return NodeKind::Section;
+    auto address = LocateNode(doc, NodeId(anchor.toStdString()));
+    if (!address) return NodeKind::Section;
+    switch (address->kind) {
+        case NodeKind::Section:
+        case NodeKind::Paragraph:
+        case NodeKind::Figure:
+        case NodeKind::Table:
+        case NodeKind::DisplayEquation:
+            // A block inside a section (or the section heading itself) means
+            // the next row is still owned by the section.
+            return NodeKind::Section;
+        case NodeKind::Subsection:
+            return NodeKind::Subsection;
+        case NodeKind::Subsubsection:
+            return NodeKind::Subsubsection;
+    }
+    return NodeKind::Section;
 }
 
 // Editor that sizes itself to its content and exposes key events for / and @.
@@ -655,6 +724,7 @@ void BlockEditor::CommitBlock(Block& block) {
     else if (role == "equation") emit EquationEdited(block.node_id, text);
     else if (role == "section") emit SectionRenamed(block.node_id, text);
     else if (role == "subsection") emit SubsectionRenamed(block.node_id, text);
+    else if (role == "subsubsection") emit SubsubsectionRenamed(block.node_id, text);
     else if (role == "caption") emit CaptionEdited(block.node_id, text);
     emit RowCommitted();
 }
@@ -831,7 +901,18 @@ void BlockEditor::ShowInsertMenu(const QString& anchor, QWidget* source) {
         hint->setEnabled(false);
         menu.addSeparator();
     }
-    for (const auto& entry : InsertEntries(body_empty)) {
+    const NodeKind container =
+        ContainerKindFor(*container_document_, anchor);
+    const int max_depth = max_heading_depth_ > 0 ? max_heading_depth_ : 3;
+    const char* current_group = nullptr;
+    for (const auto& entry : InsertOptionsFor(body_empty, container, max_depth)) {
+        if (current_group == nullptr ||
+            std::strcmp(current_group, entry.group) != 0) {
+            if (current_group != nullptr) menu.addSeparator();
+            QAction* group = menu.addAction(QString::fromUtf8(entry.group));
+            group->setEnabled(false);
+            current_group = entry.group;
+        }
         QAction* action = menu.addAction(QString::fromUtf8(entry.label));
         action->setData(QString::fromUtf8(entry.kind));
     }
@@ -842,24 +923,32 @@ void BlockEditor::ShowInsertMenu(const QString& anchor, QWidget* source) {
 }
 
 void BlockEditor::OpenSlashMenu(QPlainTextEdit* origin) {
-    static const std::vector<std::pair<const char*, const char*>> commands = {
-        {"Section", "section"},
-        {"Subsection", "subsection"}, {"Paragraph", "paragraph"},
-        {"Equation", "equation"}, {"Figure", "figure"},
-        {"Table", "table"},
-    };
+    // Same rules as the gap menu: filtered by the container the row belongs
+    // to and by the template's heading depth.
+    QString row_node;
+    for (const auto& block : blocks_) {
+        if (block.editor == origin) {
+            row_node = block.node_id;
+            break;
+        }
+    }
+    const NodeKind container = ContainerKindFor(*container_document_, row_node);
+    const int max_depth = max_heading_depth_ > 0 ? max_heading_depth_ : 3;
+
     std::vector<PopupList::Item> items;
-    for (const auto& pair : commands) {
+    const char* current_group = nullptr;
+    for (const auto& entry : InsertOptionsFor(row_node.isEmpty(), container,
+                                              max_depth)) {
         PopupList::Item item;
-        item.label = pair.first;
-        item.detail = "Block";
-        item.group = (QString(pair.second) == "equation" ||
-                      QString(pair.second) == "figure" ||
-                      QString(pair.second) == "table")
-                         ? "Academic"
-                         : "Basic";
-        item.payload = pair.second;
-        item.search = QString(pair.first).toLower();
+        item.label = QString::fromUtf8(entry.label);
+        item.detail = "Insert";
+        item.group = QString::fromUtf8(entry.group);
+        item.payload = QString::fromUtf8(entry.kind);
+        item.search = item.label.toLower();
+        if (current_group == nullptr ||
+            std::strcmp(current_group, entry.group) != 0) {
+            current_group = entry.group;
+        }
         items.push_back(std::move(item));
     }
 
@@ -915,6 +1004,10 @@ void BlockEditor::OpenAtMenu(QPlainTextEdit* origin) {
 }
 
 void BlockEditor::RebuildFromDocument(const Document& doc) {
+    // The insert menus resolve anchors against this document until the next
+    // rebuild; MainWindow keeps the session alive for the editor's lifetime,
+    // and rebuilds always pass the current document.
+    container_document_ = &doc;
     // Save focus, and the live text of a row the user is still editing. That
     // text wins over the document: a rebuild triggered from anywhere else
     // must never discard what is currently being typed.
@@ -1012,13 +1105,16 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
             edit->setPlaceholderText("Write the abstract…");
         } else if (kind == "Keywords") {
             edit->setPlaceholderText("Keywords — separate with commas");
-        } else if (kind == "Section") {
+        } else if (kind == "Section Title") {
             edit->setFont(theme::UiFont(17, true));
             edit->setPlaceholderText("Section title");
-        } else if (kind == "Subsection") {
+        } else if (kind == "Subsection Title") {
             edit->setFont(theme::UiFont(14, true));
             edit->setPlaceholderText("Subsection title");
-        } else if (kind == "Paragraph") {
+        } else if (kind == "Subsubsection Title") {
+            edit->setFont(theme::UiFont(12, true));
+            edit->setPlaceholderText("Subsubsection title");
+        } else if (kind == "Text") {
             edit->setPlaceholderText(
                 "Write text…  @ inserts a reference, Ctrl+Enter adds a block");
             new InlineTokenHighlighter(edit->document());
@@ -1113,11 +1209,11 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
         append_gap(QString());
     }
     for (const auto& section : doc.body().sections) {
-        add(ToQ(section.id.value()), "Section", "section",
+        add(ToQ(section.id.value()), "Section Title", "section",
             ToQ(pf::InlineToPlainText(section.title)), false, true, 1, true);
         for (const auto& block : section.blocks) {
             if (const auto* para = std::get_if<pf::Paragraph>(&block)) {
-                add(ToQ(para->id.value()), "Paragraph", "paragraph",
+                add(ToQ(para->id.value()), "Text", "paragraph",
                     ToQ(pf::InlineToPlainText(para->content)), false, true, 2);
             } else if (const auto* eq = std::get_if<pf::DisplayEquation>(&block)) {
                 add(ToQ(eq->id.value()), "Equation", "equation",
@@ -1223,15 +1319,31 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
             }
         }
         for (const auto& sub : section.subsections) {
-            add(ToQ(sub.id.value()), "Subsection", "subsection",
+            add(ToQ(sub.id.value()), "Subsection Title", "subsection",
                 ToQ(pf::InlineToPlainText(sub.title)), false, true, 1, true);
             for (const auto& block : sub.blocks) {
                 if (const auto* para = std::get_if<pf::Paragraph>(&block)) {
-                    add(ToQ(para->id.value()), "Paragraph", "paragraph",
+                    add(ToQ(para->id.value()), "Text", "paragraph",
                         ToQ(pf::InlineToPlainText(para->content)), false, true, 2);
                 } else if (const auto* eq = std::get_if<pf::DisplayEquation>(&block)) {
                     add(ToQ(eq->id.value()), "Equation", "equation",
                         ToQ(eq->math_source), true, true, 2);
+                }
+            }
+            for (const auto& subsub : sub.subsubsections) {
+                add(ToQ(subsub.id.value()), "Subsubsection Title", "subsubsection",
+                    ToQ(pf::InlineToPlainText(subsub.title)), false, true, 1,
+                    true);
+                for (const auto& block : subsub.blocks) {
+                    if (const auto* para = std::get_if<pf::Paragraph>(&block)) {
+                        add(ToQ(para->id.value()), "Text", "paragraph",
+                            ToQ(pf::InlineToPlainText(para->content)), false, true,
+                            2);
+                    } else if (const auto* eq =
+                                   std::get_if<pf::DisplayEquation>(&block)) {
+                        add(ToQ(eq->id.value()), "Equation", "equation",
+                            ToQ(eq->math_source), true, true, 2);
+                    }
                 }
             }
         }

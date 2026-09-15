@@ -11,11 +11,14 @@
 namespace pf {
 
 struct NodeLocation {
-    NodeId parent;              // owning section/subsection id (empty for sections)
+    NodeId parent;              // owning section/subsection/subsubsection id
+                                // (empty for top-level sections)
     NodeKind kind;
     size_t section_index = 0;
     bool in_subsection = false;
     size_t subsection_index = 0;
+    bool in_subsubsection = false;
+    size_t subsubsection_index = 0;
     size_t block_index = 0;     // valid when kind is a Block kind
 };
 

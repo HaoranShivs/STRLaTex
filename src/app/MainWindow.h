@@ -48,7 +48,9 @@ private slots:
 
     void RefreshDocumentView();
     void RefreshSidePanels();
-    void OnBuildFinished(bool success, const QString& pdf_path);
+    // Typed preview event: carries project/build/revision identity of the PDF.
+    void OnPreviewUpdated(const pf::PreviewUpdate& update);
+    void OnSaveFinished(bool success, const QString& detail);
     void OnDiagnosticsUpdated(const QList<QString>& problems);
     void OnBuildStatusChanged(const QString& status);
 

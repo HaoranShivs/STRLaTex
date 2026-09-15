@@ -12,12 +12,13 @@
 #include "core/Json.h"
 #include "core/Result.h"
 #include "document/Document.h"
+#include "persistence/SchemaVersions.h"
 
 namespace pf {
 
 struct SerializedProject {
     std::string project_id;
-    std::string schema_version = "1";
+    std::string schema_version = kSchemaVersion;
     std::string template_id;
     Document document;
     std::vector<AssetMetadata> assets;
@@ -43,7 +44,10 @@ struct SaveRequest {
 };
 
 struct SaveResult {
-    enum class Status { Ok, IoError, SerializeError };
+    // Queued: the immutable snapshot was handed to the save worker and the
+    // write has not been observed yet. Completion arrives as an application
+    // event (see project/ApplicationEvent.h).
+    enum class Status { Ok, Queued, IoError, SerializeError };
     std::string save_id;
     ProjectRevision saved_revision;
     Status status = Status::Ok;
@@ -61,6 +65,9 @@ struct LoadResult {
     std::string detail;
     std::optional<SerializedProject> project;
     std::vector<Diagnostic> diagnostics;
+    // Non-empty when the file was written by an older schema and was brought
+    // up to date in memory. Persistence never rewrites the file on load.
+    MigrationResult migration;
 };
 
 class ProjectPersistence {

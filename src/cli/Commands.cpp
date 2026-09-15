@@ -79,7 +79,10 @@ int CmdNew(const std::vector<std::string>& args) {
         session.Execute(make_cmd(para));
     }
 
-    auto save = session.Save();
+    // Save is asynchronous (immutable snapshot -> save worker); block until
+    // the snapshot has actually reached disk before reporting success.
+    session.Save();
+    auto save = session.FlushSaves();
     if (save.status != SaveResult::Status::Ok) {
         std::cerr << "save failed: " << save.detail << "\n";
         return 1;
@@ -118,10 +121,11 @@ int CmdBuild(const std::vector<std::string>& args) {
     });
 
     session.RequestBuild(true);
-    // Wait for the build to complete (build runs on its own thread).
+    // The build runs on a worker; its result is delivered as an application
+    // event, so this loop must pump the application-thread queue.
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{120};
     while (!done.load() && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        session.WaitForApplicationEvent(std::chrono::milliseconds{50});
     }
     if (!done.load()) {
         std::cerr << "build timed out\n";
@@ -211,6 +215,7 @@ int CmdDemo(const std::vector<std::string>& args) {
     }
 
     session.Save();
+    session.FlushSaves();
 
     std::atomic<bool> done{false};
     session.SetBuildResultHandler([&](const BuildResult& result) {
@@ -225,7 +230,7 @@ int CmdDemo(const std::vector<std::string>& args) {
     session.RequestBuild(true);
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{180};
     while (!done.load() && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        session.WaitForApplicationEvent(std::chrono::milliseconds{50});
     }
     return done.load() ? 0 : 1;
 }

@@ -94,6 +94,39 @@ struct DeleteSubsectionPayload {
     size_t subsection_index = 0;
 };
 
+// Third heading level. A subsubsection lives inside a subsection.
+struct InsertSubsubsectionPayload {
+    size_t section_index = 0;
+    size_t subsection_index = 0;
+    size_t index = 0;
+    InlineContent title;
+};
+
+struct RenameSubsubsectionPayload {
+    NodeId subsubsection;
+    InlineContent title;
+};
+
+struct MoveSubsubsectionPayload {
+    size_t section_index = 0;
+    size_t subsection_index = 0;
+    size_t from = 0;
+    size_t to = 0;
+};
+
+struct DeleteSubsubsectionPayload {
+    size_t section_index = 0;
+    size_t subsection_index = 0;
+    size_t subsubsection_index = 0;
+};
+
+// Inserts a subsubsection heading directly after `after` in reading order; the
+// blocks below the anchor move into the new subsubsection.
+struct InsertSubsubsectionAfterPayload {
+    NodeId after;
+    InlineContent title;
+};
+
 struct InsertParagraphPayload {
     NodeId parent;
     std::optional<size_t> index;
@@ -196,6 +229,11 @@ using EditPayload = std::variant<
     InsertSubsectionPayload,
     InsertSubsectionAfterPayload,
     DeleteSubsectionPayload,
+    InsertSubsubsectionPayload,
+    RenameSubsubsectionPayload,
+    MoveSubsubsectionPayload,
+    DeleteSubsubsectionPayload,
+    InsertSubsubsectionAfterPayload,
     InsertParagraphPayload,
     InsertFigurePayload,
     InsertTablePayload,
@@ -208,9 +246,6 @@ using EditPayload = std::variant<
     InsertCitationPayload,
     InsertCrossReferencePayload
 >;
-
-
-
 
 using FullEditPayload = std::variant<
     SetTitlePayload,
@@ -229,6 +264,11 @@ using FullEditPayload = std::variant<
     InsertSubsectionPayload,
     InsertSubsectionAfterPayload,
     DeleteSubsectionPayload,
+    InsertSubsubsectionPayload,
+    RenameSubsubsectionPayload,
+    MoveSubsubsectionPayload,
+    DeleteSubsubsectionPayload,
+    InsertSubsubsectionAfterPayload,
     InsertParagraphPayload,
     InsertFigurePayload,
     InsertTablePayload,

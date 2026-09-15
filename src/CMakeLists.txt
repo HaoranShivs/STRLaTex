@@ -14,6 +14,7 @@ add_library(pf_document STATIC
     document/Document.cpp
     document/DocumentEditor.cpp
     document/DocumentIndex.cpp
+    document/DocumentTraversal.cpp
     document/InlineText.cpp
 )
 target_link_libraries(pf_document PUBLIC pf_core)
@@ -67,6 +68,7 @@ target_link_libraries(pf_build PUBLIC pf_render)
 
 # Persistence
 add_library(pf_persistence STATIC
+    persistence/ProjectMigrator.cpp
     persistence/ProjectPersistence.cpp
     persistence/SaveCoordinator.cpp
 )
@@ -74,6 +76,8 @@ target_link_libraries(pf_persistence PUBLIC pf_document pf_asset pf_bibliography
 
 # Application session
 add_library(pf_app STATIC
+    project/ApplicationEvent.cpp
+    project/PreviewGate.cpp
     project/ProjectState.cpp
     project/SnapshotFactory.cpp
     project/ProjectSession.cpp

@@ -6,7 +6,9 @@
 
 #include "core/IdGenerator.h"
 #include "document/DocumentEditor.h"
+#include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
+#include "persistence/ProjectMigrator.h"
 
 namespace pf {
 
@@ -288,6 +290,15 @@ std::string ProjectSerializer::Serialize(const SerializedProject& project) {
             sub_obj["id"] = sub.id.value();
             sub_obj["title"] = InlineToJson(sub.title);
             sub_obj["blocks"] = BlocksToJson(sub.blocks);
+            JsonArray subsubs;
+            for (const auto& subsub : sub.subsubsections) {
+                JsonObject subsub_obj;
+                subsub_obj["id"] = subsub.id.value();
+                subsub_obj["title"] = InlineToJson(subsub.title);
+                subsub_obj["blocks"] = BlocksToJson(subsub.blocks);
+                subsubs.push_back(JsonValue(std::move(subsub_obj)));
+            }
+            sub_obj["subsubsections"] = std::move(subsubs);
             subs.push_back(JsonValue(std::move(sub_obj)));
         }
         s["subsections"] = std::move(subs);
@@ -414,6 +425,24 @@ Result<SerializedProject, std::string> ProjectSerializer::Deserialize(
                                                   sub.id.value());
                             }
                         }
+                        if (const auto* subsubs = sub_item.find("subsubsections")) {
+                            for (const auto& subsub_item : subsubs->as_array()) {
+                                Subsubsection subsub;
+                                if (const auto* id = subsub_item.find("id"))
+                                    subsub.id = NodeId(id->as_string());
+                                if (const auto* t = subsub_item.find("title")) {
+                                    subsub.title =
+                                        InlineFromJson(t).value_or(InlineContent{});
+                                }
+                                if (const auto* blocks = subsub_item.find("blocks")) {
+                                    if (!BlocksFromJson(blocks, &subsub.blocks)) {
+                                        return Unexpected("bad block in subsubsection " +
+                                                          subsub.id.value());
+                                    }
+                                }
+                                sub.subsubsections.push_back(std::move(subsub));
+                            }
+                        }
                         section.subsections.push_back(std::move(sub));
                     }
                 }
@@ -462,6 +491,13 @@ SaveResult ProjectPersistence::Save(const SaveRequest& request) {
 
     std::error_code ec;
     auto dest = request.destination;
+    // A destination that names an existing directory can never be an atomic
+    // rename target; fail loudly instead of producing a confusing rename error.
+    if (std::filesystem::is_directory(dest, ec)) {
+        result.status = SaveResult::Status::IoError;
+        result.detail = "save destination is a directory: " + dest.string();
+        return result;
+    }
     std::filesystem::create_directories(dest.parent_path(), ec);
 
     // Atomic write: temp file then rename.
@@ -521,6 +557,10 @@ LoadResult ProjectPersistence::Load(const LoadRequest& request) {
         result.detail = project.error();
         return result;
     }
+    // Old schema files are migrated in memory; the file on disk is untouched
+    // until the user saves.
+    auto migration = ProjectMigrator::MigrateToCurrent(&project.value());
+    result.migration = std::move(migration);
     result.project = std::move(project.value());
     result.status = LoadResult::Status::Ok;
     return result;

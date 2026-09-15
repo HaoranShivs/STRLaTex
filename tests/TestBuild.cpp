@@ -56,6 +56,7 @@ struct BuildTestRig {
         BuildSnapshot snap;
         snap.project_id = state.id();
         snap.snapshot_id = IdGenerator::NewSnapshotId();
+        snap.build_id = BuildId(IdGenerator::NewBuildId());
         snap.revision = rev;
         snap.document = doc;
         snap.template_id = "generic-article";
@@ -76,12 +77,19 @@ struct BuildTestRig {
 
 PF_TEST(BuildSuccessWithMockCompiler) {
     BuildTestRig rig(true);
-    rig.coordinator->RequestBuild(rig.MakeSnapshot(ProjectRevision{1}), true);
+    auto snapshot = rig.MakeSnapshot(ProjectRevision{1});
+    const std::string snapshot_id = snapshot.snapshot_id;
+    const BuildId build_id = snapshot.build_id;
+    rig.coordinator->RequestBuild(std::move(snapshot), true);
     PF_CHECK(rig.WaitForResult());
     PF_CHECK(rig.results.size() == 1);
     PF_CHECK(rig.results[0].outcome == BuildResult::Outcome::Success);
     PF_CHECK(!rig.results[0].pdf_path.empty());
     PF_CHECK(rig.results[0].revision.value == 1);
+    // The result is attributable to the exact snapshot + build attempt.
+    PF_CHECK(rig.results[0].snapshot_id == snapshot_id);
+    PF_CHECK(rig.results[0].build_id == build_id);
+    PF_CHECK(rig.results[0].project_id == rig.state.id());
 }
 
 PF_TEST(BuildFailureProducesDiagnostics) {

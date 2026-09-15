@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <utility>
 
 #include "bibliography/BibliographyService.h"
 #include "core/IdGenerator.h"
@@ -12,8 +13,16 @@ namespace pf {
 
 ProjectSession::ProjectSession(Config config)
     : config_(std::move(config)),
-      assets_(std::make_unique<AssetManager>(std::filesystem::path("/tmp/paperforge-assets"))),
-      snapshot_factory_(assets_.get()) {
+      assets_(std::make_unique<AssetManager>(
+          std::filesystem::path("/tmp/paperforge-assets"))),
+      snapshot_factory_(assets_.get()),
+      // The save worker hands completions back through the application event
+      // queue; it never calls into the domain directly.
+      save_coordinator_([this](const SaveCompletion& completion) {
+          SaveCompletedEvent event;
+          event.completion = completion;
+          PostApplicationEvent(std::move(event));
+      }) {
     // Wire the editing system after members exist (lambdas capture `this`).
     EditingSystem::Host ehost;
     ehost.project_id = [this] { return state_.id(); };
@@ -25,16 +34,27 @@ ProjectSession::ProjectSession(Config config)
     };
     editing_.SetHost(std::move(ehost));
 
-    // Compiler: use tectonic if available at the configured path.
-    compiler_ = std::make_unique<TectonicCompiler>(config_.tectonic_path,
-                                                   config_.tectonic_cache_dir);
+    // Compiler: injected factory (tests) or tectonic at the configured path.
+    if (config_.compiler_factory) {
+        compiler_ = config_.compiler_factory();
+    } else {
+        compiler_ = std::make_unique<TectonicCompiler>(config_.tectonic_path,
+                                                       config_.tectonic_cache_dir);
+    }
 
     BuildCoordinator::Host bhost;
     bhost.project_id = [this] { return state_.id(); };
+    // Immutable configuration only - never mutable project state.
     bhost.workspace_root = [this] { return config_.workspace_root.string(); };
-    bhost.on_build_finished = [this](const BuildResult& r) { OnBuildFinished(r); };
-    bhost.on_phase_changed = [this](BuildPhase p, BuildPhase c) {
-        if (phase_handler_) phase_handler_(p, c);
+    // Worker thread: publish a value object, never read the live state.
+    bhost.on_build_finished = [this](const BuildResult& result) {
+        PostBuildResult(result);
+    };
+    bhost.on_phase_changed = [this](BuildPhase previous, BuildPhase current) {
+        BuildPhaseChangedEvent event;
+        event.previous = previous;
+        event.current = current;
+        PostApplicationEvent(std::move(event));
     };
     build_coordinator_ = std::make_unique<BuildCoordinator>(std::move(bhost),
                                                             compiler_.get());
@@ -43,8 +63,136 @@ ProjectSession::ProjectSession(Config config)
 
 ProjectSession::~ProjectSession() {
     StopAutosaveTimer();
+    // Stop the producers while the state they post about is still alive, and
+    // give queued saves a chance to reach disk.
     build_coordinator_.reset();
+    save_coordinator_.Shutdown();
 }
+
+// ---------------- Application event pump ----------------
+
+void ProjectSession::NoteOwnerThreadUse() const {
+    if (std::this_thread::get_id() != owner_thread_) {
+        owner_thread_violations_.fetch_add(1);
+    }
+}
+
+void ProjectSession::PostApplicationEvent(ApplicationEvent event) {
+    std::function<void()> wake;
+    {
+        std::lock_guard<std::mutex> lock(events_mutex_);
+        pending_events_.push_back(std::move(event));
+        wake = wake_handler_;
+    }
+    events_condition_.notify_all();
+    if (wake) wake();
+}
+
+void ProjectSession::PostBuildResult(BuildResult result) {
+    BuildResultReadyEvent event;
+    event.result = std::move(result);
+    PostApplicationEvent(std::move(event));
+}
+
+void ProjectSession::SetWakeHandler(std::function<void()> handler) {
+    std::lock_guard<std::mutex> lock(events_mutex_);
+    wake_handler_ = std::move(handler);
+}
+
+bool ProjectSession::HasPendingApplicationEvents() const {
+    std::lock_guard<std::mutex> lock(events_mutex_);
+    return !pending_events_.empty();
+}
+
+void ProjectSession::ProcessApplicationEvents() {
+    NoteOwnerThreadUse();
+    std::vector<ApplicationEvent> events;
+    {
+        std::lock_guard<std::mutex> lock(events_mutex_);
+        events.swap(pending_events_);
+    }
+    // Applied outside the lock: handlers may post further events.
+    for (const auto& event : events) {
+        std::visit([this](const auto& typed) { HandleEvent(typed); }, event);
+    }
+}
+
+bool ProjectSession::WaitForApplicationEvent(std::chrono::milliseconds timeout) {
+    {
+        std::unique_lock<std::mutex> lock(events_mutex_);
+        events_condition_.wait_for(
+            lock, timeout,
+            [this] { return !pending_events_.empty(); });
+        if (pending_events_.empty()) return false;
+    }
+    ProcessApplicationEvents();
+    return true;
+}
+
+void ProjectSession::HandleEvent(const BuildPhaseChangedEvent& event) {
+    if (phase_handler_) phase_handler_(event.previous, event.current);
+}
+
+void ProjectSession::HandleEvent(const BuildResultReadyEvent& event) {
+    AcceptBuildResult(event.result);
+}
+
+void ProjectSession::HandleEvent(const SaveCompletedEvent& event) {
+    ApplySaveCompletion(event.completion);
+}
+
+void ProjectSession::HandleEvent(const AutosaveTickEvent&) {
+    // The timer thread only rang the bell; the snapshot is captured here, on
+    // the thread that owns the document.
+    if (lifecycle_state_ == LifecycleState::Open &&
+        persistence_state_ == PersistenceState::Dirty) {
+        Autosave();
+    }
+}
+
+PreviewGateInput ProjectSession::CurrentGateInput() const {
+    PreviewGateInput input;
+    input.has_project = lifecycle_state_ == LifecycleState::Open;
+    input.project_id = state_.id();
+    input.revision = state_.revision();
+    input.snapshot_id = latest_snapshot_id_;
+    input.build_id = latest_build_id_;
+    return input;
+}
+
+bool ProjectSession::AcceptBuildResult(const BuildResult& result) {
+    NoteOwnerThreadUse();
+    // Architecture section 47: the staleness decision belongs to the thread
+    // that owns the revision. Workers never make it.
+    const PreviewGateDecision decision =
+        EvaluatePreviewGate(CurrentGateInput(), result);
+    if (decision != PreviewGateDecision::Accept) return false;
+
+    if (result.outcome == BuildResult::Outcome::Success) {
+        preview_state_ = PreviewState::Fresh;
+    } else if (result.outcome == BuildResult::Outcome::Failure) {
+        // Keep the last successful PDF on disk; the preview is out of date.
+        if (preview_state_ != PreviewState::NoPreview) {
+            preview_state_ = PreviewState::Stale;
+        }
+    }
+
+    PreviewUpdate update;
+    update.project_id = result.project_id;
+    update.build_id = result.build_id;
+    update.revision = result.revision;
+    update.success = result.outcome == BuildResult::Outcome::Success;
+    if (update.success) {
+        update.pdf.path = result.pdf_path;
+        update.pdf.build_id = result.build_id;
+        update.pdf.revision = result.revision;
+    }
+    if (build_result_handler_) build_result_handler_(result);
+    if (preview_update_handler_) preview_update_handler_(update);
+    return true;
+}
+
+// ---------------- Lifecycle ----------------
 
 void ProjectSession::EnsureDirectories() {
     std::error_code ec;
@@ -121,6 +269,8 @@ bool ProjectSession::OpenProject(const std::filesystem::path& project_dir,
     lifecycle_state_ = LifecycleState::Open;
     persistence_state_ = PersistenceState::Clean;
     preview_state_ = PreviewState::NoPreview;
+    latest_snapshot_id_.clear();
+    latest_build_id_.clear();
     return true;
 }
 
@@ -128,9 +278,15 @@ void ProjectSession::CloseProject() {
     if (lifecycle_state_ == LifecycleState::NoProject) return;
     StopAutosaveTimer();
     build_coordinator_->Cancel();
+    // Queued saves snapshot the project being closed: let them land before the
+    // state is reset, otherwise the user's last Ctrl+S could be lost.
+    save_coordinator_.Flush();
+    ProcessApplicationEvents();
     state_.Reset();
     bibliography_db_.Clear();
     bibliography_bibtex_.clear();
+    latest_snapshot_id_.clear();
+    latest_build_id_.clear();
     lifecycle_state_ = LifecycleState::NoProject;
     persistence_state_ = PersistenceState::Clean;
     preview_state_ = PreviewState::NoPreview;
@@ -203,10 +359,9 @@ void ProjectSession::StartAutosaveTimer(std::chrono::milliseconds interval) {
                 std::this_thread::sleep_for(std::chrono::milliseconds{100});
             }
             if (autosave_stop_.load()) break;
-            if (lifecycle_state_ == LifecycleState::Open &&
-                persistence_state_ == PersistenceState::Dirty) {
-                Autosave();
-            }
+            // Only ring the bell. Reading the Document from this thread would
+            // race the user's edits; the app thread captures the snapshot.
+            PostApplicationEvent(AutosaveTickEvent{});
         }
     });
 }
@@ -221,7 +376,10 @@ void ProjectSession::MarkDirty() {
     preview_state_ = PreviewState::Stale;
 }
 
+// ---------------- Editing ----------------
+
 EditResult ProjectSession::Execute(const EditCommand& command) {
+    NoteOwnerThreadUse();
     auto result = editing_.Apply(command);
     if (result.status == EditStatus::Applied) {
         MarkDirty();
@@ -248,9 +406,16 @@ EditResult ProjectSession::Redo() {
     return result;
 }
 
+// ---------------- Build ----------------
+
 void ProjectSession::RequestBuild(bool manual) {
+    NoteOwnerThreadUse();
     if (lifecycle_state_ != LifecycleState::Open) return;
     auto snapshot = snapshot_factory_.CreateBuildSnapshot(state_, bibliography_bibtex_);
+    // Remember the identity of this ask on the owning thread; a result can
+    // only be accepted if it matches.
+    latest_snapshot_id_ = snapshot.snapshot_id;
+    latest_build_id_ = snapshot.build_id;
     build_coordinator_->RequestBuild(std::move(snapshot), manual);
 }
 
@@ -258,61 +423,99 @@ void ProjectSession::CancelBuild() { build_coordinator_->Cancel(); }
 
 BuildPhase ProjectSession::build_phase() const { return build_coordinator_->phase(); }
 
-void ProjectSession::OnBuildFinished(const BuildResult& result) {
-    // Application validation (architecture section 47): only accept results
-    // for the current revision; stale results are discarded.
-    if (result.revision != state_.revision()) {
-        return;  // discard stale
-    }
-    if (result.outcome == BuildResult::Outcome::Success) {
-        preview_state_ = PreviewState::Fresh;
-    } else if (result.outcome == BuildResult::Outcome::Failure) {
-        // Keep last successful PDF; preview stays stale.
-    }
-    if (build_result_handler_) build_result_handler_(result);
-}
+// ---------------- Save ----------------
 
-SerializedProject ProjectSession::CaptureProjectSnapshot() const {
-    auto data = snapshot_factory_.CreateProjectSnapshot(state_);
-    return data.serialized;
+SaveSnapshot ProjectSession::CaptureSaveSnapshot() const {
+    // Application thread: deep copy of the mutable state, handed to the worker.
+    return snapshot_factory_.CreateSaveSnapshot(state_);
 }
 
 SaveResult ProjectSession::Save() {
+    NoteOwnerThreadUse();
+    SaveResult queued;
     if (lifecycle_state_ != LifecycleState::Open) {
-        SaveResult r;
-        r.status = SaveResult::Status::IoError;
-        r.detail = "no project open";
-        return r;
+        queued.status = SaveResult::Status::IoError;
+        queued.detail = "no project open";
+        return queued;
     }
+    auto snapshot = CaptureSaveSnapshot();
+    queued.status = SaveResult::Status::Queued;
+    queued.saved_revision = snapshot.revision;
+    queued.save_id = save_coordinator_
+                         .Enqueue(std::move(snapshot.serialized),
+                                  paths_.project_file, SaveKind::User)
+                         .value();
     persistence_state_ = PersistenceState::Saving;
-    auto snapshot = CaptureProjectSnapshot();
-    auto result = save_coordinator_.RequestSave(std::move(snapshot),
-                                                paths_.project_file);
-    if (result.status == SaveResult::Status::Ok) {
-        // Persist bibliography too.
-        if (!bibliography_bibtex_.empty()) {
-            std::ofstream out(paths_.project_dir / "references.bib",
-                              std::ios::binary | std::ios::trunc);
-            out << bibliography_bibtex_;
-        }
-        persistence_state_ = PersistenceState::Clean;
-    } else {
-        persistence_state_ = PersistenceState::SaveFailed;
+    // Bibliography side-car: one small file, written on the owner thread.
+    if (!bibliography_bibtex_.empty()) {
+        std::ofstream out(paths_.project_dir / "references.bib",
+                          std::ios::binary | std::ios::trunc);
+        out << bibliography_bibtex_;
     }
-    return result;
+    return queued;
 }
 
 SaveResult ProjectSession::Autosave() {
+    NoteOwnerThreadUse();
+    SaveResult queued;
     if (lifecycle_state_ != LifecycleState::Open) {
-        SaveResult r;
-        r.status = SaveResult::Status::IoError;
-        r.detail = "no project open";
-        return r;
+        queued.status = SaveResult::Status::IoError;
+        queued.detail = "no project open";
+        return queued;
     }
-    auto snapshot = CaptureProjectSnapshot();
+    auto snapshot = CaptureSaveSnapshot();
+    queued.status = SaveResult::Status::Queued;
+    queued.saved_revision = snapshot.revision;
+    queued.save_id = save_coordinator_
+                         .Enqueue(std::move(snapshot.serialized),
+                                  paths_.autosave_dir / "autosave.paper",
+                                  SaveKind::Autosave)
+                         .value();
     // Autosave does not change Clean/Dirty state (architecture section 32).
-    return save_coordinator_.Autosave(std::move(snapshot), paths_.autosave_dir);
+    return queued;
 }
+
+SaveResult ProjectSession::FlushSaves() {
+    save_coordinator_.Flush();
+    // Completions are posted as events; apply them so the caller observes the
+    // final persistence state.
+    ProcessApplicationEvents();
+    return last_user_save_result_;
+}
+
+void ProjectSession::ApplySaveCompletion(const SaveCompletion& completion) {
+    // A save that finished after the project was switched must not speak for
+    // the new project.
+    if (completion.project_id != state_.id() ||
+        lifecycle_state_ != LifecycleState::Open) {
+        if (save_result_handler_) {
+            save_result_handler_(completion.result, completion.kind);
+        }
+        return;
+    }
+    if (completion.kind == SaveKind::User) {
+        last_user_save_result_ = completion.result;
+        if (completion.result.status == SaveResult::Status::Ok) {
+            // Only Clean when nothing changed while the snapshot was being
+            // written: save rev20 -> edit rev21 -> save20 finishes must leave
+            // the project Dirty.
+            if (completion.revision == state_.revision()) {
+                persistence_state_ = PersistenceState::Clean;
+            }
+        } else if (completion.revision == state_.revision()) {
+            persistence_state_ = PersistenceState::SaveFailed;
+        } else {
+            // An older snapshot failed while a newer one is in flight; let the
+            // newer save decide.
+            if (persistence_state_ != PersistenceState::Saving) {
+                persistence_state_ = PersistenceState::SaveFailed;
+            }
+        }
+    }
+    if (save_result_handler_) save_result_handler_(completion.result, completion.kind);
+}
+
+// ---------------- Template ----------------
 
 void ProjectSession::ChangeTemplate(const std::string& template_id) {
     const auto* def = TemplateRegistry::Instance().Find(template_id);
@@ -334,6 +537,8 @@ void ProjectSession::ChangeTemplate(const std::string& template_id) {
     MarkDirty();
     RequestBuild(false);
 }
+
+// ---------------- Assets ----------------
 
 AssetImportResult ProjectSession::ImportAsset(const std::filesystem::path& source) {
     AssetImportRequest request;
@@ -375,6 +580,8 @@ EditResult ProjectSession::InsertFigureFromSource(const std::filesystem::path& s
     cmd.payload = payload;
     return Execute(cmd);
 }
+
+// ---------------- Bibliography ----------------
 
 BibliographyImportResult ProjectSession::ImportBibliography(
     const std::string& bibtex_text) {

@@ -1,8 +1,10 @@
 #include "validation/Validator.h"
 
 #include <algorithm>
+#include <atomic>
 
 #include "core/IdGenerator.h"
+#include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
 #include "template/TemplateRegistry.h"
 
@@ -10,13 +12,16 @@ namespace pf {
 
 namespace {
 
-std::uint64_t g_counter = 0;
+// Validator runs on whatever thread owns the snapshot - in practice the build
+// worker, but also the application thread for a direct validation - so the
+// diagnostic id counter must be atomic. Found by ThreadSanitizer.
+std::atomic<std::uint64_t> g_counter{0};
 
 Diagnostic MakeDiag(ProjectRevision rev, DiagnosticSeverity severity,
                     const std::string& code, const std::string& message,
                     DiagnosticLocation loc) {
     Diagnostic d;
-    d.id = MakeDiagnosticId("val", ++g_counter);
+    d.id = MakeDiagnosticId("val", g_counter.fetch_add(1) + 1);
     d.source = DiagnosticSource::Validation;
     d.severity = severity;
     d.code = code;
@@ -79,67 +84,53 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
         }
     };
 
-    auto check_blocks = [&](const std::vector<Block>& blocks) {
-        for (const auto& block : blocks) {
-            if (const auto* para = std::get_if<Paragraph>(&block)) {
-                check_inline(para->content);
-            } else if (const auto* fig = std::get_if<Figure>(&block)) {
-                if (fig->asset_id.empty()) {
+    // Block-level semantic rules. One traversal; the heading nesting lives in
+    // DocumentTraversal, not here.
+    VisitBlocks(doc, [&](const Block& block, const NodeAddress&) {
+        if (const auto* para = std::get_if<Paragraph>(&block)) {
+            check_inline(para->content);
+        } else if (const auto* fig = std::get_if<Figure>(&block)) {
+            if (fig->asset_id.empty()) {
+                result->diagnostics.push_back(MakeDiag(
+                    input.revision, DiagnosticSeverity::Error, "E-MISSING-ASSET",
+                    "figure has no asset", DiagnosticLocation::ForNode(fig->id)));
+            }
+        } else if (const auto* table = std::get_if<Table>(&block)) {
+            if (!table->IsRectangular()) {
+                result->diagnostics.push_back(MakeDiag(
+                    input.revision, DiagnosticSeverity::Error, "E-NON-RECT-TABLE",
+                    "table is not rectangular",
+                    DiagnosticLocation::ForNode(table->id)));
+            }
+            check_inline(table->caption);
+        } else if (const auto* eq = std::get_if<DisplayEquation>(&block)) {
+            if (eq->math_source.empty()) {
+                result->diagnostics.push_back(MakeDiag(
+                    input.revision, DiagnosticSeverity::Warning, "W-EMPTY-EQUATION",
+                    "display equation is empty", DiagnosticLocation::ForNode(eq->id)));
+            }
+        }
+    });
+
+    // Dangling cross references: every inline run (paragraph bodies and
+    // captions, plus the title/abstract) in one traversal.
+    auto check_ref = [&](const InlineContent& content) {
+        for (const auto& node : content) {
+            if (const auto* ref = std::get_if<CrossReference>(&node)) {
+                if (!doc.ContainsNode(ref->target)) {
                     result->diagnostics.push_back(MakeDiag(
-                        input.revision, DiagnosticSeverity::Error, "E-MISSING-ASSET",
-                        "figure has no asset", DiagnosticLocation::ForNode(fig->id)));
-                }
-            } else if (const auto* table = std::get_if<Table>(&block)) {
-                if (!table->IsRectangular()) {
-                    result->diagnostics.push_back(MakeDiag(
-                        input.revision, DiagnosticSeverity::Error, "E-NON-RECT-TABLE",
-                        "table is not rectangular",
-                        DiagnosticLocation::ForNode(table->id)));
-                }
-                check_inline(table->caption);
-            } else if (const auto* eq = std::get_if<DisplayEquation>(&block)) {
-                if (eq->math_source.empty()) {
-                    result->diagnostics.push_back(MakeDiag(
-                        input.revision, DiagnosticSeverity::Warning, "W-EMPTY-EQUATION",
-                        "display equation is empty", DiagnosticLocation::ForNode(eq->id)));
+                        input.revision, DiagnosticSeverity::Error,
+                        "E-MISSING-XREF-TARGET",
+                        "cross reference target no longer exists: " +
+                            ref->target.value(),
+                        DiagnosticLocation::ForNode(ref->target)));
                 }
             }
         }
     };
-
-    for (const auto& section : doc.body().sections) {
-        check_blocks(section.blocks);
-        for (const auto& sub : section.subsections) {
-            check_blocks(sub.blocks);
-        }
-    }
-
-    // Dangling cross references
-    for (const auto& section : doc.body().sections) {
-        auto check_ref = [&](const InlineContent& content) {
-            for (const auto& node : content) {
-                if (const auto* ref = std::get_if<CrossReference>(&node)) {
-                    if (!doc.ContainsNode(ref->target)) {
-                        result->diagnostics.push_back(MakeDiag(
-                            input.revision, DiagnosticSeverity::Error,
-                            "E-MISSING-XREF-TARGET",
-                            "cross reference target no longer exists: " +
-                                ref->target.value(),
-                            DiagnosticLocation::ForNode(ref->target)));
-                    }
-                }
-            }
-        };
-        auto check_ref_blocks = [&](const std::vector<Block>& blocks) {
-            for (const auto& block : blocks) {
-                if (const auto* para = std::get_if<Paragraph>(&block)) check_ref(para->content);
-                if (const auto* fig = std::get_if<Figure>(&block)) check_ref(fig->caption);
-                if (const auto* tbl = std::get_if<Table>(&block)) check_ref(tbl->caption);
-            }
-        };
-        check_ref_blocks(section.blocks);
-        for (const auto& sub : section.subsections) check_ref_blocks(sub.blocks);
-    }
+    VisitInlineContent(doc, [&](const InlineContent& content, const NodeAddress&) {
+        check_ref(content);
+    });
 }
 
 void Validator::ValidateTemplate(const Document& doc, const ValidationInput& input,
@@ -194,6 +185,20 @@ void Validator::ValidateTemplate(const Document& doc, const ValidationInput& inp
         result->diagnostics.push_back(MakeDiag(
             input.revision, DiagnosticSeverity::Warning, "W-REQ-KEYWORDS",
             "template requires keywords", DiagnosticLocation::ForProject()));
+    }
+
+    // Heading depth capability (plan §9): a heading deeper than the template
+    // supports will not render as a distinct level.
+    const int max_depth = def->capabilities.max_heading_depth;
+    if (max_depth > 0 && max_depth < 3) {
+        VisitHeadings(doc, [&](const NodeAddress& address) {
+            if (address.depth() <= max_depth) return;
+            result->diagnostics.push_back(MakeDiag(
+                input.revision, DiagnosticSeverity::Warning, "W-HEADING-DEPTH",
+                std::string("template supports ") + std::to_string(max_depth) +
+                    " heading levels: " + ToString(address.kind),
+                DiagnosticLocation::ForNode(address.node)));
+        });
     }
 }
 

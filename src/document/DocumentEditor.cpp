@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include "core/IdGenerator.h"
+#include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
 
 namespace pf {
@@ -168,11 +169,16 @@ Result<NodeId, EditError> DocumentEditor::InsertSubsectionAfter(
         return id;
     };
 
-    // 1. A block directly inside a section: it takes the blocks below it, and
-    //    the heading goes before every existing subsection, which is the
-    //    earliest position the model can render.
+    // 1. A block directly inside a section or subsection: it takes the blocks
+    //    below it, and the heading goes before every existing subsection (or
+    //    at the subsection's start), which is the earliest position the model
+    //    can render. A block inside a subsubsection cannot host a subsection,
+    //    so it is rejected.
     if (auto pos = FindBlockPosition(anchor)) {
         Section& section = document_.body().sections[pos->section_index];
+        if (pos->in_subsubsection) {
+            return Unexpected(ToString(EditError::InvalidTarget));
+        }
         if (pos->in_subsection) {
             std::vector<Block>& blocks =
                 section.subsections[pos->subsection_index].blocks;
@@ -224,6 +230,132 @@ Result<void, EditError> DocumentEditor::DeleteSubsection(size_t section_index,
     return {};
 }
 
+// ---------------- Subsubsections (third heading level) ----------------
+
+Result<NodeId, EditError> DocumentEditor::InsertSubsubsection(
+    size_t section_index, size_t subsection_index, size_t index,
+    InlineContent title, NodeId id) {
+    auto& sections = document_.body().sections;
+    if (section_index >= sections.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    auto& subs = sections[section_index].subsections;
+    if (subsection_index >= subs.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    auto& subsubs = subs[subsection_index].subsubsections;
+    if (index > subsubs.size()) return Unexpected(ToString(EditError::InvalidTarget));
+    if (id.empty()) id = IdGenerator::NewNode();
+    Subsubsection subsub;
+    subsub.id = id;
+    subsub.title = std::move(title);
+    subsubs.insert(subsubs.begin() + static_cast<long>(index), std::move(subsub));
+    document_.BumpVersion();
+    return id;
+}
+
+Result<NodeId, EditError> DocumentEditor::InsertSubsubsectionAfter(
+    const NodeId& anchor, InlineContent title, NodeId id) {
+    if (id.empty()) id = IdGenerator::NewNode();
+
+    const auto place = [&](Subsection& sub, size_t subsubsection_index,
+                           std::vector<Block> taken) -> Result<NodeId, EditError> {
+        Subsubsection subsub;
+        subsub.id = id;
+        subsub.title = std::move(title);
+        subsub.blocks = std::move(taken);
+        auto& subsubs = sub.subsubsections;
+        subsubs.insert(subsubs.begin() + static_cast<long>(subsubsection_index),
+                       std::move(subsub));
+        document_.BumpVersion();
+        return id;
+    };
+
+    // 1. A block inside the subsection (or one of its subsubsections): the
+    //    blocks below the anchor become the new subsubsection's content, and
+    //    the heading appears where it was asked for.
+    if (auto pos = FindBlockPosition(anchor)) {
+        Section& section = document_.body().sections[pos->section_index];
+        if (!pos->in_subsection) {
+            return Unexpected(ToString(EditError::InvalidTarget));
+        }
+        Subsection& sub = section.subsections[pos->subsection_index];
+
+        if (pos->in_subsubsection) {
+            std::vector<Block>& blocks =
+                sub.subsubsections[pos->subsubsection_index].blocks;
+            std::vector<Block> taken;
+            for (size_t i = pos->block_index + 1; i < blocks.size(); ++i) {
+                taken.push_back(std::move(blocks[i]));
+            }
+            blocks.resize(pos->block_index + 1);
+            return place(sub, pos->subsubsection_index + 1, std::move(taken));
+        }
+        std::vector<Block> taken;
+        for (size_t i = pos->block_index + 1; i < sub.blocks.size(); ++i) {
+            taken.push_back(std::move(sub.blocks[i]));
+        }
+        sub.blocks.resize(pos->block_index + 1);
+        return place(sub, 0, std::move(taken));
+    }
+
+    // 2. An existing subsubsection: the new heading follows it, nothing moves.
+    if (Subsection* owner = FindParentSubsubsection(anchor)) {
+        for (size_t zi = 0; zi < owner->subsubsections.size(); ++zi) {
+            if (owner->subsubsections[zi].id == anchor) {
+                return place(*owner, zi + 1, {});
+            }
+        }
+    }
+
+    // 3. A subsection: everything it owns becomes the subsubsection's content.
+    if (Subsection* sub = FindSubsection(anchor)) {
+        std::vector<Block> taken = std::move(sub->blocks);
+        sub->blocks.clear();
+        return place(*sub, 0, std::move(taken));
+    }
+    return Unexpected(ToString(EditError::NotFound));
+}
+
+Result<void, EditError> DocumentEditor::DeleteSubsubsection(
+    size_t section_index, size_t subsection_index, size_t subsubsection_index) {
+    auto& sections = document_.body().sections;
+    if (section_index >= sections.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    auto& subs = sections[section_index].subsections;
+    if (subsection_index >= subs.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    auto& subsubs = subs[subsection_index].subsubsections;
+    if (subsubsection_index >= subsubs.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    subsubs.erase(subsubs.begin() + static_cast<long>(subsubsection_index));
+    document_.BumpVersion();
+    return {};
+}
+
+Result<void, EditError> DocumentEditor::MoveSubsubsection(size_t section_index,
+                                                           size_t subsection_index,
+                                                           size_t from, size_t to) {
+    auto& sections = document_.body().sections;
+    if (section_index >= sections.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    auto& subs = sections[section_index].subsections;
+    if (subsection_index >= subs.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    auto& subsubs = subs[subsection_index].subsubsections;
+    if (from >= subsubs.size() || to > subsubs.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    if (from == to || from + 1 == to) {
+        document_.BumpVersion();
+        return {};
+    }
+    Subsubsection moved = std::move(subsubs[from]);
+    subsubs.erase(subsubs.begin() + static_cast<long>(from));
+    size_t insert_at = to > from ? to - 1 : to;
+    if (insert_at > subsubs.size()) insert_at = subsubs.size();
+    subsubs.insert(subsubs.begin() + static_cast<long>(insert_at), std::move(moved));
+    document_.BumpVersion();
+    return {};
+}
+
 Result<void, EditError> DocumentEditor::MoveSubsection(size_t section_index, size_t from,
                                                        size_t to) {
     auto& sections = document_.body().sections;
@@ -257,6 +389,11 @@ Result<void, EditError> DocumentEditor::RenameSection(const NodeId& id,
         document_.BumpVersion();
         return {};
     }
+    if (auto* subsub = FindSubsubsection(id)) {
+        subsub->title = title;
+        document_.BumpVersion();
+        return {};
+    }
     return Unexpected(ToString(EditError::NotFound));
 }
 
@@ -270,68 +407,86 @@ Result<void, EditError> DocumentEditor::RenameSubsection(
     return Unexpected(ToString(EditError::NotFound));
 }
 
+Result<void, EditError> DocumentEditor::RenameSubsubsection(
+    const NodeId& id, const InlineContent& title) {
+    if (auto* subsub = FindSubsubsection(id)) {
+        subsub->title = title;
+        document_.BumpVersion();
+        return {};
+    }
+    return Unexpected(ToString(EditError::NotFound));
+}
+
 // ---------------- Blocks ----------------
 
 Section* DocumentEditor::FindSection(const NodeId& id) {
-    for (auto& section : document_.body().sections) {
-        if (section.id == id) return &section;
-    }
-    return nullptr;
+    return pf::FindSection(document_, id);
 }
 
 Subsection* DocumentEditor::FindSubsection(const NodeId& id) {
-    for (auto& section : document_.body().sections) {
-        for (auto& sub : section.subsections) {
-            if (sub.id == id) return &sub;
-        }
-    }
-    return nullptr;
+    return pf::FindSubsection(document_, id);
+}
+
+Subsubsection* DocumentEditor::FindSubsubsection(const NodeId& id) {
+    return pf::FindSubsubsection(document_, id);
+}
+
+Subsection* DocumentEditor::FindParentSubsubsection(const NodeId& id) {
+    auto address = LocateNode(document_, id);
+    if (!address || address->kind != NodeKind::Subsubsection) return nullptr;
+    auto& sections = document_.body().sections;
+    if (!address->section || !address->subsection) return nullptr;
+    if (*address->section >= sections.size()) return nullptr;
+    auto& subs = sections[*address->section].subsections;
+    if (*address->subsection >= subs.size()) return nullptr;
+    return &subs[*address->subsection];
 }
 
 Block* DocumentEditor::FindBlock(const NodeId& id) {
-    auto pos = FindBlockPosition(id);
-    if (!pos) return nullptr;
-    auto& section = document_.body().sections[pos->section_index];
-    auto& blocks = pos->in_subsection
-                       ? section.subsections[pos->subsection_index].blocks
-                       : section.blocks;
-    return &blocks[pos->block_index];
+    return pf::FindBlock(document_, id);
 }
 
 std::optional<DocumentEditor::BlockPosition> DocumentEditor::FindBlockPosition(
     const NodeId& id) {
-    auto& sections = document_.body().sections;
-    for (size_t si = 0; si < sections.size(); ++si) {
-        auto& section = sections[si];
-        for (size_t bi = 0; bi < section.blocks.size(); ++bi) {
-            if (std::visit([&](const auto& b) { return b.id == id; }, section.blocks[bi])) {
-                return BlockPosition{si, false, 0, bi};
-            }
-        }
-        for (size_t ui = 0; ui < section.subsections.size(); ++ui) {
-            auto& sub = section.subsections[ui];
-            for (size_t bi = 0; bi < sub.blocks.size(); ++bi) {
-                if (std::visit([&](const auto& b) { return b.id == id; }, sub.blocks[bi])) {
-                    return BlockPosition{si, true, ui, bi};
-                }
-            }
-        }
+    auto address = LocateNode(document_, id);
+    if (!address || !address->block) return std::nullopt;
+    BlockPosition position;
+    position.section_index = *address->section;
+    if (address->subsection) {
+        position.in_subsection = true;
+        position.subsection_index = *address->subsection;
     }
-    return std::nullopt;
+    if (address->subsubsection) {
+        position.in_subsubsection = true;
+        position.subsubsection_index = *address->subsubsection;
+    }
+    position.block_index = *address->block;
+    return position;
+}
+
+std::vector<NodeId> DocumentEditor::BlockParents(const NodeId& id) {
+    std::vector<NodeId> parents;
+    auto address = LocateNode(document_, id);
+    if (!address || !address->block) return parents;
+    auto& sections = document_.body().sections;
+    if (!address->section || *address->section >= sections.size()) return parents;
+    const Section& section = sections[*address->section];
+    parents.push_back(section.id);
+    if (!address->subsection) return parents;
+    const Subsection& sub = section.subsections[*address->subsection];
+    parents.push_back(sub.id);
+    if (!address->subsubsection) return parents;
+    parents.push_back(sub.subsubsections[*address->subsubsection].id);
+    return parents;
 }
 
 Result<NodeId, EditError> DocumentEditor::InsertBlock(const NodeId& parent,
                                                       std::optional<size_t> index,
                                                       Block block, NodeId id) {
-    Section* section = nullptr;
-    Subsection* sub = nullptr;
-    if ((section = FindSection(parent)) != nullptr) {
-        // ok
-    } else if ((sub = FindSubsection(parent)) != nullptr) {
-        // ok
-    } else {
-        return Unexpected(ToString(EditError::InvalidTarget));
-    }
+    // A block may live in a section, a subsection or a subsubsection; the
+    // traversal layer owns that distinction.
+    std::vector<Block>* blocks = FindBlockListForParent(parent);
+    if (!blocks) return Unexpected(ToString(EditError::InvalidTarget));
 
     // Extract id from the incoming block or assign a fresh one.
     if (id.empty()) {
@@ -342,57 +497,43 @@ Result<NodeId, EditError> DocumentEditor::InsertBlock(const NodeId& parent,
         std::visit([&](auto& b) { b.id = id; }, block);
     }
 
-    std::vector<Block>* blocks =
-        section ? &section->blocks : &sub->blocks;
     size_t at = index.value_or(blocks->size());
     if (at > blocks->size()) return Unexpected(ToString(EditError::InvalidTarget));
-    blocks->insert(blocks->begin() + at, std::move(block));
+    blocks->insert(blocks->begin() + static_cast<long>(at), std::move(block));
     document_.BumpVersion();
     return id;
 }
 
 Result<void, EditError> DocumentEditor::DeleteBlock(const NodeId& id) {
-    auto pos = FindBlockPosition(id);
-    if (!pos) return Unexpected(ToString(EditError::NotFound));
-    auto& section = document_.body().sections[pos->section_index];
-    auto& blocks = pos->in_subsection
-                       ? section.subsections[pos->subsection_index].blocks
-                       : section.blocks;
-    blocks.erase(blocks.begin() + pos->block_index);
+    auto* blocks = FindBlockListForNode(id);
+    if (!blocks) return Unexpected(ToString(EditError::NotFound));
+    auto address = LocateNode(document_, id);
+    blocks->erase(blocks->begin() + static_cast<long>(*address->block));
     document_.BumpVersion();
     return {};
 }
 
 Result<void, EditError> DocumentEditor::MoveBlock(const NodeId& id, const NodeId& new_parent,
                                                   std::optional<size_t> new_index) {
-    auto pos = FindBlockPosition(id);
-    if (!pos) return Unexpected(ToString(EditError::NotFound));
+    auto address = LocateNode(document_, id);
+    if (!address || !address->block) return Unexpected(ToString(EditError::NotFound));
+    std::vector<Block>* src_blocks = FindBlockList(document_, *address);
+    if (!src_blocks) return Unexpected(ToString(EditError::NotFound));
 
-    // Reject moving into itself trivially (same parent, same position is a no-op).
-    Section* src_section = &document_.body().sections[pos->section_index];
-    std::vector<Block>* src_blocks =
-        pos->in_subsection ? &src_section->subsections[pos->subsection_index].blocks
-                           : &src_section->blocks;
+    std::vector<Block>* dst_blocks = FindBlockListForParent(new_parent);
+    if (!dst_blocks) return Unexpected(ToString(EditError::InvalidTarget));
 
-    Section* dst_section = nullptr;
-    Subsection* dst_sub = nullptr;
-    if ((dst_section = FindSection(new_parent)) != nullptr) {
-    } else if ((dst_sub = FindSubsection(new_parent)) != nullptr) {
-    } else {
-        return Unexpected(ToString(EditError::InvalidTarget));
-    }
+    Block moved = std::move((*src_blocks)[*address->block]);
+    src_blocks->erase(src_blocks->begin() + static_cast<long>(*address->block));
 
-    Block moved = std::move((*src_blocks)[pos->block_index]);
-    src_blocks->erase(src_blocks->begin() + pos->block_index);
-
-    std::vector<Block>* dst_blocks = dst_section ? &dst_section->blocks : &dst_sub->blocks;
     size_t at = new_index.value_or(dst_blocks->size());
     if (at > dst_blocks->size()) {
         // Put it back where it was to avoid losing data.
-        src_blocks->insert(src_blocks->begin() + pos->block_index, std::move(moved));
+        src_blocks->insert(src_blocks->begin() + static_cast<long>(*address->block),
+                           std::move(moved));
         return Unexpected(ToString(EditError::InvalidTarget));
     }
-    dst_blocks->insert(dst_blocks->begin() + at, std::move(moved));
+    dst_blocks->insert(dst_blocks->begin() + static_cast<long>(at), std::move(moved));
     document_.BumpVersion();
     return {};
 }
@@ -474,6 +615,19 @@ std::vector<std::vector<TableCell>> DocumentEditor::MakeCells(size_t rows, size_
     std::vector<std::vector<TableCell>> cells(
         rows, std::vector<TableCell>(cols, TableCell{}));
     return cells;
+}
+
+std::vector<Block>* DocumentEditor::FindBlockListForParent(const NodeId& parent) {
+    if (auto* section = FindSection(parent)) return &section->blocks;
+    if (auto* sub = FindSubsection(parent)) return &sub->blocks;
+    if (auto* subsub = FindSubsubsection(parent)) return &subsub->blocks;
+    return nullptr;
+}
+
+std::vector<Block>* DocumentEditor::FindBlockListForNode(const NodeId& id) {
+    auto address = LocateNode(document_, id);
+    if (!address || !address->block) return nullptr;
+    return FindBlockList(document_, *address);
 }
 
 Result<Table, EditError> DocumentEditor::MakeTable(std::vector<TableColumn> columns,

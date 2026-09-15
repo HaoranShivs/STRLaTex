@@ -21,6 +21,10 @@ namespace pf {
 struct BuildSnapshot {
     ProjectId project_id;
     std::string snapshot_id;
+    // Identity of this build attempt. Minted with the snapshot so the
+    // application thread can tell one attempt from another when the result
+    // comes back.
+    BuildId build_id;
     ProjectRevision revision;
     std::shared_ptr<const Document> document;
     std::string template_id;
@@ -47,6 +51,7 @@ struct BuildResult {
     Outcome outcome = Outcome::Failure;
     ProjectId project_id;
     std::string snapshot_id;
+    BuildId build_id;
     ProjectRevision revision;
     std::filesystem::path pdf_path;
     std::string log;
