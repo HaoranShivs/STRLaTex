@@ -32,9 +32,15 @@ void LatexRenderer::RenderInline(const InlineContent& content, std::string* out)
     for (const auto& node : content) {
         if (const auto* run = std::get_if<TextRun>(&node)) {
             std::string escaped = EscapeLatex(run->text);
-            if (HasMark(run->marks, TextMark::Strong)) {
+            // Composite rendering (plan §4.3): Strong + Emphasis nests, one
+            // does not override the other.
+            const bool strong = HasMark(run->marks, TextMark::Strong);
+            const bool emphasis = HasMark(run->marks, TextMark::Emphasis);
+            if (strong && emphasis) {
+                *out += "\\textbf{\\emph{" + escaped + "}}";
+            } else if (strong) {
                 *out += "\\textbf{" + escaped + "}";
-            } else if (HasMark(run->marks, TextMark::Emphasis)) {
+            } else if (emphasis) {
                 *out += "\\emph{" + escaped + "}";
             } else {
                 *out += escaped;

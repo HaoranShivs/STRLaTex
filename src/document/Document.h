@@ -31,6 +31,16 @@ inline void SetMark(std::uint8_t& marks, TextMark mark, bool on) {
         marks &= ~static_cast<std::uint8_t>(mark);
     }
 }
+// Mark composition, so Strong | Emphasis reads the way it is rendered.
+inline constexpr std::uint8_t operator|(TextMark a, TextMark b) noexcept {
+    return static_cast<std::uint8_t>(a) | static_cast<std::uint8_t>(b);
+}
+inline constexpr bool operator==(std::uint8_t marks, TextMark mark) noexcept {
+    return marks == static_cast<std::uint8_t>(mark);
+}
+inline constexpr bool operator!=(std::uint8_t marks, TextMark mark) noexcept {
+    return !(marks == mark);
+}
 
 struct TextRun {
     std::string text;

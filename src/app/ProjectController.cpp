@@ -585,6 +585,16 @@ EditResult ProjectController::EditParagraph(const NodeId& paragraph,
     return r;
 }
 
+EditResult ProjectController::EditParagraphRich(const NodeId& paragraph,
+                                                const InlineContent& content) {
+    EditParagraphPayload p;
+    p.paragraph = paragraph;
+    p.content = content;  // already structured; no string round trip
+    auto r = session_->Execute(MakeCmd(std::move(p)));
+    if (r.status == EditStatus::Applied) EmitDocumentChanged();
+    return r;
+}
+
 EditResult ProjectController::EditEquation(const NodeId& equation,
                                            const QString& math) {
     EditEquationPayload p;

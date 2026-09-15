@@ -21,6 +21,25 @@ InlineContent InlineFromText(std::string text, std::uint8_t marks = 0);
 // nodes when a user edits the surrounding paragraph text.
 InlineContent InlineFromEditorText(std::string text);
 
+// ---- Rich text (Stage B) ----
+
+// Editor representation that also carries character marks. Tokens stay
+// readable ([cite:key] / [ref:node-id]) so the string stays diffable and the
+// legacy plain-text path keeps working; marks are attached to text with the
+// delimiters below, which never appear in normal prose:
+//   **bold**, *italic*, ***bold italic***
+// Equations become $math$. Round trip: InlineFromRichText(InlineToRichText(x))
+// preserves every run's marks and every semantic node.
+std::string InlineToRichText(const InlineContent& content);
+
+// Inverse of InlineToRichText. Unknown markup is kept as literal text, so a
+// document never loses content because of a parse miss.
+InlineContent InlineFromRichText(const std::string& text);
+
+// True when the content has any character marks, equations, citations or
+// references - i.e. anything a plain text field would flatten.
+bool InlineIsRich(const InlineContent& content);
+
 // Undo the hard line breaks of a text that was copied out of a PDF or another
 // word processor. Such a paste arrives pre-wrapped at a fixed column, so the
 // paragraph can never re-flow to the editor width.

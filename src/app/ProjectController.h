@@ -84,6 +84,10 @@ public:
     EditResult InsertFigureAfter(const NodeId& anchor, const QString& image_path);
     EditResult InsertTableAfter(const NodeId& anchor);
     EditResult EditParagraph(const NodeId& paragraph, const QString& text);
+    // Structured variant used by InlineEditor: bold/italic runs, citations,
+    // cross references and inline equations survive the round trip.
+    EditResult EditParagraphRich(const NodeId& paragraph,
+                                 const InlineContent& content);
     EditResult EditEquation(const NodeId& equation, const QString& math);
     EditResult RenameSection(const NodeId& section, const QString& title);
     EditResult RenameSubsection(const NodeId& subsection, const QString& title);

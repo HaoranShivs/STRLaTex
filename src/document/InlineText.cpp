@@ -116,6 +116,157 @@ InlineContent InlineFromEditorText(std::string text) {
     return content;
 }
 
+// ---- Rich text (Stage B) ----
+
+namespace {
+
+// The fence that turns `marks` on/off in the editor representation. Emitted
+// and parsed symmetrically so the round trip is lossless.
+std::string FenceFor(std::uint8_t marks) {
+    if (marks == (TextMark::Strong | TextMark::Emphasis)) return "***";
+    if (marks == TextMark::Strong) return "**";
+    if (marks == TextMark::Emphasis) return "*";
+    return {};
+}
+
+// True when a word boundary is needed between the last character and a fence.
+bool NeedsSpaceBeforeFence(const std::string& out) {
+    if (out.empty()) return false;
+    const char last = out.back();
+    return !(last == ' ' || last == '\n' || last == '*');
+}
+
+}  // namespace
+
+std::string InlineToRichText(const InlineContent& content) {
+    std::string out;
+    for (const auto& node : content) {
+        if (const auto* run = std::get_if<TextRun>(&node)) {
+            const std::string fence = FenceFor(run->marks);
+            if (fence.empty()) {
+                out += run->text;
+                continue;
+            }
+            if (NeedsSpaceBeforeFence(out)) out += ' ';
+            out += fence + run->text + fence;
+            // A fenced run followed by a letter would swallow the next word
+            // when parsed, so close with a boundary as well.
+            if (!out.empty() && out.back() == fence.back()) {
+                // nothing extra: the closing fence already terminates the run
+            }
+        } else if (const auto* eq = std::get_if<InlineEquation>(&node)) {
+            out += "$" + eq->math_source + "$";
+        } else if (const auto* cit = std::get_if<Citation>(&node)) {
+            out += "[cite:";
+            for (size_t i = 0; i < cit->keys.size(); ++i) {
+                if (i) out += ",";
+                out += cit->keys[i];
+            }
+            out += "]";
+        } else if (const auto* ref = std::get_if<CrossReference>(&node)) {
+            out += "[ref:" + ref->target.value() + "]";
+        }
+    }
+    return out;
+}
+
+namespace {
+
+// True when `pos` starts a fence of exactly `count` asterisks (not part of a
+// longer run, which would be a longer fence).
+bool IsFence(const std::string& text, size_t pos, size_t count) {
+    if (pos + count > text.size()) return false;
+    for (size_t i = 0; i < count; ++i) {
+        if (text[pos + i] != '*') return false;
+    }
+    if (pos + count < text.size() && text[pos + count] == '*') return false;
+    return true;
+}
+
+}  // namespace
+
+InlineContent InlineFromRichText(const std::string& text) {
+    InlineContent content;
+    std::string plain;
+    std::uint8_t marks = 0;
+
+    // Close the pending run: merge into the previous run when marks match,
+    // otherwise start a new one.
+    auto flush = [&]() {
+        if (plain.empty()) return;
+        if (auto* previous = std::get_if<TextRun>(&content.back());
+            previous && previous->marks == marks) {
+            previous->text += plain;
+        } else {
+            content.push_back(TextRun{plain, marks});
+        }
+        plain.clear();
+    };
+
+    size_t i = 0;
+    while (i < text.size()) {
+        // Semantic tokens first: they are never markup.
+        if (text.compare(i, 6, "[cite:") == 0 || text.compare(i, 5, "[ref:") == 0) {
+            const size_t close = text.find(']', i);
+            if (close != std::string::npos) {
+                flush();
+                for (auto& node : InlineFromEditorText(text.substr(i, close - i + 1))) {
+                    content.push_back(std::move(node));
+                }
+                i = close + 1;
+                continue;
+            }
+        }
+        // Inline equation.
+        if (text[i] == '$') {
+            const size_t close = text.find('$', i + 1);
+            if (close != std::string::npos && close > i + 1) {
+                flush();
+                InlineEquation eq;
+                eq.math_source = text.substr(i + 1, close - i - 1);
+                content.push_back(std::move(eq));
+                i = close + 1;
+                continue;
+            }
+        }
+        // Character marks. Longest fence wins, so *** is a single toggle.
+        if (IsFence(text, i, 3)) {
+            flush();
+            const std::uint8_t both = TextMark::Strong | TextMark::Emphasis;
+            marks = (marks == both) ? 0 : both;
+            i += 3;
+            continue;
+        }
+        if (IsFence(text, i, 2)) {
+            flush();
+            marks = (marks == TextMark::Strong) ? 0u : static_cast<uint8_t>(TextMark::Strong);
+            i += 2;
+            continue;
+        }
+        if (IsFence(text, i, 1)) {
+            flush();
+            marks = (marks == TextMark::Emphasis) ? 0u : static_cast<uint8_t>(TextMark::Emphasis);
+            i += 1;
+            continue;
+        }
+        plain.push_back(text[i]);
+        ++i;
+    }
+    flush();
+    return content;
+}
+
+bool InlineIsRich(const InlineContent& content) {
+    for (const auto& node : content) {
+        if (const auto* run = std::get_if<TextRun>(&node)) {
+            if (run->marks != 0) return true;
+        } else {
+            return true;  // equation / citation / reference
+        }
+    }
+    return false;
+}
+
 namespace {
 
 // A line that starts like a list item, heading or quote keeps its own line.
