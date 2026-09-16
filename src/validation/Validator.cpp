@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <optional>
 
 #include "core/IdGenerator.h"
 #include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
+#include "math/MathValidator.h"
 #include "template/TemplateRegistry.h"
 
 namespace pf {
@@ -65,8 +67,14 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
             "paper title is empty", DiagnosticLocation::ForProject()));
     }
 
-    // Citations resolve into the bibliography
-    auto check_inline = [&](const InlineContent& content) {
+    // Citations resolve into the bibliography; math bodies obey the LaTeX
+    // input boundary (design §5). Inline math has no node id of its own, so a
+    // problem is reported against the block that owns it.
+    auto check_inline = [&](const InlineContent& content,
+                            const std::optional<NodeId>& owner) {
+        const DiagnosticLocation location =
+            owner ? DiagnosticLocation::ForNode(*owner)
+                  : DiagnosticLocation::ForProject();
         for (const auto& node : content) {
             if (const auto* cit = std::get_if<Citation>(&node)) {
                 for (const auto& key : cit->keys) {
@@ -80,21 +88,35 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
                             DiagnosticLocation::ForCitationKey(key)));
                     }
                 }
+            } else if (const auto* math = std::get_if<InlineMath>(&node)) {
+                const MathValidation validation =
+                    ValidateMath(math->expression.latex, MathFlavor::Inline);
+                if (validation.invalid()) {
+                    result->diagnostics.push_back(MakeDiag(
+                        input.revision, DiagnosticSeverity::Error,
+                        validation.code, validation.error, location));
+                } else if (validation.pending()) {
+                    result->diagnostics.push_back(MakeDiag(
+                        input.revision, DiagnosticSeverity::Warning,
+                        "W-EMPTY-INLINE-MATH", "inline math is empty",
+                        location));
+                }
             }
         }
     };
 
     // Block-level semantic rules. One traversal; the heading nesting lives in
     // DocumentTraversal, not here.
-    VisitBlocks(doc, [&](const Block& block, const NodeAddress&) {
+    VisitBlocks(doc, [&](const Block& block, const NodeAddress& address) {
         if (const auto* para = std::get_if<Paragraph>(&block)) {
-            check_inline(para->content);
+            check_inline(para->content, address.node);
         } else if (const auto* fig = std::get_if<Figure>(&block)) {
             if (fig->asset_id.empty()) {
                 result->diagnostics.push_back(MakeDiag(
                     input.revision, DiagnosticSeverity::Error, "E-MISSING-ASSET",
                     "figure has no asset", DiagnosticLocation::ForNode(fig->id)));
             }
+            check_inline(fig->caption, fig->id);
         } else if (const auto* table = std::get_if<Table>(&block)) {
             if (!table->IsRectangular()) {
                 result->diagnostics.push_back(MakeDiag(
@@ -102,12 +124,19 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
                     "table is not rectangular",
                     DiagnosticLocation::ForNode(table->id)));
             }
-            check_inline(table->caption);
-        } else if (const auto* eq = std::get_if<DisplayEquation>(&block)) {
-            if (eq->math_source.empty()) {
+            check_inline(table->caption, table->id);
+        } else if (const auto* eq = std::get_if<EquationBlock>(&block)) {
+            const MathValidation validation =
+                ValidateMath(eq->expression.latex, MathFlavor::Display);
+            if (validation.invalid()) {
                 result->diagnostics.push_back(MakeDiag(
-                    input.revision, DiagnosticSeverity::Warning, "W-EMPTY-EQUATION",
-                    "display equation is empty", DiagnosticLocation::ForNode(eq->id)));
+                    input.revision, DiagnosticSeverity::Error, validation.code,
+                    validation.error, DiagnosticLocation::ForNode(eq->id)));
+            } else if (validation.pending()) {
+                result->diagnostics.push_back(MakeDiag(
+                    input.revision, DiagnosticSeverity::Warning,
+                    "W-EMPTY-EQUATION", "display equation is empty",
+                    DiagnosticLocation::ForNode(eq->id)));
             }
         }
     });

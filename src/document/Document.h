@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/StrongId.h"
+#include "math/MathExpression.h"
 
 namespace pf {
 
@@ -48,9 +49,12 @@ struct TextRun {
     bool operator==(const TextRun&) const = default;
 };
 
-struct InlineEquation {
-    std::string math_source;
-    bool operator==(const InlineEquation&) const = default;
+// Inline math (design §3): a semantic inline object inside a TextBlock, never
+// a standalone block. Only the math body is stored; the \(...\) delimiters are
+// added by MathGenerator at render time.
+struct InlineMath {
+    MathExpression expression;
+    bool operator==(const InlineMath&) const = default;
 };
 
 enum class CitationMode : std::uint8_t {
@@ -69,7 +73,7 @@ struct CrossReference {
     bool operator==(const CrossReference&) const = default;
 };
 
-using InlineNode = std::variant<TextRun, InlineEquation, Citation, CrossReference>;
+using InlineNode = std::variant<TextRun, InlineMath, Citation, CrossReference>;
 using InlineContent = std::vector<InlineNode>;
 
 // ---------------- Block model (section 6) ----------------
@@ -128,13 +132,18 @@ struct Table {
     }
 };
 
-struct DisplayEquation {
+// EquationBlock (design §4): a standalone display formula. `label` is the
+// user-visible LaTeX label ("eq:example"); an empty label falls back to the
+// node id so cross references keep resolving.
+struct EquationBlock {
     NodeId id;
-    std::string math_source;
+    MathExpression expression;
     bool numbered = true;
+    std::string label;
+    bool operator==(const EquationBlock&) const = default;
 };
 
-using Block = std::variant<Paragraph, Figure, Table, DisplayEquation>;
+using Block = std::variant<Paragraph, Figure, Table, EquationBlock>;
 
 // ---------------- Section model (section 5) ----------------
 
@@ -200,7 +209,7 @@ enum class NodeKind : std::uint8_t {
     Paragraph,
     Figure,
     Table,
-    DisplayEquation,
+    Equation,
 };
 
 const char* ToString(NodeKind kind);

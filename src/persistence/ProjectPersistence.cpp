@@ -24,9 +24,10 @@ JsonValue InlineToJson(const InlineContent& content) {
             obj["type"] = "text";
             obj["text"] = run->text;
             if (run->marks) obj["marks"] = static_cast<std::int64_t>(run->marks);
-        } else if (const auto* eq = std::get_if<InlineEquation>(&node)) {
-            obj["type"] = "inlineEquation";
-            obj["math"] = eq->math_source;
+        } else if (const auto* eq = std::get_if<InlineMath>(&node)) {
+            // Design §10: the document stores the math body only.
+            obj["type"] = "inline_math";
+            obj["latex"] = eq->expression.latex;
         } else if (const auto* cit = std::get_if<Citation>(&node)) {
             obj["type"] = "citation";
             JsonArray keys;
@@ -56,9 +57,15 @@ std::optional<InlineContent> InlineFromJson(const JsonValue* value) {
             if (const auto* marks = item.find("marks"))
                 run.marks = static_cast<std::uint8_t>(marks->as_int());
             content.push_back(std::move(run));
-        } else if (t == "inlineEquation") {
-            InlineEquation eq;
-            if (const auto* m = item.find("math")) eq.math_source = m->as_string();
+        } else if (t == "inline_math" || t == "inlineEquation") {
+            // "inlineEquation"/"math" is the pre-redesign spelling; keep
+            // reading it so existing projects open unchanged.
+            InlineMath eq;
+            if (const auto* m = item.find("latex")) {
+                eq.expression.latex = m->as_string();
+            } else if (const auto* m = item.find("math")) {
+                eq.expression.latex = m->as_string();
+            }
             content.push_back(std::move(eq));
         } else if (t == "citation") {
             Citation cit;
@@ -167,11 +174,14 @@ JsonValue BlockToJson(const Block& block) {
         JsonObject t = TableToJson(*table).as_object();
         t["type"] = "table";
         return JsonValue(std::move(t));
-    } else if (const auto* eq = std::get_if<DisplayEquation>(&block)) {
-        obj["type"] = "displayEquation";
+    } else if (const auto* eq = std::get_if<EquationBlock>(&block)) {
+        // Design §10: "equation" + latex/numbered/label; the generated
+        // environment text is never stored.
+        obj["type"] = "equation";
         obj["id"] = eq->id.value();
-        obj["math"] = eq->math_source;
+        obj["latex"] = eq->expression.latex;
         obj["numbered"] = eq->numbered;
+        obj["label"] = eq->label;
     }
     return JsonValue(std::move(obj));
 }
@@ -210,11 +220,16 @@ std::optional<Block> BlockFromJson(const JsonValue* value) {
     if (t == "table") {
         return TableFromJson(value);
     }
-    if (t == "displayEquation") {
-        DisplayEquation eq;
+    if (t == "equation" || t == "displayEquation") {
+        EquationBlock eq;
         if (const auto* id = value->find("id")) eq.id = NodeId(id->as_string());
-        if (const auto* m = value->find("math")) eq.math_source = m->as_string();
+        if (const auto* m = value->find("latex")) {
+            eq.expression.latex = m->as_string();
+        } else if (const auto* m = value->find("math")) {
+            eq.expression.latex = m->as_string();  // pre-redesign spelling
+        }
         if (const auto* n = value->find("numbered")) eq.numbered = n->as_bool();
+        if (const auto* l = value->find("label")) eq.label = l->as_string();
         return eq;
     }
     return std::nullopt;

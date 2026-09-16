@@ -19,7 +19,7 @@ NodeKind BlockKind(const Block& block) {
             if constexpr (std::is_same_v<T, Paragraph>) return NodeKind::Paragraph;
             if constexpr (std::is_same_v<T, Figure>) return NodeKind::Figure;
             if constexpr (std::is_same_v<T, Table>) return NodeKind::Table;
-            return NodeKind::DisplayEquation;
+            return NodeKind::Equation;
         },
         block);
 }

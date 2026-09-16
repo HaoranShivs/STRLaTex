@@ -56,7 +56,7 @@ EditorItemKind EditorItemKindOfNode(NodeKind kind) {
         case NodeKind::Paragraph: return EditorItemKind::Text;
         case NodeKind::Figure: return EditorItemKind::Figure;
         case NodeKind::Table: return EditorItemKind::Table;
-        case NodeKind::DisplayEquation: return EditorItemKind::Equation;
+        case NodeKind::Equation: return EditorItemKind::Equation;
     }
     return EditorItemKind::Text;
 }

@@ -115,14 +115,16 @@ PF_TEST(RichTextSerializationKeepsSemanticTokens) {
     ref.target = NodeId("n42");
     content.push_back(ref);
     content.push_back(TextRun{" we ...", 0});
-    InlineEquation eq;
-    eq.math_source = "\\alpha";
+    InlineMath eq;
+    eq.expression.latex = "\\alpha";
     content.push_back(eq);
 
     const std::string text = InlineToRichText(content);
     PF_CHECK(text.find("[cite:smith2024,li2023]") != std::string::npos);
     PF_CHECK(text.find("[ref:n42]") != std::string::npos);
-    PF_CHECK(text.find("$\\alpha$") != std::string::npos);
+    // The canonical spelling uses the generated \(...\) delimiter; the user
+    // never types a delimiter, and the old $...$ form still parses.
+    PF_CHECK(text.find("\\(\\alpha\\)") != std::string::npos);
 
     const InlineContent back = InlineFromRichText(text);
     PF_CHECK(back == content);
@@ -291,7 +293,7 @@ PF_TEST(InlineCitationAndReferenceSurviveProtocolRoundTrip) {
     }
 }
 
-PF_TEST(InlineEquationRendersAsMathInParagraph) {
+PF_TEST(InlineMathRendersAsMathInParagraph) {
     ProjectState state = MakeState();
     auto editing = MakeEditing(state);
 
@@ -303,8 +305,8 @@ PF_TEST(InlineEquationRendersAsMathInParagraph) {
     insert.parent = sec_result.created_node;
     InlineContent content;
     content.push_back(TextRun{"The loss ", 0});
-    InlineEquation eq;
-    eq.math_source = "\\mathcal{L}";
+    InlineMath eq;
+    eq.expression.latex = "\\mathcal{L}";
     content.push_back(eq);
     content.push_back(TextRun{" decreases.", 0});
     insert.content = content;
@@ -318,22 +320,22 @@ PF_TEST(InlineEquationRendersAsMathInParagraph) {
     auto rendered = LatexRenderer().Render(request);
     PF_CHECK(rendered.status == RenderResult::Status::Ok);
     const std::string& tex = rendered.package.files[0].content;
-    PF_CHECK(tex.find("The loss $\\mathcal{L}$ decreases.") != std::string::npos);
+    PF_CHECK(tex.find("The loss \\(\\mathcal{L}\\) decreases.") != std::string::npos);
 }
 
-PF_TEST(InlineEquationTokenIsNotUserEditableText) {
+PF_TEST(InlineMathTokenIsNotUserEditableText) {
     // The inline equation is a semantic node: plain-text extraction shows the
     // math source, but the node itself is not a string the editor re-parses.
     InlineContent content;
     content.push_back(TextRun{"Loss ", 0});
-    InlineEquation eq;
-    eq.math_source = "\\mathcal{L}";
+    InlineMath eq;
+    eq.expression.latex = "\\mathcal{L}";
     content.push_back(eq);
     PF_CHECK(InlineToPlainText(content) == "Loss \\mathcal{L}");
     PF_CHECK(InlineIsRich(content));
     // Round trip keeps it a node, never a TextRun.
     const InlineContent back = InlineFromRichText(InlineToRichText(content));
-    PF_CHECK(std::holds_alternative<InlineEquation>(back[1]));
+    PF_CHECK(std::holds_alternative<InlineMath>(back[1]));
 }
 
 PF_TEST(PasteRulesAreExpressedInTheEditorRepresentation) {

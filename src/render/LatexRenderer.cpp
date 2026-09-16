@@ -1,11 +1,52 @@
 #include "render/LatexRenderer.h"
 
+#include <cctype>
 #include <cstdio>
 
 #include "core/IdGenerator.h"
+#include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
+#include "math/MathGenerator.h"
 
 namespace pf {
+
+namespace {
+
+// A LaTeX label must survive \label{} and \ref{} verbatim; user labels are
+// sanitised to [A-Za-z0-9:._-] so a stray space or brace cannot break the
+// generated document.
+std::string SanitizeLabel(const std::string& label) {
+    std::string out;
+    out.reserve(label.size());
+    for (char c : label) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isalnum(uc) || c == ':' || c == '.' || c == '_' || c == '-') {
+            out.push_back(c);
+        } else if (c == ' ') {
+            out.push_back('-');
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+std::string LatexRenderer::LabelFor(const NodeId& node) const {
+    const auto it = label_map_.find(node.value());
+    if (it != label_map_.end()) return it->second;
+    return node.value();
+}
+
+void LatexRenderer::FillLabelMap(const Document& doc) const {
+    label_map_.clear();
+    VisitBlocks(doc, [this](const Block& block, const NodeAddress&) {
+        const auto* eq = std::get_if<EquationBlock>(&block);
+        if (eq == nullptr) return;
+        std::string label = SanitizeLabel(eq->label);
+        if (label.empty()) label = eq->id.value();
+        label_map_[eq->id.value()] = label;
+    });
+}
 
 std::string LatexRenderer::EscapeLatex(const std::string& text) {
     std::string out;
@@ -45,8 +86,9 @@ void LatexRenderer::RenderInline(const InlineContent& content, std::string* out)
             } else {
                 *out += escaped;
             }
-        } else if (const auto* eq = std::get_if<InlineEquation>(&node)) {
-            *out += "$" + eq->math_source + "$";
+        } else if (const auto* eq = std::get_if<InlineMath>(&node)) {
+            // Delimiters are generated, never stored (design §6).
+            *out += GenerateInlineMath(eq->expression);
         } else if (const auto* cit = std::get_if<Citation>(&node)) {
             std::string keys;
             for (size_t i = 0; i < cit->keys.size(); ++i) {
@@ -59,7 +101,7 @@ void LatexRenderer::RenderInline(const InlineContent& content, std::string* out)
                 *out += "\\citep{" + keys + "}";
             }
         } else if (const auto* ref = std::get_if<CrossReference>(&node)) {
-            *out += "\\ref{" + ref->target.value() + "}";
+            *out += "\\ref{" + LabelFor(ref->target) + "}";
         }
     }
 }
@@ -136,13 +178,12 @@ void LatexRenderer::RenderBlock(const Block& block, std::string* out,
             *out += row + " \\\\\n";
         }
         *out += "\\end{tabular}\n\\end{table}\n\n";
-    } else if (const auto* eq = std::get_if<DisplayEquation>(&block)) {
-        if (eq->numbered) {
-            *out += "\\begin{equation}\\label{" + eq->id.value() + "}\n" +
-                    eq->math_source + "\n\\end{equation}\n\n";
-        } else {
-            *out += "\\begin{equation*}\n" + eq->math_source + "\n\\end{equation*}\n\n";
-        }
+    } else if (const auto* eq = std::get_if<EquationBlock>(&block)) {
+        // The outer environment and the label are generated from the block's
+        // attributes; the user's source is only the body (design §4/§6).
+        *out += GenerateDisplayMath(eq->expression, eq->numbered,
+                                    eq->numbered ? LabelFor(eq->id)
+                                                 : std::string());
     }
 
     auto end_line = static_cast<std::uint32_t>(
@@ -181,6 +222,8 @@ RenderResult LatexRenderer::Render(const RenderRequest& request) const {
     std::string tex;
     SourceMap& smap = result.source_map;
     smap.Clear();
+    // Resolve equation labels before any \ref is emitted.
+    FillLabelMap(doc);
 
     // --- Preamble ---
     std::string options;

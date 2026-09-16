@@ -245,7 +245,7 @@ PF_TEST(EndToEndTectonicBuild) {
 
     InsertEquationPayload eq;
     eq.parent = sec_result.created_node;
-    eq.math_source = "E = mc^{2}";
+    eq.latex = "E = mc^{2}";
     session.Execute(make_cmd(eq));
 
     session.ImportBibliography(

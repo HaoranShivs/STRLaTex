@@ -276,9 +276,10 @@ EditResult EditingSystem::ApplyDocumentPayload(const EditCommand& cmd,
         return finish(editor.InsertBlock(p->parent, p->index, table.value()));
     }
     if (const auto* p = std::get_if<InsertEquationPayload>(&payload)) {
-        DisplayEquation eq;
-        eq.math_source = p->math_source;
+        EquationBlock eq;
+        eq.expression.latex = p->latex;
         eq.numbered = p->numbered;
+        eq.label = p->label;
         return finish(editor.InsertBlock(p->parent, p->index, eq));
     }
     if (const auto* p = std::get_if<DeleteBlockPayload>(&payload)) {
@@ -299,8 +300,9 @@ EditResult EditingSystem::ApplyDocumentPayload(const EditCommand& cmd,
     }
     if (const auto* p = std::get_if<EditEquationPayload>(&payload)) {
         return finishVoid(
-            editor.SetEquationSource(p->equation, p->math_source, p->numbered), {p->equation},
-            ChangeKind::TextChanged);
+            editor.SetEquationSource(p->equation, p->latex, p->numbered,
+                                     p->label),
+            {p->equation}, ChangeKind::TextChanged);
     }
     if (const auto* p = std::get_if<InsertCitationPayload>(&payload)) {
         // Insert citation inline into the paragraph content.

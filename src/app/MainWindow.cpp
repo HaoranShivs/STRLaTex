@@ -263,9 +263,11 @@ void MainWindow::WireEditor() {
                 mark_unsaved();
             });
     connect(editor_, &BlockEditor::EquationEdited, this,
-            [this, mark_unsaved](QString node, QString math) {
+            [this, mark_unsaved](QString node, QString math, bool numbered,
+                                 QString label) {
                 controller_->EditEquation(NodeId(node.toStdString()),
-                                          std::move(math));
+                                          std::move(math), numbered,
+                                          std::move(label));
                 mark_unsaved();
             });
     connect(editor_, &BlockEditor::SectionRenamed, this,

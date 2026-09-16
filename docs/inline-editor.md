@@ -52,7 +52,10 @@ property 上：
 | --- | --- | --- |
 | Citation | `key,key2` | 高亮胶囊 |
 | CrossReference | node id | 高亮胶囊 |
-| Equation | LaTeX 源 | 高亮胶囊 |
+| Math | LaTeX 主体 | **公式预览图片**（双击编辑源） |
+
+数学对象的具体设计（`MathExpression`、输入边界、生成器、预览器、保存格式）
+见 [math-input.md](math-input.md)。
 
 满足计划 §5 的全部约束：
 
@@ -88,7 +91,10 @@ const 容器指针的场景使用。
 
 * `B` / `I`：对选区合并格式；光标未选中时改变**接下来输入**的格式。
 * 快捷键 `Ctrl+B` / `Ctrl+I` 直接在 InlineEditor 的 keyPressEvent 处理。
-* `Inline Math` 插入一个 InlineEquation token（默认 `\alpha`，可再编辑）。
+* `Inline Math` 打开 `MathEditorDialog`（源码 + 实时预览 + 状态），用户在
+  对话框里输入数学主体后插入一个公式预览对象；**不再**硬编码插入 `x^{2}`。
+  双击已有公式对象会带着它的源码重新打开同一个对话框。源只保存数学主体，
+  `\(...\)` 由生成器添加（见 [math-input.md](math-input.md)）。
 * `Citation` / `Reference` 打开 `PopupList` 选择器，payload 来自
   `SetReferenceItems`（`cite:` → 引用 key，`xref:` → 节点 id，与 `/` `@`
   菜单共用同一份数据）。

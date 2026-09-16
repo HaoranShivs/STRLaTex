@@ -510,8 +510,8 @@ PF_TEST(SchemaMigrationV1ToV2KeepsDocumentAndStampsVersion) {
     auto migration = ProjectMigrator::MigrateToCurrent(&loaded.value());
     PF_CHECK(migration.migrated);
     PF_CHECK(migration.from_version == "1");
-    PF_CHECK(migration.to_version == "2");
-    PF_CHECK(migration.applied.size() == 1);
+    PF_CHECK(migration.to_version == "3");
+    PF_CHECK(migration.applied.size() == 2);  // V1->V2, V2->V3
     PF_CHECK(migration.warnings.empty());
 
     // Nothing was lost.
@@ -535,16 +535,24 @@ PF_TEST(SchemaMigrationV1ToV2KeepsDocumentAndStampsVersion) {
     const std::string saved = ProjectSerializer::Serialize(loaded.value());
     auto reloaded = ProjectSerializer::Deserialize(saved);
     PF_CHECK(reloaded.ok());
-    PF_CHECK(reloaded.value().schema_version == "2");
+    PF_CHECK(reloaded.value().schema_version == "3");
     PF_CHECK(BodyOf(reloaded.value().document).sections.size() == 1);
 }
 
 PF_TEST(SchemaMigrationIsIdempotentAndFlagsUnknownVersions) {
     SerializedProject current;
-    current.schema_version = "2";
+    current.schema_version = "3";
     auto untouched = ProjectMigrator::MigrateToCurrent(&current);
     PF_CHECK(!untouched.migrated);
-    PF_CHECK(untouched.to_version == "2");
+    PF_CHECK(untouched.to_version == "3");
+
+    // A V2 file gains only the version stamp for the math format change.
+    SerializedProject v2;
+    v2.schema_version = "2";
+    auto from_v2 = ProjectMigrator::MigrateToCurrent(&v2);
+    PF_CHECK(from_v2.migrated);
+    PF_CHECK(from_v2.applied.size() == 1);
+    PF_CHECK(from_v2.to_version == "3");
 
     SerializedProject blank;
     blank.schema_version = "";
@@ -577,9 +585,9 @@ PF_TEST(LoadMigratesOldProjectFileInMemory) {
     auto result = ProjectPersistence::Load(request);
     PF_CHECK(result.status == LoadResult::Status::Ok);
     PF_CHECK(result.migration.migrated);
-    PF_CHECK(result.migration.to_version == "2");
+    PF_CHECK(result.migration.to_version == "3");
     PF_CHECK(result.project.has_value());
-    PF_CHECK(result.project->schema_version == "2");
+    PF_CHECK(result.project->schema_version == "3");
 
     // The old file is untouched on disk - only a save rewrites it.
     std::ifstream in(file, std::ios::binary);

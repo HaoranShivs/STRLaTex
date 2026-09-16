@@ -7,7 +7,8 @@ namespace pf {
 const char* ProjectMigrator::CurrentVersion() { return kSchemaVersion; }
 
 bool ProjectMigrator::IsKnownVersion(const std::string& version) {
-    return version == kSchemaVersionV1 || version == kSchemaVersion;
+    return version == kSchemaVersionV1 || version == kSchemaVersionV2 ||
+           version == kSchemaVersion;
 }
 
 MigrationResult ProjectMigrator::MigrateToCurrent(SerializedProject* project) {
@@ -33,11 +34,6 @@ MigrationResult ProjectMigrator::MigrateToCurrent(SerializedProject* project) {
         return result;
     }
 
-    if (project->schema_version == kSchemaVersion) {
-        result.to_version = kSchemaVersion;
-        return result;
-    }
-
     // V1 -> V2: the third heading level was introduced. A V1 document has no
     // subsubsection field at all, so the in-memory representation is already
     // correct (every Subsection starts with an empty subsubsections vector);
@@ -47,8 +43,24 @@ MigrationResult ProjectMigrator::MigrateToCurrent(SerializedProject* project) {
     if (project->schema_version == kSchemaVersionV1) {
         MigrationStep step;
         step.from_version = kSchemaVersionV1;
-        step.to_version = kSchemaVersion;
+        step.to_version = kSchemaVersionV2;
         step.description = "subsubsection support (no data change)";
+        result.applied.push_back(step);
+        result.migrated = true;
+        project->schema_version = kSchemaVersionV2;
+    }
+
+    // V2 -> V3: math moved to MathExpression. The reader has always understood
+    // both the old ("inlineEquation"/"displayEquation" + "math") and the new
+    // ("inline_math"/"equation" + "latex") spellings, so the step is a version
+    // stamp: nothing is dropped and the stored source is preserved verbatim.
+    if (project->schema_version == kSchemaVersionV2) {
+        MigrationStep step;
+        step.from_version = kSchemaVersionV2;
+        step.to_version = kSchemaVersion;
+        step.description =
+            "math expression format: MathExpression with a bare LaTeX body "
+            "(no data change)";
         result.applied.push_back(step);
         result.migrated = true;
         project->schema_version = kSchemaVersion;

@@ -84,7 +84,8 @@ signals:
     // structured (marks, citations, references, inline equations).
     void ParagraphContentEdited(const QString& node_id,
                                 const InlineContent& content);
-    void EquationEdited(const QString& node_id, const QString& math);
+    void EquationEdited(const QString& node_id, const QString& math,
+                        bool numbered, const QString& label);
     void SectionRenamed(const QString& node_id, const QString& text);
     void SubsectionRenamed(const QString& node_id, const QString& text);
     void SubsubsectionRenamed(const QString& node_id, const QString& text);
@@ -126,11 +127,17 @@ private:
         // What the document holds for a Text row, kept so an unchanged commit
         // can be skipped without flattening marks/tokens.
         pf::InlineContent committed_content;
+        // Equation rows carry the attributes that live next to the source.
+        bool equation_numbered = true;
+        QString equation_label;
         bool required = false;
     };
 
     // A Text row: InlineEditor over InlineContent, with the format toolbar.
     QWidget* MakeTextCard(const QString& node_id, const InlineContent& content);
+    // An Equation row: LaTeX source + preview + numbered + label (design §4).
+    QWidget* MakeEquationCard(const QString& node_id,
+                              const pf::EquationBlock& equation);
     // The [B] [I] [Inline Math] [Citation] [Reference] strip shown while a
     // text row is focused (plan §4.4).
     QWidget* BuildFormatToolbar(InlineEditor* editor);

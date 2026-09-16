@@ -10,8 +10,8 @@ std::string InlineToPlainText(const InlineContent& content) {
     for (const auto& node : content) {
         if (const auto* run = std::get_if<TextRun>(&node)) {
             out += run->text;
-        } else if (const auto* eq = std::get_if<InlineEquation>(&node)) {
-            out += eq->math_source;
+        } else if (const auto* eq = std::get_if<InlineMath>(&node)) {
+            out += eq->expression.latex;
         } else if (const auto* cit = std::get_if<Citation>(&node)) {
             out += "[cite:";
             for (size_t i = 0; i < cit->keys.size(); ++i) {
@@ -154,8 +154,10 @@ std::string InlineToRichText(const InlineContent& content) {
             if (!out.empty() && out.back() == fence.back()) {
                 // nothing extra: the closing fence already terminates the run
             }
-        } else if (const auto* eq = std::get_if<InlineEquation>(&node)) {
-            out += "$" + eq->math_source + "$";
+        } else if (const auto* eq = std::get_if<InlineMath>(&node)) {
+            // GenerateInlineMath's delimiter, so the readable editor spelling
+            // matches the LaTeX the generator emits.
+            out += "\\(" + eq->expression.latex + "\\)";
         } else if (const auto* cit = std::get_if<Citation>(&node)) {
             out += "[cite:";
             for (size_t i = 0; i < cit->keys.size(); ++i) {
@@ -235,13 +237,26 @@ InlineContent InlineFromRichText(const std::string& text) {
                 continue;
             }
         }
-        // Inline equation.
+        // Inline math. The canonical editor spelling is \(...\) because the
+        // user never types the delimiters; $...$ is still accepted so files
+        // written by the previous representation keep parsing.
+        if (text.compare(i, 2, "\\(") == 0) {
+            const size_t close = text.find("\\)", i + 2);
+            if (close != std::string::npos && close > i + 2) {
+                flush();
+                InlineMath eq;
+                eq.expression.latex = text.substr(i + 2, close - i - 2);
+                content.push_back(std::move(eq));
+                i = close + 2;
+                continue;
+            }
+        }
         if (text[i] == '$') {
             const size_t close = text.find('$', i + 1);
             if (close != std::string::npos && close > i + 1) {
                 flush();
-                InlineEquation eq;
-                eq.math_source = text.substr(i + 1, close - i - 1);
+                InlineMath eq;
+                eq.expression.latex = text.substr(i + 1, close - i - 1);
                 content.push_back(std::move(eq));
                 i = close + 1;
                 continue;

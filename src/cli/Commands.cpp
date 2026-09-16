@@ -181,7 +181,7 @@ int CmdDemo(const std::vector<std::string>& args) {
         eq_cmd.base_revision = session.current_revision();
         InsertEquationPayload eq;
         eq.parent = intro;
-        eq.math_source = "E = mc^2";
+        eq.latex = "E = mc^2";
         eq_cmd.payload = eq;
         session.Execute(eq_cmd);
 

@@ -22,8 +22,8 @@ Document MakeSampleDoc() {
     p.content = InlineFromText("Hello world with **bold** text.");
     editor.InsertBlock(s1.value(), std::nullopt, p);
 
-    DisplayEquation eq;
-    eq.math_source = "x = y + 1";
+    EquationBlock eq;
+    eq.expression.latex = "x = y + 1";
     editor.InsertBlock(s1.value(), std::nullopt, eq);
 
     return doc;

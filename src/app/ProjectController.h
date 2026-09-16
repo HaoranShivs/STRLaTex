@@ -77,9 +77,10 @@ public:
     EditResult InsertParagraph(const NodeId& parent, const QString& text);
     EditResult InsertParagraphAfter(const NodeId& anchor, const QString& text);
     EditResult InsertEquation(const NodeId& parent, const QString& math,
-                              bool numbered);
+                              bool numbered, const QString& label = QString());
     EditResult InsertEquationAfter(const NodeId& anchor, const QString& math,
-                                   bool numbered);
+                                   bool numbered,
+                                   const QString& label = QString());
     EditResult InsertFigure(const NodeId& parent, const QString& image_path);
     EditResult InsertFigureAfter(const NodeId& anchor, const QString& image_path);
     EditResult InsertTableAfter(const NodeId& anchor);
@@ -88,7 +89,8 @@ public:
     // cross references and inline equations survive the round trip.
     EditResult EditParagraphRich(const NodeId& paragraph,
                                  const InlineContent& content);
-    EditResult EditEquation(const NodeId& equation, const QString& math);
+    EditResult EditEquation(const NodeId& equation, const QString& math,
+                            bool numbered, const QString& label);
     EditResult RenameSection(const NodeId& section, const QString& title);
     EditResult RenameSubsection(const NodeId& subsection, const QString& title);
     EditResult EditCaption(const NodeId& block, const QString& caption);

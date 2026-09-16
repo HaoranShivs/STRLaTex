@@ -9,9 +9,14 @@
 namespace pf {
 
 // Schema versions. V1 documents have no third heading level; V2 adds
-// Subsubsection and is the current on-disk format.
+// Subsubsection. V3 is the math-redesign format: inline math is stored as
+// {"type":"inline_math","latex":...} and display math as
+// {"type":"equation","latex":...,"numbered":...,"label":...}. The reader still
+// accepts the V2 spellings ("inlineEquation"/"displayEquation" with "math"),
+// so a V2 file loads with no data change.
 inline constexpr const char* kSchemaVersionV1 = "1";
-inline constexpr const char* kSchemaVersion = "2";
+inline constexpr const char* kSchemaVersionV2 = "2";
+inline constexpr const char* kSchemaVersion = "3";
 
 struct MigrationStep {
     std::string from_version;

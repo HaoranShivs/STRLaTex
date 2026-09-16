@@ -566,14 +566,15 @@ Result<void, EditError> DocumentEditor::SetCaption(const NodeId& id,
     return {};
 }
 
-Result<void, EditError> DocumentEditor::SetEquationSource(const NodeId& id,
-                                                          const std::string& source,
-                                                          std::optional<bool> numbered) {
+Result<void, EditError> DocumentEditor::SetEquationSource(
+    const NodeId& id, const std::string& source, std::optional<bool> numbered,
+    std::optional<std::string> label) {
     Block* block = FindBlock(id);
     if (!block) return Unexpected(ToString(EditError::NotFound));
-    if (auto* eq = std::get_if<DisplayEquation>(block)) {
-        eq->math_source = source;
+    if (auto* eq = std::get_if<EquationBlock>(block)) {
+        eq->expression.latex = source;
         if (numbered) eq->numbered = *numbered;
+        if (label) eq->label = *label;
     } else {
         return Unexpected(ToString(EditError::InvalidTarget));
     }

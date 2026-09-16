@@ -237,13 +237,13 @@ PF_TEST(EditingSystemEquationEditUndo) {
     {
         const Document& doc = h.state.document();
         const auto& block = doc.body().sections[0].blocks[0];
-        PF_CHECK(std::get<DisplayEquation>(block).math_source == "F = ma");
+        PF_CHECK(std::get<EquationBlock>(block).expression.latex == "F = ma");
     }
     h.editing->Undo();
     {
         const Document& doc = h.state.document();
         const auto& block = doc.body().sections[0].blocks[0];
-        PF_CHECK(std::get<DisplayEquation>(block).math_source == "E = mc^2");
-        PF_CHECK(std::get<DisplayEquation>(block).id == eq.created_node);
+        PF_CHECK(std::get<EquationBlock>(block).expression.latex == "E = mc^2");
+        PF_CHECK(std::get<EquationBlock>(block).id == eq.created_node);
     }
 }

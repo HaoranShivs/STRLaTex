@@ -12,7 +12,7 @@ const char* ToString(NodeKind kind) {
         case NodeKind::Paragraph: return "Paragraph";
         case NodeKind::Figure: return "Figure";
         case NodeKind::Table: return "Table";
-        case NodeKind::DisplayEquation: return "DisplayEquation";
+        case NodeKind::Equation: return "Equation";
     }
     return "Unknown";
 }

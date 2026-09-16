@@ -10,6 +10,7 @@ add_executable(pf_tests
     TestSessionAsync.cpp
     TestStructure.cpp
     TestInline.cpp
+    TestMath.cpp
     TestRuntime.cpp
 )
 

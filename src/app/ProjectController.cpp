@@ -517,11 +517,13 @@ EditResult ProjectController::InsertParagraphAfter(const NodeId& anchor,
 }
 
 EditResult ProjectController::InsertEquation(const NodeId& parent,
-                                             const QString& math, bool numbered) {
+                                             const QString& math, bool numbered,
+                                             const QString& label) {
     InsertEquationPayload p;
     p.parent = parent;
-    p.math_source = ToStd(math);
+    p.latex = ToStd(math);
     p.numbered = numbered;
+    p.label = ToStd(label);
     auto r = session_->Execute(MakeCmd(std::move(p)));
     if (r.status == EditStatus::Applied) EmitDocumentChanged();
     return r;
@@ -529,7 +531,8 @@ EditResult ProjectController::InsertEquation(const NodeId& parent,
 
 EditResult ProjectController::InsertEquationAfter(const NodeId& anchor,
                                                   const QString& math,
-                                                  bool numbered) {
+                                                  bool numbered,
+                                                  const QString& label) {
     auto point = ResolveInsertionPoint(anchor);
     if (!point) {
         return EditResult::Fail(FailureReason::InvalidTarget,
@@ -538,8 +541,9 @@ EditResult ProjectController::InsertEquationAfter(const NodeId& anchor,
     InsertEquationPayload payload;
     payload.parent = point->parent;
     payload.index = point->index;
-    payload.math_source = ToStd(math);
+    payload.latex = ToStd(math);
     payload.numbered = numbered;
+    payload.label = ToStd(label);
     return ExecuteAndNotify(std::move(payload));
 }
 
@@ -599,10 +603,13 @@ EditResult ProjectController::EditParagraphRich(const NodeId& paragraph,
 }
 
 EditResult ProjectController::EditEquation(const NodeId& equation,
-                                           const QString& math) {
+                                           const QString& math, bool numbered,
+                                           const QString& label) {
     EditEquationPayload p;
     p.equation = equation;
-    p.math_source = ToStd(math);
+    p.latex = ToStd(math);
+    p.numbered = numbered;
+    p.label = ToStd(label);
     auto r = session_->Execute(MakeCmd(std::move(p)));
     if (r.status == EditStatus::Applied) EmitDocumentChanged();
     return r;

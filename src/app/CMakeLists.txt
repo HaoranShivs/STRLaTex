@@ -13,6 +13,8 @@ add_executable(paperforge-gui
     OutlinePanel.cpp
     ProblemsPanel.cpp
     WelcomePage.cpp
+    MathPreviewRenderer.cpp
+    MathEditorDialog.cpp
 )
 
 target_include_directories(paperforge-gui PRIVATE
@@ -31,6 +33,8 @@ add_executable(paperforge-gui-smoke
     InlineEditor.cpp
     GuiSmokeTest.cpp
     ProjectController.cpp
+    MathPreviewRenderer.cpp
+    MathEditorDialog.cpp
 )
 set_property(TARGET paperforge-gui-smoke PROPERTY AUTOMOC ON)
 target_link_libraries(paperforge-gui-smoke PRIVATE pf_app Qt6::Core Qt6::Widgets)
@@ -49,6 +53,8 @@ add_executable(paperforge-ui-verify
     OutlinePanel.cpp
     ProblemsPanel.cpp
     WelcomePage.cpp
+    MathPreviewRenderer.cpp
+    MathEditorDialog.cpp
 )
 set_property(TARGET paperforge-ui-verify PROPERTY AUTOMOC ON)
 target_include_directories(paperforge-ui-verify PRIVATE
@@ -70,6 +76,8 @@ add_executable(paperforge-gui-persistence-test
     OutlinePanel.cpp
     ProblemsPanel.cpp
     WelcomePage.cpp
+    MathPreviewRenderer.cpp
+    MathEditorDialog.cpp
 )
 set_property(TARGET paperforge-gui-persistence-test PROPERTY AUTOMOC ON)
 
@@ -79,6 +87,8 @@ add_executable(paperforge-inline-editor-test
     ${CMAKE_SOURCE_DIR}/tests/TestInlineEditor.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestInlinePdf.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestInlineToolbar.cpp
+    ${CMAKE_SOURCE_DIR}/tests/TestMathPreview.cpp
+    ${CMAKE_SOURCE_DIR}/tests/TestInlineMathGui.cpp
     EditorItemKind.cpp
     InlineEditor.cpp
     MainWindow.cpp
@@ -89,6 +99,8 @@ add_executable(paperforge-inline-editor-test
     OutlinePanel.cpp
     ProblemsPanel.cpp
     WelcomePage.cpp
+    MathPreviewRenderer.cpp
+    MathEditorDialog.cpp
 )
 set_property(TARGET paperforge-inline-editor-test PROPERTY AUTOMOC ON)
 target_include_directories(paperforge-inline-editor-test PRIVATE

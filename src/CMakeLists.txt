@@ -9,6 +9,13 @@ target_include_directories(pf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(pf_core PUBLIC cxx_std_20)
 target_link_libraries(pf_core PUBLIC Threads::Threads)
 
+# Math: math-expression core types, LaTeX input boundary and generator.
+add_library(pf_math STATIC
+    math/MathGenerator.cpp
+    math/MathValidator.cpp
+)
+target_link_libraries(pf_math PUBLIC pf_core)
+
 # Document model
 add_library(pf_document STATIC
     document/Document.cpp
@@ -17,7 +24,7 @@ add_library(pf_document STATIC
     document/DocumentTraversal.cpp
     document/InlineText.cpp
 )
-target_link_libraries(pf_document PUBLIC pf_core)
+target_link_libraries(pf_document PUBLIC pf_core pf_math)
 
 # Editing protocol
 add_library(pf_editing STATIC

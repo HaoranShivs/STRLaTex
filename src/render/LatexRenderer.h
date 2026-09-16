@@ -57,6 +57,13 @@ private:
     static std::string EscapeLatex(const std::string& text);
     void RenderInline(const InlineContent& content, std::string* out) const;
     void RenderBlock(const Block& block, std::string* out, SourceMap* smap) const;
+
+    // Effective LaTeX label of a node: the user label when set, the node id
+    // otherwise. FillLabelMap() populates it from the equation blocks at the
+    // start of Render() so a \ref always points at the emitted \label.
+    std::string LabelFor(const NodeId& node) const;
+    void FillLabelMap(const Document& doc) const;
+    mutable std::map<std::string, std::string> label_map_;
 };
 
 }  // namespace pf

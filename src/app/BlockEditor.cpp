@@ -1,11 +1,13 @@
 #include "app/BlockEditor.h"
 
 #include <QFontMetrics>
+#include <QCheckBox>
 #include <QColor>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMimeData>
 #include <QPixmap>
@@ -33,8 +35,10 @@
 #include <functional>
 #include <initializer_list>
 
+#include "app/MathPreviewRenderer.h"
 #include "app/Theme.h"
 #include "document/InlineText.h"
+#include "math/MathValidator.h"
 
 namespace pf::gui {
 
@@ -130,7 +134,7 @@ NodeKind ContainerKindFor(const Document& doc, const QString& anchor) {
         case NodeKind::Paragraph:
         case NodeKind::Figure:
         case NodeKind::Table:
-        case NodeKind::DisplayEquation:
+        case NodeKind::Equation:
             // A block inside a section (or the section heading itself) means
             // the next row is still owned by the section.
             return NodeKind::Section;
@@ -568,9 +572,8 @@ QWidget* BlockEditor::BuildFormatToolbar(InlineEditor* editor) {
     math->setToolTip(QStringLiteral("Insert an inline equation"));
     math->setAutoRaise(true);
     math->setStyleSheet(style);
-    connect(math, &QToolButton::clicked, editor, [editor]() {
-        editor->InsertInlineEquation(QStringLiteral("x^{2}"));
-    });
+    connect(math, &QToolButton::clicked, editor,
+            [editor]() { editor->BeginInlineMath(); });
 
     auto* citation = new QToolButton(bar);
     citation->setText(QStringLiteral("Citation"));
@@ -705,6 +708,151 @@ QWidget* BlockEditor::MakeTextCard(const QString& node_id,
     block.committed_text = ToQ(pf::InlineToPlainText(content));
     block.committed_content = content;
     blocks_.push_back(std::move(block));
+    return card;
+}
+
+QWidget* BlockEditor::MakeEquationCard(const QString& node_id,
+                                       const pf::EquationBlock& equation) {
+    // Design §4: the equation row owns LaTeX Source, Preview, Numbered and
+    // Label. The user only ever edits the math body.
+    auto* card = MakeCard(node_id, QStringLiteral("Equation"),
+                          QStringLiteral("equation"), true);
+    auto* card_layout = qobject_cast<QVBoxLayout*>(card->layout());
+
+    auto* source = NewEditor(card, ToQ(equation.expression.latex), true, 2);
+    source->setPlaceholderText(
+        QStringLiteral("LaTeX body, e.g. \\frac{\\partial u}{\\partial t}"));
+    source->setProperty("row_node", node_id);
+    source->setProperty("row_focus_key", node_id);
+    source->setProperty("commands_enabled", true);
+    if (auto* block_edit = qobject_cast<BlockEdit*>(source)) {
+        block_edit->setReflowOnPaste(false);
+        block_edit->MarkClean();
+    }
+
+    auto* preview = new QLabel(card);
+    preview->setAlignment(Qt::AlignCenter);
+    preview->setMinimumHeight(56);
+    preview->setStyleSheet(
+        QString("background: %1; border: 1px solid %2; border-radius: 6px;"
+                " color: %3;")
+            .arg(theme::kEditorBackground, theme::kDivider,
+                 theme::kSecondaryText));
+    card_layout->addWidget(preview);
+
+    auto* status = new QLabel(card);
+    status->setWordWrap(true);
+    card_layout->addWidget(status);
+
+    auto* controls = new QWidget(card);
+    auto* controls_layout = new QHBoxLayout(controls);
+    controls_layout->setContentsMargins(0, 0, 0, 0);
+    controls_layout->setSpacing(6);
+    auto* numbered = new QCheckBox(QStringLiteral("Numbered"), controls);
+    numbered->setChecked(equation.numbered);
+    numbered->setProperty("row_node", node_id);
+    numbered->setToolTip(QStringLiteral(
+        "Numbered equations get an equation number and a label"));
+    auto* label_caption = new QLabel(QStringLiteral("Label"), controls);
+    label_caption->setStyleSheet(
+        QString("color: %1;").arg(theme::kSecondaryText));
+    auto* label_edit = new QLineEdit(controls);
+    label_edit->setPlaceholderText(QStringLiteral("eq:energy"));
+    label_edit->setText(ToQ(equation.label));
+    label_edit->setProperty("row_node", node_id);
+    label_edit->setToolTip(
+        QStringLiteral("LaTeX label used by cross references, e.g. eq:energy"));
+    controls_layout->addWidget(numbered);
+    controls_layout->addWidget(label_caption);
+    controls_layout->addWidget(label_edit, 1);
+    card_layout->addWidget(controls);
+
+    // Source changed -> validation -> render -> preview (design §7).
+    auto refresh = [preview, status](const QString& latex) {
+        const pf::MathValidation validation =
+            pf::ValidateMath(latex.toStdString(), pf::MathFlavor::Display);
+        if (validation.invalid()) {
+            status->setText(QStringLiteral("Invalid — %1")
+                                .arg(QString::fromStdString(validation.error)));
+            status->setStyleSheet(QString("color: %1;").arg(theme::kError));
+        } else if (validation.pending()) {
+            status->setText(QStringLiteral("Empty equation"));
+            status->setStyleSheet(
+                QString("color: %1;").arg(theme::kSecondaryText));
+        } else {
+            status->setText(QString());
+            status->setStyleSheet(QString());
+        }
+        MathRenderStyle style;
+        style.font_px = 22;
+        const MathRenderResult rendered = RenderMathPreview(latex, style);
+        if (rendered.pixmap.isNull()) {
+            preview->setPixmap(QPixmap());
+            preview->setText(QStringLiteral("—"));
+        } else {
+            preview->setText(QString());
+            preview->setPixmap(rendered.pixmap);
+        }
+    };
+    refresh(ToQ(equation.expression.latex));
+
+    auto* timer = new QTimer(card);
+    timer->setSingleShot(true);
+    timer->setInterval(160);
+    connect(source, &QPlainTextEdit::textChanged, timer,
+            [timer]() { timer->start(); });
+    connect(timer, &QTimer::timeout, card,
+            [source, refresh]() { refresh(source->toPlainText()); });
+
+    Block block;
+    block.node_id = node_id;
+    block.kind = QStringLiteral("Equation");
+    block.card = card;
+    block.editor = source;
+    block.commit_role = QStringLiteral("equation");
+    block.committed_text = ToQ(equation.expression.latex);
+    block.equation_numbered = equation.numbered;
+    block.equation_label = ToQ(equation.label);
+    blocks_.push_back(std::move(block));
+
+    BlockEdit* block_edit = qobject_cast<BlockEdit*>(source);
+    connect(block_edit, &BlockEdit::CommitRequested, this, [this, source]() {
+        for (auto& candidate : blocks_) {
+            if (candidate.editor == source) {
+                CommitBlock(candidate);
+                break;
+            }
+        }
+    });
+
+    // Numbered / label changes are separate attributes; they commit at once.
+    // The block is looked up by its editor because `blocks_` can reallocate
+    // while the rest of the document is still being rebuilt.
+    connect(numbered, &QCheckBox::toggled, this,
+            [this, source, label_edit](bool on) {
+                for (auto& candidate : blocks_) {
+                    if (candidate.editor != source) continue;
+                    candidate.equation_numbered = on;
+                    emit EquationEdited(candidate.node_id,
+                                        source->toPlainText(), on,
+                                        label_edit->text());
+                    break;
+                }
+            });
+    connect(label_edit, &QLineEdit::editingFinished, this,
+            [this, source, numbered]() {
+                const QLineEdit* edit = qobject_cast<QLineEdit*>(sender());
+                const QString label = edit ? edit->text() : QString();
+                for (auto& candidate : blocks_) {
+                    if (candidate.editor != source) continue;
+                    candidate.equation_label = label;
+                    emit EquationEdited(candidate.node_id,
+                                        source->toPlainText(),
+                                        numbered->isChecked(), label);
+                    break;
+                }
+            });
+
     return card;
 }
 QWidget* BlockEditor::MakeCard(const QString& node_id, const QString& kind,
@@ -910,7 +1058,10 @@ void BlockEditor::CommitBlock(Block& block) {
     else if (role == "abstract") emit AbstractEdited(text);
     else if (role == "keywords") emit KeywordsEdited(text);
     else if (role == "paragraph") emit ParagraphEdited(block.node_id, text);
-    else if (role == "equation") emit EquationEdited(block.node_id, text);
+    else if (role == "equation") {
+        emit EquationEdited(block.node_id, text, block.equation_numbered,
+                            block.equation_label);
+    }
     else if (role == "section") emit SectionRenamed(block.node_id, text);
     else if (role == "subsection") emit SubsectionRenamed(block.node_id, text);
     else if (role == "subsubsection") emit SubsubsectionRenamed(block.node_id, text);
@@ -1406,9 +1557,12 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
                                                   para->content);
                 host_layout->insertWidget(host_layout->count() - 1, text_card);
                 append_gap(ToQ(para->id.value()));
-            } else if (const auto* eq = std::get_if<pf::DisplayEquation>(&block)) {
-                add(ToQ(eq->id.value()), "Equation", "equation",
-                    ToQ(eq->math_source), true, true, 2);
+            } else if (const auto* eq = std::get_if<pf::EquationBlock>(&block)) {
+                QWidget* equation_card =
+                    MakeEquationCard(ToQ(eq->id.value()), *eq);
+                host_layout->insertWidget(host_layout->count() - 1,
+                                          equation_card);
+                append_gap(ToQ(eq->id.value()));
             } else if (const auto* figure = std::get_if<pf::Figure>(&block)) {
                 QWidget* card = MakeCard(ToQ(figure->id.value()), "Figure",
                                          "caption", true);
@@ -1529,9 +1683,12 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
                     host_layout->insertWidget(host_layout->count() - 1,
                                               text_card);
                     append_gap(ToQ(para->id.value()));
-                } else if (const auto* eq = std::get_if<pf::DisplayEquation>(&block)) {
-                    add(ToQ(eq->id.value()), "Equation", "equation",
-                        ToQ(eq->math_source), true, true, 2);
+                } else if (const auto* eq = std::get_if<pf::EquationBlock>(&block)) {
+                    QWidget* equation_card =
+                        MakeEquationCard(ToQ(eq->id.value()), *eq);
+                    host_layout->insertWidget(host_layout->count() - 1,
+                                              equation_card);
+                    append_gap(ToQ(eq->id.value()));
                 }
             }
             for (const auto& subsub : sub.subsubsections) {
@@ -1546,9 +1703,12 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
                                                   text_card);
                         append_gap(ToQ(para->id.value()));
                     } else if (const auto* eq =
-                                   std::get_if<pf::DisplayEquation>(&block)) {
-                        add(ToQ(eq->id.value()), "Equation", "equation",
-                            ToQ(eq->math_source), true, true, 2);
+                                   std::get_if<pf::EquationBlock>(&block)) {
+                        QWidget* equation_card =
+                            MakeEquationCard(ToQ(eq->id.value()), *eq);
+                        host_layout->insertWidget(host_layout->count() - 1,
+                                                  equation_card);
+                        append_gap(ToQ(eq->id.value()));
                     }
                 }
             }

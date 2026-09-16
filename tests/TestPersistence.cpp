@@ -27,8 +27,8 @@ SerializedProject MakeProject() {
     p.content = InlineFromText("content paragraph");
     editor.InsertBlock(s.value(), std::nullopt, p);
 
-    DisplayEquation eq;
-    eq.math_source = "y = f(x)";
+    EquationBlock eq;
+    eq.expression.latex = "y = f(x)";
     editor.InsertBlock(sub.value(), std::nullopt, eq);
 
     auto cols = std::vector<TableColumn>{{ColumnAlignment::Left},

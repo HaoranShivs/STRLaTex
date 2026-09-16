@@ -25,8 +25,8 @@ Document MakeDoc() {
     p.content.push_back(bold);
     editor.InsertBlock(s.value(), std::nullopt, p);
 
-    DisplayEquation eq;
-    eq.math_source = "E = mc^2";
+    EquationBlock eq;
+    eq.expression.latex = "E = mc^2";
     eq.numbered = true;
     editor.InsertBlock(s.value(), std::nullopt, eq);
 
@@ -100,8 +100,8 @@ PF_TEST(RendererSourceMapCoversEquation) {
     auto node = result.source_map.Resolve(line);
     PF_CHECK(node.has_value());
     // The resolved node must be the equation node (second block).
-    PF_CHECK(cdoc.body().sections[0].blocks[1].index() == 3);  // DisplayEquation
-    PF_CHECK(std::get<DisplayEquation>(cdoc.body().sections[0].blocks[1]).id ==
+    PF_CHECK(cdoc.body().sections[0].blocks[1].index() == 3);  // EquationBlock
+    PF_CHECK(std::get<EquationBlock>(cdoc.body().sections[0].blocks[1]).id ==
              *node);
 }
 

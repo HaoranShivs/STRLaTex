@@ -5,8 +5,8 @@
 // forced the whole paragraph through the "[cite:key]" string encoding and
 // flattened bold/italic entirely. InlineEditor instead keeps a QTextEdit whose
 // character format *is* the mark state, and whose semantic nodes (citation,
-// cross reference, inline equation) are rendered as read-only tokens inside
-// the text. Committing produces the InlineContent the document stores.
+// cross reference, inline math) are rendered as read-only objects inside the
+// text. Committing produces the InlineContent the document stores.
 //
 // Token invariants (plan §5):
 //   * the identifier inside a token is not user-editable,
@@ -14,6 +14,11 @@
 //   * clicking selects it,
 //   * a citation/reference token can be re-picked,
 //   * committing, undo and redo preserve the semantic structure.
+//
+// Inline math (math-input design §3): the token is an inline preview object.
+// Double-clicking it (or the toolbar's Inline Math action) opens the math
+// editor, which shows the LaTeX body and a live preview; the stored document
+// value is always the bare body - the \(...\) delimiters are generated later.
 
 #include <QTextEdit>
 
@@ -23,6 +28,8 @@
 #include "document/Document.h"
 
 class QAction;
+class QMimeData;
+class QTextCursor;
 
 namespace pf::gui {
 
@@ -50,7 +57,7 @@ public:
     // Re-fit using a width that has not been applied to the widget yet.
     void ResizeToWidth(int width);
 
-    enum class TokenKind : int { Citation = 1, CrossReference = 2, Equation = 3 };
+    enum class TokenKind : int { Citation = 1, CrossReference = 2, Math = 3 };
 
     // Reference items for the citation / cross-reference pickers.
     // label, detail, payload = citation key or node id.
@@ -71,7 +78,22 @@ public:
     // Insert a token at the cursor. Used by the toolbar and by re-picking.
     void InsertCitationToken(const QStringList& keys);
     void InsertCrossReferenceToken(const QString& target_node);
-    void InsertInlineEquation(const QString& math);
+    // Insert an inline math object from a LaTeX body (no delimiters).
+    void InsertInlineMath(const QString& latex);
+    // Toolbar entry point: ask the user for a math body, then insert it.
+    void BeginInlineMath();
+    // Open the math editor for the object at `position` and replace it when
+    // the user accepts.
+    void EditMathAt(int position);
+
+    // Test seams for the private clipboard flavour that carries marks, tokens
+    // and math objects across copy/paste.
+    QMimeData* MimeDataForSelection() const {
+        return createMimeDataFromSelection();
+    }
+    void InsertMimeDataForTest(const QMimeData* data) {
+        insertFromMimeData(data);
+    }
 
     signals:
         // The user edited the content (committed on focus-out / Ctrl+Enter).
@@ -93,38 +115,53 @@ protected:
     void showEvent(QShowEvent* event) override;
     bool canInsertFromMimeData(const QMimeData* source) const override;
     void insertFromMimeData(const QMimeData* source) override;
+    QMimeData* createMimeDataFromSelection() const override;
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
 
 private:
     // ---- token model ----
-    // A token occupies exactly one QChar in the text (U+E000 private use),
-    // carrying its payload in the character format's anchor/string property.
+    // A token occupies exactly one QChar: the private-use marker for a
+    // citation/reference pill, or the object replacement character for an
+    // inline math preview image. Its payload lives in the char format.
     static constexpr QChar kTokenChar{0xE000};
+    static constexpr QChar kObjectChar{0xFFFC};
     static constexpr int kTokenKindProperty = QTextFormat::UserProperty + 1;
     static constexpr int kTokenPayloadProperty = QTextFormat::UserProperty + 2;
+    // Clipboard type that preserves math objects, marks and semantic tokens.
+    static const char* InlineMimeType();
 
-    void InsertToken(TokenKind kind, const QString& payload,
-                     const QString& label);
-    // The token under the cursor, if any (cursor must be *inside* it).
+    void InsertToken(QTextCursor& cursor, TokenKind kind,
+                     const QString& payload, const QString& label);
+    // Insert a rendered math object carrying its LaTeX body as payload.
+    void InsertMathObject(QTextCursor& cursor, const QString& latex);
+    // Insert already-structured content at the cursor.
+    void InsertContent(const InlineContent& content);
+    // The token under the cursor, if any (caret must be *inside* it).
     struct TokenHit {
         TokenKind kind;
         QString payload;
         int position;  // position of the token character
     };
     std::optional<TokenHit> TokenAt(int position) const;
-    // Remove the whole token, wherever the caret is inside it.
+    // Remove the whole token starting at `position`.
     void RemoveTokenAt(int position);
     // The editor text may not contain stray token characters that lost their
     // format (e.g. after a paste from a foreign source).
     void SanitizeTokens();
-
-    void ApplyPaste(const QMimeData* source, bool rich);
+    // Extract structured content from a [begin, end) range of the document.
+    InlineContent ContentInRange(int begin, int end) const;
+    // Tallest inline math image in the document (0 when there is none);
+    // plain-text metrics do not see images, so the row height needs this.
+    qreal MaxInlineImageHeight() const;
 
     std::vector<ReferenceItem> reference_items_;
     bool dirty_ = false;
     bool loading_ = false;
+    // Names the inline math images so Qt's resource cache can find them.
+    mutable int math_resource_counter_ = 0;
 };
 
 }  // namespace pf::gui

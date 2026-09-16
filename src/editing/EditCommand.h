@@ -153,8 +153,9 @@ struct InsertTablePayload {
 struct InsertEquationPayload {
     NodeId parent;
     std::optional<size_t> index;
-    std::string math_source;
+    std::string latex;
     bool numbered = true;
+    std::string label;
 };
 
 struct DeleteBlockPayload {
@@ -187,8 +188,9 @@ struct EditCaptionPayload {
 
 struct EditEquationPayload {
     NodeId equation;
-    std::string math_source;
+    std::string latex;
     std::optional<bool> numbered;
+    std::optional<std::string> label;
 };
 
 struct InsertCitationPayload {

@@ -3,7 +3,7 @@
 //
 // The domain model keeps the Structure/Block distinction it always had
 // (Section/Subsection/Subsubsection are structure nodes; Paragraph/Figure/
-// Table/DisplayEquation are blocks). The GUI used to flatten both into the
+// Table/EquationBlock are blocks). The GUI used to flatten both into the
 // same "kind" string, which is why a heading row and a text row were hard to
 // tell apart and why the insert menu could not be filtered by where you are.
 

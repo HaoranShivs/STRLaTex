@@ -108,8 +108,10 @@ public:
 
     Result<void, EditError> SetParagraphContent(const NodeId& id, const InlineContent& content);
     Result<void, EditError> SetCaption(const NodeId& id, const InlineContent& caption);
-    Result<void, EditError> SetEquationSource(const NodeId& id, const std::string& source,
-                                              std::optional<bool> numbered = std::nullopt);
+    Result<void, EditError> SetEquationSource(
+        const NodeId& id, const std::string& source,
+        std::optional<bool> numbered = std::nullopt,
+        std::optional<std::string> label = std::nullopt);
     Result<void, EditError> SetFigureAsset(const NodeId& id, const AssetId& asset_id,
                                            std::optional<FigureWidth> width = std::nullopt);
     Result<void, EditError> SetFigureAltText(const NodeId& id, const std::string& alt);
