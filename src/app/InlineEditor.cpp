@@ -5,14 +5,14 @@
 #include <QResizeEvent>
 #include <QShowEvent>
 #include <QAbstractTextDocumentLayout>
+#include <QFontMetricsF>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextFragment>
-#include <QTextImageFormat>
 #include <QMimeData>
 #include <QMouseEvent>
-#include <QUrl>
 
+#include "app/InlineMathObjectRenderer.h"
 #include "app/MathEditorDialog.h"
 #include "app/MathPreviewRenderer.h"
 #include "app/Theme.h"
@@ -21,22 +21,24 @@
 namespace pf::gui {
 
 namespace {
-constexpr int kInlineMathFontPx = 17;
-constexpr int kInlineMathMaxHeight = 56;
-constexpr int kInlineMathMaxWidth = 420;
+constexpr qreal kMaximumWidthFraction = 0.85;
 }  // namespace
 
 const char* InlineEditor::InlineMimeType() {
     return "application/x-strlatex-inline";
 }
 
-InlineEditor::InlineEditor(QWidget* parent) : QTextEdit(parent) {
+InlineEditor::InlineEditor(QWidget* parent)
+    : QTextEdit(parent),
+      math_object_renderer_(std::make_unique<InlineMathObjectRenderer>()) {
     setAcceptRichText(false);
     setWordWrapMode(QTextOption::WordWrap);
     setFrameShape(QFrame::NoFrame);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     document()->setDocumentMargin(6);
+    document()->documentLayout()->registerHandler(
+        inline_math_format::kObjectType, math_object_renderer_.get());
     connect(this, &QTextEdit::textChanged, this, [this]() {
         SanitizeTokens();
         ResizeToContent();
@@ -45,23 +47,11 @@ InlineEditor::InlineEditor(QWidget* parent) : QTextEdit(parent) {
     ResizeToContent();
 }
 
-qreal InlineEditor::MaxInlineImageHeight() const {
-    qreal tallest = 0.0;
-    for (QTextBlock block = document()->begin(); block.isValid();
-         block = block.next()) {
-        for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
-            const QTextFragment fragment = it.fragment();
-            if (!fragment.isValid()) continue;
-            if (!fragment.charFormat().property(kTokenKindProperty).isValid()) {
-                continue;
-            }
-            const QTextImageFormat image = fragment.charFormat().toImageFormat();
-            if (image.isValid() && image.height() > tallest) {
-                tallest = image.height();
-            }
-        }
+InlineEditor::~InlineEditor() {
+    if (document() && document()->documentLayout()) {
+        document()->documentLayout()->unregisterHandler(
+            inline_math_format::kObjectType, math_object_renderer_.get());
     }
-    return tallest;
 }
 
 void InlineEditor::ResizeToContent() { ResizeToWidth(width()); }
@@ -268,37 +258,46 @@ void InlineEditor::InsertToken(QTextCursor& cursor, TokenKind kind,
 }
 
 void InlineEditor::InsertMathObject(QTextCursor& cursor, const QString& latex) {
+    const QFont text_font = font();
+    const QFontMetricsF text_metrics(text_font);
+
     MathRenderStyle style;
-    style.font_px = kInlineMathFontPx;
+    style.font_px = qMax(4, qRound(text_metrics.height()));
     style.color = QColor(theme::kPrimaryText);
+    style.font_family = text_font.family();
+    style.template_id = property("template_id").toString();
     MathRenderResult rendered = RenderMathPreview(latex, style);
     if (rendered.pixmap.isNull()) return;
 
-    // Keep an inline formula from dwarfing the line it sits in.
-    int width = rendered.width;
-    int height = rendered.height;
-    QPixmap pixmap = rendered.pixmap;
-    if (height > kInlineMathMaxHeight || width > kInlineMathMaxWidth) {
-        pixmap = pixmap.scaled(qMin(width, kInlineMathMaxWidth),
-                               qMin(height, kInlineMathMaxHeight),
-                               Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        pixmap.setDevicePixelRatio(rendered.pixmap.devicePixelRatio());
-        width = qRound(pixmap.width() / pixmap.devicePixelRatio());
-        height = qRound(pixmap.height() / pixmap.devicePixelRatio());
+    // Fit both sides of the TeX baseline into the current text line. The
+    // object renderer paints the descent below the baseline, so this does not
+    // enlarge the QTextLayout line box or the surrounding TextBlock.
+    const qreal math_ascent = qMax<qreal>(1.0, rendered.baseline);
+    const qreal math_descent =
+        qMax<qreal>(1.0, rendered.height - rendered.baseline);
+    qreal scale = qMin(text_metrics.ascent() / math_ascent,
+                       text_metrics.descent() / math_descent);
+    const qreal maximum_width =
+        qMax<qreal>(48.0, viewport()->width() * kMaximumWidthFraction);
+    if (rendered.width > 0) {
+        scale = qMin(scale, maximum_width / rendered.width);
     }
+    scale = qBound<qreal>(0.01, scale, 1.0);
 
-    const QString name =
-        QStringLiteral("pf-math:%1").arg(++math_resource_counter_);
-    document()->addResource(QTextDocument::ImageResource, QUrl(name),
-                            QVariant::fromValue(pixmap));
-
-    QTextImageFormat format;
-    format.setName(name);
-    format.setWidth(width);
-    format.setHeight(height);
+    QTextCharFormat format;
+    format.setObjectType(inline_math_format::kObjectType);
+    format.setVerticalAlignment(QTextCharFormat::AlignBaseline);
+    format.setProperty(inline_math_format::kPixmapProperty,
+                       QVariant::fromValue(rendered.pixmap));
+    format.setProperty(inline_math_format::kWidthProperty,
+                       rendered.width * scale);
+    format.setProperty(inline_math_format::kHeightProperty,
+                       rendered.height * scale);
+    format.setProperty(inline_math_format::kBaselineProperty,
+                       rendered.baseline * scale);
     format.setProperty(kTokenKindProperty, static_cast<int>(TokenKind::Math));
     format.setProperty(kTokenPayloadProperty, latex);
-    cursor.insertImage(format);
+    cursor.insertText(QString(kObjectChar), format);
 }
 
 std::optional<InlineEditor::TokenHit> InlineEditor::TokenAt(int position) const {
@@ -587,20 +586,10 @@ void InlineEditor::showEvent(QShowEvent* event) {
 
 void InlineEditor::ResizeToWidth(int width) {
     const int wrap_width = qMax(1, width - 2 * frameWidth());
-    qreal measured = fontMetrics()
-                         .boundingRect(QRect(0, 0, wrap_width, 0),
-                                       Qt::TextWordWrap, toPlainText())
-                         .height();
-    // Inline math images are objects, so plain-text metrics do not see them.
-    const qreal image_height = MaxInlineImageHeight();
-    if (image_height > 0) {
-        measured = qMax(measured, image_height + fontMetrics().height());
-    }
+    document()->setTextWidth(wrap_width);
+    const qreal measured = document()->documentLayout()->documentSize().height();
     const int one_line = fontMetrics().height() + 12;
-    const int target = qMax(
-        static_cast<int>(qCeil(measured)) +
-            2 * static_cast<int>(document()->documentMargin()) + 6,
-        one_line);
+    const int target = qMax(static_cast<int>(qCeil(measured)) + 6, one_line);
     if (height() != target) setFixedHeight(target);
     updateGeometry();
 }

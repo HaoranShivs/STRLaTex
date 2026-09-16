@@ -121,6 +121,11 @@ void MathEditorDialog::RefreshPreview() {
 
     MathRenderStyle style;
     style.font_px = kPreviewFontPx;
+    // Invalid/incomplete source is kept visible through the bounded fallback;
+    // only a valid body is sent to the real TeX renderer.
+    if (!validation.valid()) {
+        style.backend = MathRenderBackend::ApproximateOnly;
+    }
     const MathRenderResult rendered = RenderMathPreview(body, style);
     if (rendered.pixmap.isNull()) {
         preview_->setPixmap(QPixmap());

@@ -14,6 +14,7 @@ add_executable(paperforge-gui
     ProblemsPanel.cpp
     WelcomePage.cpp
     MathPreviewRenderer.cpp
+    InlineMathObjectRenderer.cpp
     MathEditorDialog.cpp
 )
 
@@ -34,6 +35,7 @@ add_executable(paperforge-gui-smoke
     GuiSmokeTest.cpp
     ProjectController.cpp
     MathPreviewRenderer.cpp
+    InlineMathObjectRenderer.cpp
     MathEditorDialog.cpp
 )
 set_property(TARGET paperforge-gui-smoke PROPERTY AUTOMOC ON)
@@ -54,6 +56,7 @@ add_executable(paperforge-ui-verify
     ProblemsPanel.cpp
     WelcomePage.cpp
     MathPreviewRenderer.cpp
+    InlineMathObjectRenderer.cpp
     MathEditorDialog.cpp
 )
 set_property(TARGET paperforge-ui-verify PROPERTY AUTOMOC ON)
@@ -77,6 +80,7 @@ add_executable(paperforge-gui-persistence-test
     ProblemsPanel.cpp
     WelcomePage.cpp
     MathPreviewRenderer.cpp
+    InlineMathObjectRenderer.cpp
     MathEditorDialog.cpp
 )
 set_property(TARGET paperforge-gui-persistence-test PROPERTY AUTOMOC ON)
@@ -100,6 +104,7 @@ add_executable(paperforge-inline-editor-test
     ProblemsPanel.cpp
     WelcomePage.cpp
     MathPreviewRenderer.cpp
+    InlineMathObjectRenderer.cpp
     MathEditorDialog.cpp
 )
 set_property(TARGET paperforge-inline-editor-test PROPERTY AUTOMOC ON)

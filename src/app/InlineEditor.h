@@ -23,6 +23,7 @@
 #include <QTextEdit>
 
 #include <functional>
+#include <memory>
 #include <optional>
 
 #include "document/Document.h"
@@ -33,11 +34,14 @@ class QTextCursor;
 
 namespace pf::gui {
 
+class InlineMathObjectRenderer;
+
 class InlineEditor : public QTextEdit {
     Q_OBJECT
 
 public:
     explicit InlineEditor(QWidget* parent = nullptr);
+    ~InlineEditor() override;
 
     // Load from the document. Never marks the row dirty.
     void SetContent(const InlineContent& content);
@@ -153,15 +157,10 @@ private:
     void SanitizeTokens();
     // Extract structured content from a [begin, end) range of the document.
     InlineContent ContentInRange(int begin, int end) const;
-    // Tallest inline math image in the document (0 when there is none);
-    // plain-text metrics do not see images, so the row height needs this.
-    qreal MaxInlineImageHeight() const;
-
     std::vector<ReferenceItem> reference_items_;
     bool dirty_ = false;
     bool loading_ = false;
-    // Names the inline math images so Qt's resource cache can find them.
-    mutable int math_resource_counter_ = 0;
+    std::unique_ptr<InlineMathObjectRenderer> math_object_renderer_;
 };
 
 }  // namespace pf::gui
