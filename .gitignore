@@ -13,6 +13,11 @@
 /generated/
 compile_commands.json
 
+# ---- TeX runtime (rebuilt with tools/build-runtime/build_runtime.sh) ------
+# The portable TeX Live is ~265MB of binaries; it is reproducible from the
+# scripts in tools/build-runtime/ and is therefore never committed (plan §33).
+/runtime/
+
 # ---- Runtime project data (never source) ----------------------------------
 # A project directory the app writes while you experiment. /tmp is the
 # recommended place for throwaway projects; these entries only exist to keep

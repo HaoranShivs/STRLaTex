@@ -23,9 +23,7 @@
 class QPlainTextEdit;
 class QVBoxLayout;
 
-namespace pf {
-class InlineEditor;
-}
+#include "app/InlineEditor.h"
 
 namespace pf::gui {
 
@@ -85,7 +83,7 @@ signals:
     // Rich commit from an InlineEditor row: the whole InlineContent arrives
     // structured (marks, citations, references, inline equations).
     void ParagraphContentEdited(const QString& node_id,
-                                const pf::InlineContent& content);
+                                const InlineContent& content);
     void EquationEdited(const QString& node_id, const QString& math);
     void SectionRenamed(const QString& node_id, const QString& text);
     void SubsectionRenamed(const QString& node_id, const QString& text);
@@ -119,7 +117,7 @@ private:
                               // Equation/Figure/Table
         QWidget* card = nullptr;
         QPlainTextEdit* editor = nullptr;  // null for figure/table-only blocks
-        pf::InlineEditor* inline_editor = nullptr;  // set on Text rows
+        InlineEditor* inline_editor = nullptr;  // set on Text rows
         QString commit_role;  // which signal to emit on commit
         // Text last known to be in the document for this row. Commits that
         // would write the same value are dropped, which is what keeps a
@@ -132,13 +130,13 @@ private:
     };
 
     // A Text row: InlineEditor over InlineContent, with the format toolbar.
-    QWidget* MakeTextCard(const QString& node_id, const pf::InlineContent& content);
+    QWidget* MakeTextCard(const QString& node_id, const InlineContent& content);
     // The [B] [I] [Inline Math] [Citation] [Reference] strip shown while a
     // text row is focused (plan §4.4).
-    QWidget* BuildFormatToolbar(pf::InlineEditor* editor);
+    QWidget* BuildFormatToolbar(InlineEditor* editor);
     // Reference pickers behind the Citation / Reference buttons.
-    void ShowCitationPicker(pf::InlineEditor* editor);
-    void ShowReferencePicker(pf::InlineEditor* editor);
+    void ShowCitationPicker(InlineEditor* editor);
+    void ShowReferencePicker(InlineEditor* editor);
 
     QWidget* MakeCard(const QString& node_id, const QString& kind,
                       const QString& commit_role, bool header_inline);

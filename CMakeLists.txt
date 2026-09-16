@@ -25,9 +25,5 @@ find_program(PF_TECTONIC_EXE tectonic
 set(TECTONIC_BIN "${PF_TECTONIC_EXE}" CACHE STRING "Path to tectonic binary")
 message(STATUS "Tectonic: ${TECTONIC_BIN}")
 
-# Declared at the top level so tests registered from src/app/ (the GUI input
-# persistence check) land in the same CTest suite as the core tests.
-enable_testing()
-
 add_subdirectory(src)
 add_subdirectory(tests)

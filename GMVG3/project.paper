@@ -1,0 +1,77 @@
+{
+  "assets": [],
+  "bibliographyPath": "references.bib",
+  "body": {
+    "sections": [
+      {
+        "blocks": [
+          {
+            "content": [
+              {
+                "marks": 1,
+                "text": "In recent years, infrared small target detection technologies have become increasingly significant in multiple fields, includ ing ecological environment monitoring[1], marine rescue[2], [3] and military surveillance[4], [5].",
+                "type": "text"
+              },
+              {
+                "text": " ",
+                "type": "text"
+              },
+              {
+                "marks": 2,
+                "text": "This is because infrared light exhibits a longer working range and stronger penetration capability compared to visible light. ",
+                "type": "text"
+              },
+              {
+                "text": "In IRSTD tasks, targets are generally very small, weak, and are often embedded in complex backgrounds. In IRSTD tasks, targets typically include drones, aerostats, and ships, which commonly exhibit the following characteristics[6]: (i) Low target energy: Due to severe signal attenuation over long-distance propagation, the received infrared signal is weak. This results in low contrast between the target and strong background clutter, making the target highly susceptible to being obscured by background noise. (ii) Small target size: At long imaging ranges, targets occupy only a few pixels in the image and lack discernible texture or structural details. (iii) Complex background: The operational environment often contains numerous interfering objects that introduce edges, corners, and other salient features, significantly complicating the accurate discrimination of small targets from the background. Some examples are shown in Fig. 1. Therefore, efficiently and accurately detecting infrared small targets remains a critical challenge.A^2_5=8",
+                "type": "text"
+              }
+            ],
+            "id": "n2",
+            "type": "paragraph"
+          }
+        ],
+        "id": "n1",
+        "subsections": [],
+        "title": [
+          {
+            "text": "Introduction",
+            "type": "text"
+          }
+        ]
+      }
+    ]
+  },
+  "frontMatter": {
+    "abstract": [
+      {
+        "text": "GMVG abstract",
+        "type": "text"
+      }
+    ],
+    "affiliations": [
+      {
+        "id": "aff1",
+        "name": "GUET"
+      }
+    ],
+    "authors": [
+      {
+        "affiliations": [],
+        "name": "str"
+      }
+    ],
+    "keywords": [
+      "IRSTD"
+    ],
+    "title": [
+      {
+        "text": "GMVG",
+        "type": "text"
+      }
+    ]
+  },
+  "projectId": "p1",
+  "revision": 16,
+  "schemaVersion": "2",
+  "template": "ieee-conference"
+}

@@ -1,0 +1,44 @@
+# TeX packages the shipped templates depend on (plan §5).
+#
+# The minimal scheme plus this list is the whole runtime. Each new template
+# must extend this file, rebuild the runtime and re-run the template compile
+# tests before it can ship.
+#
+# Names must be real tlmgr package names. `amssymb` is shipped by `amsfonts`,
+# `latex-base`/`latex-recommended` are collection names, and `fontconfig` is a
+# system library rather than a TeX package - none of those are listed here.
+
+# LaTeX format and drivers
+latex
+latexmk
+bibtex
+
+# Engines (plan §11). pdfLaTeX is the production engine; xetex/luatex are
+# installed so a template may declare them without rebuilding the runtime.
+xetex
+luatex
+
+# Packages used by the shipped templates (Generic Article / IEEE Conference)
+amsfonts
+amscls
+amsmath
+graphics
+graphics-cfg
+graphics-def
+tools
+booktabs
+geometry
+hyperref
+caption
+natbib
+ieeetran
+
+# Fonts: IEEEtran selects ptm (Times) through psnfss; the Type1 outlines come
+# from the urw base35 set.
+psnfss
+times
+symbol
+url
+tex-gyre
+cm-super
+kpathsea

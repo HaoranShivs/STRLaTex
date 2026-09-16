@@ -25,6 +25,11 @@ TemplateRegistry::TemplateRegistry() {
             "\\usepackage[hidelinks]{hyperref}",
             "\\usepackage{caption}",
         };
+        // Plain article classes are engine-agnostic, but the production path
+        // is pdfLaTeX + BibTeX as well (plan §8).
+        t.toolchain.engine = LatexEngine::PdfLatex;
+        t.toolchain.bibliography_engine = BibliographyEngine::BibTex;
+        t.toolchain.required_packages = {"amsmath", "booktabs", "hyperref"};
         templates_[t.id] = t;
     }
     {

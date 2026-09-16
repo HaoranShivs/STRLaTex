@@ -17,6 +17,7 @@
 #include <QElapsedTimer>
 
 #include <QPlainTextEdit>
+#include <QTextEdit>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QTest>
@@ -39,6 +40,7 @@
 #include <iostream>
 
 #include "app/BlockEditor.h"
+#include "build/BuildCoordinator.h"
 #include "app/MainWindow.h"
 #include "app/PdfPreview.h"
 #include "app/ProjectController.h"
@@ -55,6 +57,24 @@ void Check(bool ok, const char* what) {
     if (!ok) ++failures;
 }
 
+// Wait until no build is running and no application event is queued. A build
+// that completes mid-test hands a new PDF to the preview, and loading a PDF
+// re-fits the zoom; assertions about zoom must not race that.
+void SettleBuilds(MainWindow& window, int timeout_ms = 30000) {
+    auto& session = window.controller()->session();
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < timeout_ms) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(5);
+        if (pf::BuildPhase::Idle == session.build_phase() &&
+            !session.HasPendingApplicationEvents()) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            if (pf::BuildPhase::Idle == session.build_phase()) return;
+        }
+    }
+}
+
 // Keep the event loop turning for a while, exactly as the GUI would while the
 // user pauses to think mid-sentence.
 void Spin(int ms) {
@@ -67,14 +87,77 @@ void Spin(int ms) {
 }
 
 // The visible editor for a row, identified by its stable focus key.
-QPlainTextEdit* FindRow(MainWindow& window, const QString& focus_key) {
-    for (QPlainTextEdit* edit : window.findChildren<QPlainTextEdit*>()) {
-        if (!edit->isVisible()) continue;
-        if (edit->property("row_focus_key").toString() == focus_key) {
-            return edit;
+//
+// A rebuild hides the previous rows and creates new ones; both survive until
+// the deferred delete runs, so only visible widgets count, and the last
+// created one wins.
+//
+// Rows are either QPlainTextEdit (front matter, headings, equations) or
+// InlineEditor (Text rows). The two do not share a widget base beyond
+// QAbstractScrollArea, so the lookup hands back the common editing surface
+// the tests actually need: text get/set, cursor, document, focus.
+struct RowEditor {
+    QWidget* widget = nullptr;
+    QPlainTextEdit* plain = nullptr;  // set when the row is a QPlainTextEdit
+    QTextEdit* rich = nullptr;        // set when the row is an InlineEditor
+
+    QString toPlainText() const {
+        return plain ? plain->toPlainText() : rich->toPlainText();
+    }
+    void SetText(const QString& text) {
+        if (plain) plain->setPlainText(text);
+        else rich->setPlainText(text);
+    }
+    QTextDocument* document() const {
+        return plain ? plain->document() : rich->document();
+    }
+    int height() const { return widget ? widget->height() : 0; }
+    void setFocus(Qt::FocusReason reason) { widget->setFocus(reason); }
+    bool isVisible() const { return widget && widget->isVisible(); }
+    QWidget* get() const { return widget; }
+    void keyClick(Qt::Key key, Qt::KeyboardModifiers mods = Qt::NoModifier) {
+        QTest::keyClick(widget, key, mods);
+    }
+    // Text-row specifics. Only valid when the row is a rich editor.
+    QTextEdit* AsRich() const { return rich; }
+    QPlainTextEdit* AsPlain() const { return plain; }
+    int LineSpacing() const {
+        return plain ? plain->fontMetrics().lineSpacing()
+                     : rich->fontMetrics().lineSpacing();
+    }
+    int VerticalScrollBarPolicy() const {
+        return plain ? static_cast<int>(plain->verticalScrollBarPolicy())
+                     : static_cast<int>(rich->verticalScrollBarPolicy());
+    }
+    void SetPlainText(const QString& text) {
+        if (plain) plain->setPlainText(text);
+        else rich->setPlainText(text);
+    }
+    template <typename... Args>
+    void keyClicks(Args... args) {
+        QTest::keyClicks(plain ? static_cast<QWidget*>(plain)
+                               : static_cast<QWidget*>(rich),
+                         args...);
+    }
+    bool operator==(const RowEditor& other) const { return widget == other.widget; }
+    bool operator!=(const RowEditor& other) const { return widget != other.widget; }
+    bool operator==(std::nullptr_t) const { return widget == nullptr; }
+    bool operator!=(std::nullptr_t) const { return widget != nullptr; }
+    explicit operator bool() const { return widget != nullptr; }
+};
+
+RowEditor FindRow(MainWindow& window, const QString& focus_key) {
+    RowEditor best;
+    for (QWidget* widget : window.findChildren<QWidget*>()) {
+        if (!widget->isVisible()) continue;
+        if (widget->property("row_focus_key").toString() != focus_key) continue;
+        if (auto* plain = qobject_cast<QPlainTextEdit*>(widget)) {
+            best = RowEditor{widget, plain, nullptr};
+        } else if (auto* rich = qobject_cast<QTextEdit*>(widget)) {
+            best = RowEditor{widget, nullptr, rich};
         }
     }
-    return nullptr;
+    return best;
 }
 
 }  // namespace
@@ -148,31 +231,31 @@ int main(int argc, char* argv[]) {
     Spin(200);
 
     // ---- 1. Single-line row: typing must survive idle time ----
-    QPlainTextEdit* title = FindRow(window, "front:title");
+    RowEditor title = FindRow(window, "front:title");
     Check(title != nullptr, "title row exists");
     if (!title) {
         std::filesystem::remove_all(dir);
         return 1;
     }
 
-    title->setFocus(Qt::MouseFocusReason);
+    title.setFocus(Qt::MouseFocusReason);
     Spin(80);
-    Check(QApplication::focusWidget() == title, "title row holds focus");
+    Check(QApplication::focusWidget() == title.get(), "title row holds focus");
 
     const QString typed = QStringLiteral("Typed While Idle");
-    QTest::keyClicks(title, typed);
-    Check(title->toPlainText() == typed, "typing lands in the title row");
+    title.keyClicks(typed);
+    Check(title.toPlainText() == typed, "typing lands in the title row");
 
     // Sit idle for far longer than the old ~400ms auto-commit / rebuild cycle.
     Spin(2000);
 
-    QPlainTextEdit* title_after_idle = FindRow(window, "front:title");
+    RowEditor title_after_idle = FindRow(window, "front:title");
     Check(title_after_idle == title,
           "no rebuild happens while a row has uncommitted input");
     Check(title_after_idle != nullptr &&
-              title_after_idle->toPlainText() == typed,
+              title_after_idle.toPlainText() == typed,
           "typed title text survives 2s of idle time");
-    Check(QApplication::focusWidget() == title,
+    Check(QApplication::focusWidget() == title.get(),
           "focus is still in the title row after idle time");
 
     const auto& fm_before = window.controller()
@@ -184,7 +267,7 @@ int main(int argc, char* argv[]) {
           "no implicit mid-typing commit (design: commit on focus-out)");
 
     // ---- 2. Commit on Enter, then a rebuild must still show the text ----
-    QTest::keyClick(title, Qt::Key_Return);
+    title.keyClick(Qt::Key_Return);
     Spin(300);
 
     Check(pf::InlineToPlainText(window.controller()
@@ -195,35 +278,35 @@ int main(int argc, char* argv[]) {
                                     .title) == typed.toStdString(),
           "Enter commits the typed title to the document");
 
-    QPlainTextEdit* title_after_commit = FindRow(window, "front:title");
+    RowEditor title_after_commit = FindRow(window, "front:title");
     Check(title_after_commit != nullptr &&
-              title_after_commit->toPlainText() == typed,
+              title_after_commit.toPlainText() == typed,
           "committed title is shown after the rebuild");
 
     // ---- 3. Multi-line row (abstract): same guarantees ----
-    QPlainTextEdit* abstract_row = FindRow(window, "front:abstract");
+    RowEditor abstract_row = FindRow(window, "front:abstract");
     Check(abstract_row != nullptr, "abstract row exists");
     if (abstract_row) {
-        abstract_row->setFocus(Qt::MouseFocusReason);
+        abstract_row.setFocus(Qt::MouseFocusReason);
         Spin(80);
-        QTest::keyClicks(abstract_row, QStringLiteral("First line"));
-        QTest::keyClick(abstract_row, Qt::Key_Return);
-        QTest::keyClicks(abstract_row, QStringLiteral("Second line"));
+        abstract_row.keyClicks(QStringLiteral("First line"));
+        abstract_row.keyClick(Qt::Key_Return);
+        abstract_row.keyClicks(QStringLiteral("Second line"));
         const QString abstract_text = QStringLiteral("First line\nSecond line");
-        Check(abstract_row->toPlainText() == abstract_text,
+        Check(abstract_row.toPlainText() == abstract_text,
               "typing lands in the abstract row");
 
         Spin(2000);
-        QPlainTextEdit* abstract_idle = FindRow(window, "front:abstract");
+        RowEditor abstract_idle = FindRow(window, "front:abstract");
         Check(abstract_idle == abstract_row,
               "multi-line row is not rebuilt while being edited");
         Check(abstract_idle != nullptr &&
-                  abstract_idle->toPlainText() == abstract_text,
+                  abstract_idle.toPlainText() == abstract_text,
               "multi-line abstract survives idle time");
 
         // Focus-out commits it (title row takes focus).
-        QPlainTextEdit* title_row = FindRow(window, "front:title");
-        if (title_row) title_row->setFocus(Qt::MouseFocusReason);
+        RowEditor title_row = FindRow(window, "front:title");
+        if (title_row) title_row.setFocus(Qt::MouseFocusReason);
         Spin(400);
         const auto& fm = window.controller()
                              ->session()
@@ -243,41 +326,41 @@ int main(int argc, char* argv[]) {
     Spin(300);
     const QString paragraph_key =
         QString::fromStdString(inserted.created_node.value());
-    QPlainTextEdit* paragraph = nullptr;
-    for (QPlainTextEdit* edit : window.findChildren<QPlainTextEdit*>()) {
-        if (edit->isVisible() &&
-            edit->property("row_focus_key").toString() == paragraph_key) {
-            paragraph = edit;
+    RowEditor paragraph;
+    for (QWidget* widget : window.findChildren<QWidget*>()) {
+        if (!widget->isVisible()) continue;
+        if (widget->property("row_focus_key").toString() == paragraph_key) {
+            paragraph = FindRow(window, paragraph_key);
         }
     }
     Check(paragraph != nullptr, "paragraph row exists");
     if (paragraph) {
-        paragraph->setFocus(Qt::MouseFocusReason);
+        paragraph.setFocus(Qt::MouseFocusReason);
         Spin(60);
-        Check(paragraph->verticalScrollBarPolicy() ==
+        Check(paragraph.VerticalScrollBarPolicy() ==
                   Qt::ScrollBarAlwaysOff,
               "no scrollbar inside a block");
 
-        const int one_line_height = paragraph->height();
+        const int one_line_height = paragraph.height();
         QString long_text;
         for (int i = 0; i < 40; ++i) {
             long_text += QStringLiteral("word%1 ").arg(i);
         }
-        paragraph->setPlainText(long_text);
+        paragraph.SetPlainText(long_text);
         Spin(250);
-        const int tall_height = paragraph->height();
+        const int tall_height = paragraph.height();
         Check(tall_height > one_line_height + 20,
               "row height grows with the wrapped text");
-        Check(paragraph->document()->blockCount() == 1,
+        Check(paragraph.document()->blockCount() == 1,
               "wrapping did not invent extra blocks");
 
         // The text must actually be visible: the document's laid-out height
         // has to fit inside the widget.
         const QRectF last =
-            paragraph->document()
+            paragraph.document()
                 ->documentLayout()
-                ->blockBoundingRect(paragraph->document()->lastBlock());
-        Check(last.bottom() <= paragraph->height(),
+                ->blockBoundingRect(paragraph.document()->lastBlock());
+        Check(last.bottom() <= paragraph.height(),
               "widget is at least as tall as the laid-out text");
 
         // A pasted multi-line abstract arrives as many explicit blocks; every
@@ -291,25 +374,25 @@ int main(int argc, char* argv[]) {
                              "long enough to wrap at least once.")
                              .arg(i);
             }
-            paragraph->setPlainText(lines.join(QLatin1Char('\n')));
+            paragraph.SetPlainText(lines.join(QLatin1Char('\n')));
             Spin(300);
-            const int pasted_height = paragraph->height();
-            const int blocks = paragraph->document()->blockCount();
+            const int pasted_height = paragraph.height();
+            const int blocks = paragraph.document()->blockCount();
             std::cout << "  pasted: blocks=" << blocks
                       << " height=" << pasted_height << " line_spacing="
-                      << paragraph->fontMetrics().lineSpacing() << "\n";
+                      << paragraph.LineSpacing() << "\n";
             Check(blocks == 20, "pasted text kept its 20 lines");
             Check(pasted_height >=
-                      blocks * paragraph->fontMetrics().lineSpacing(),
+                      blocks * paragraph.LineSpacing(),
                   "row height covers every pasted line");
         }
 
         // A rebuild may have replaced the row; re-fetch before touching it.
         paragraph = FindRow(window, paragraph_key);
         Check(paragraph != nullptr, "paragraph row still present");
-        if (paragraph) paragraph->setPlainText(QStringLiteral("short"));
+        if (paragraph) paragraph.SetPlainText(QStringLiteral("short"));
         Spin(250);
-        Check(paragraph && paragraph->height() < tall_height,
+        Check(paragraph && paragraph.height() < tall_height,
               "row height shrinks again when the text is cleared");
 
         // Exactly one scrollbar serves the whole pane.
@@ -328,6 +411,10 @@ int main(int argc, char* argv[]) {
         PdfPreview* preview = window.findChild<PdfPreview*>();
         Check(preview != nullptr, "preview widget exists");
         if (preview) {
+            // Let any in-flight build finish first: loading a PDF resets the
+            // zoom to fit-width and would otherwise land between the wheel
+            // event and the assertion.
+            SettleBuilds(window);
             preview->SetZoom(1.0);
             const double before = preview->zoom();
             QWidget* viewport = preview->findChild<QScrollArea*>()
@@ -364,9 +451,9 @@ int main(int argc, char* argv[]) {
         {
             // Focusing another row commits the one being left, which can
             // rebuild every row; always re-fetch the pointer before using it.
-            auto abstract_row = [&]() { return FindRow(window, "front:abstract"); };
-            Check(abstract_row() != nullptr, "abstract row available");
-            if (auto* row = abstract_row()) {
+            auto abstract_row_fn = [&]() { return FindRow(window, "front:abstract"); };
+            Check(abstract_row_fn() != nullptr, "abstract row available");
+            if (RowEditor row = abstract_row_fn()) {
                 // Exactly what copying a paragraph out of a PDF produces:
                 // pre-wrapped at a fixed column, breaking mid-sentence.
                 const QString hard = QStringLiteral(
@@ -376,24 +463,24 @@ int main(int argc, char* argv[]) {
                     "their acquisition cost impedes further progress and "
                     "makes\n"
                     "weakly supervised alternatives attractive in practice.");
-                if (QPlainTextEdit* target = abstract_row()) {
+                if (RowEditor target = abstract_row_fn()) {
                     QApplication::clipboard()->setText(hard);
-                    target->setFocus(Qt::MouseFocusReason);
+                    target.setFocus(Qt::MouseFocusReason);
                 }
                 Spin(120);
-                if (QPlainTextEdit* target = abstract_row()) target->clear();
+                if (RowEditor target = abstract_row_fn()) target.SetText(QString());
                 Spin(80);
                 // Real paste path (Ctrl+V): the editor's own paste hook is
                 // what is under test.
-                if (QPlainTextEdit* target = abstract_row()) {
-                    QTest::keyClick(target, Qt::Key_V, Qt::ControlModifier);
+                if (RowEditor target = abstract_row_fn()) {
+                    target.keyClick(Qt::Key_V, Qt::ControlModifier);
                 }
                 Spin(250);
 
-                QPlainTextEdit* pasted = abstract_row();
+                RowEditor pasted = abstract_row_fn();
                 Check(pasted != nullptr, "abstract row survives the paste");
                 if (pasted) {
-                    const QString shown = pasted->toPlainText();
+                    const QString shown = pasted.toPlainText();
                     std::cout << "  reflow: lines="
                               << shown.count(QLatin1Char('\n')) + 1 << "\n";
                     Check(shown.count(QLatin1Char('\n')) == 0,
@@ -402,9 +489,9 @@ int main(int argc, char* argv[]) {
                               "infrared small target detection")),
                           "words split across lines were rejoined");
 
-                    auto max_line = [](QPlainTextEdit* edit) {
+                    auto max_line = [](RowEditor edit) {
                         qreal widest = 0.0;
-                        for (QTextBlock b = edit->document()->begin();
+                        for (QTextBlock b = edit.document()->begin();
                              b.isValid(); b = b.next()) {
                             if (b.layout()) {
                                 widest = qMax(
@@ -417,7 +504,7 @@ int main(int argc, char* argv[]) {
                     const qreal narrow = max_line(pasted);
                     window.resize(window.width() + 300, window.height());
                     Spin(400);
-                    QPlainTextEdit* widened = abstract_row();
+                    RowEditor widened = abstract_row_fn();
                     const qreal wide = widened ? max_line(widened) : 0.0;
                     std::cout << "  reflow: narrow_line=" << narrow
                               << " wide_line=" << wide << "\n";
@@ -428,8 +515,8 @@ int main(int argc, char* argv[]) {
                 }
 
                 // Committing stores the softened text, not the hard wraps.
-                if (QPlainTextEdit* target = abstract_row()) {
-                    target->clearFocus();
+                if (RowEditor target = abstract_row_fn()) {
+                    target.widget->clearFocus();
                 }
                 Spin(250);
                 const auto& front = window.controller()
@@ -751,12 +838,12 @@ int main(int argc, char* argv[]) {
                   "other authors are untouched");
 
             // The Authors row shows the marker, and the panel shows it too.
-            QPlainTextEdit* authors_row = FindRow(window, "front:authors");
+            RowEditor authors_row = FindRow(window, "front:authors");
             Check(authors_row != nullptr, "authors row present");
             if (authors_row) {
                 std::cout << "  authors row='"
-                          << authors_row->toPlainText().toStdString() << "'\n";
-                Check(authors_row->toPlainText().contains(
+                          << authors_row.toPlainText().toStdString() << "'\n";
+                Check(authors_row.toPlainText().contains(
                           QString::fromUtf8("\u00b2")),
                       "the row shows the institution number");
             }

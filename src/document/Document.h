@@ -45,10 +45,12 @@ inline constexpr bool operator!=(std::uint8_t marks, TextMark mark) noexcept {
 struct TextRun {
     std::string text;
     std::uint8_t marks = 0;
+    bool operator==(const TextRun&) const = default;
 };
 
 struct InlineEquation {
     std::string math_source;
+    bool operator==(const InlineEquation&) const = default;
 };
 
 enum class CitationMode : std::uint8_t {
@@ -59,10 +61,12 @@ enum class CitationMode : std::uint8_t {
 struct Citation {
     std::vector<std::string> keys;  // one or more citation keys
     CitationMode mode = CitationMode::Parenthetical;
+    bool operator==(const Citation&) const = default;
 };
 
 struct CrossReference {
     NodeId target;  // semantic NodeId only; numbering is the renderer's job
+    bool operator==(const CrossReference&) const = default;
 };
 
 using InlineNode = std::variant<TextRun, InlineEquation, Citation, CrossReference>;

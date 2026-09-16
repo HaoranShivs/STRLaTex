@@ -38,7 +38,10 @@ ProjectController::ProjectController(QObject* parent) : QObject(parent) {
     qRegisterMetaType<pf::PreviewUpdate>("pf::PreviewUpdate");
 
     ProjectSession::Config config;
-    config.tectonic_path = PF_TECTONIC_BIN;
+    // The bundled portable TeX Live is the production environment (plan §3):
+    // the app directory carries runtime/texlive, so no user TeX install is
+    // needed and the user's PATH cannot influence a build.
+    config.install_root = PF_INSTALL_ROOT;
     config.workspace_root = std::filesystem::temp_directory_path() /
                             "paperforge-gui-builds";
     config.debounce = std::chrono::milliseconds{800};

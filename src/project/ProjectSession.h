@@ -32,6 +32,8 @@
 #include "asset/AssetManager.h"
 #include "bibliography/BibliographyService.h"
 #include "build/BuildCoordinator.h"
+#include "build/Toolchain.h"
+#include "template/TemplateRegistry.h"
 #include "editing/EditingSystem.h"
 #include "persistence/SaveCoordinator.h"
 #include "project/ApplicationEvent.h"
@@ -82,6 +84,9 @@ public:
         std::string tectonic_cache_dir;
         std::filesystem::path workspace_root = "/tmp/paperforge-sessions";
         std::chrono::milliseconds debounce{800};
+        // Root that contains runtime/texlive (plan §3). Empty means "derive
+        // from the application install root".
+        std::string install_root;
         // Optional deterministic compiler (tests). Empty -> tectonic.
         std::function<std::unique_ptr<ICompiler>()> compiler_factory;
     };
@@ -183,6 +188,11 @@ public:
 
     // ---- State access (application thread only) ----
     ProjectState& state() noexcept { return state_; }
+    // Mutable document access. Prefer an edit command; this exists because
+    // InlineEditor hands over a fully formed InlineContent, and because
+    // read-side helpers (traversal, validation) need a non-const document to
+    // hand back container pointers.
+    Document& mutable_document() noexcept { return state_.mutable_document(); }
     const ProjectState& state() const noexcept { return state_; }
     EditingSystem& editing() noexcept { return editing_; }
     UndoHistory& history() noexcept { return editing_.history(); }
@@ -260,6 +270,8 @@ private:
     SnapshotFactory snapshot_factory_;
     EditingSystem editing_;
     std::unique_ptr<ICompiler> compiler_;
+  // Root of the bundled portable TeX Live runtime (plan §17).
+  std::filesystem::path texlive_root_;
     SaveCoordinator save_coordinator_;
     std::unique_ptr<BuildCoordinator> build_coordinator_;
 

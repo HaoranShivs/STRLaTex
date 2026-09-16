@@ -47,6 +47,10 @@ public:
 
     // Re-fit the widget to its content; call after the width changes.
     void ResizeToContent();
+    // Re-fit using a width that has not been applied to the widget yet.
+    void ResizeToWidth(int width);
+
+    enum class TokenKind : int { Citation = 1, CrossReference = 2, Equation = 3 };
 
     // Reference items for the citation / cross-reference pickers.
     // label, detail, payload = citation key or node id.
@@ -81,6 +85,12 @@ public:
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
+    // Re-fit on width changes and when the row first becomes visible. Without
+    // this the fixed height keeps the value computed before the layout gave
+    // the widget its real width, which shows up as a large blank area; typing
+    // (or Delete) then re-measures and "restores" it.
+    void resizeEvent(QResizeEvent* event) override;
+    void showEvent(QShowEvent* event) override;
     bool canInsertFromMimeData(const QMimeData* source) const override;
     void insertFromMimeData(const QMimeData* source) override;
     void mousePressEvent(QMouseEvent* event) override;
@@ -94,8 +104,6 @@ private:
     static constexpr QChar kTokenChar{0xE000};
     static constexpr int kTokenKindProperty = QTextFormat::UserProperty + 1;
     static constexpr int kTokenPayloadProperty = QTextFormat::UserProperty + 2;
-
-    enum class TokenKind : int { Citation = 1, CrossReference = 2, Equation = 3 };
 
     void InsertToken(TokenKind kind, const QString& payload,
                      const QString& label);

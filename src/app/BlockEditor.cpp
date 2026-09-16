@@ -534,6 +534,179 @@ BlockEditor::BlockEditor(QWidget* parent) : QWidget(parent) {
     outer->addWidget(scroll_);
 }
 
+QWidget* BlockEditor::BuildFormatToolbar(InlineEditor* editor) {
+    auto* bar = new QWidget(this);
+    bar->setProperty("formatBar", true);
+    auto* layout = new QHBoxLayout(bar);
+    layout->setContentsMargins(2, 2, 2, 2);
+    layout->setSpacing(4);
+
+    const QString style = QString(
+        "QToolButton { background: transparent; color: %1; border: none;"
+        " border-radius: 4px; padding: 2px 7px; font-weight: 600; }"
+        "QToolButton:hover { background: %2; color: %3; }")
+        .arg(theme::kSecondaryText, theme::kAccentSoft, theme::kAccent);
+
+    auto* bold = new QToolButton(bar);
+    bold->setText(QStringLiteral("B"));
+    bold->setToolTip(QStringLiteral("Bold (Ctrl+B)"));
+    bold->setAutoRaise(true);
+    bold->setStyleSheet(style);
+    connect(bold, &QToolButton::clicked, editor,
+            [editor]() { editor->ToggleBold(); });
+
+    auto* italic = new QToolButton(bar);
+    italic->setText(QStringLiteral("I"));
+    italic->setToolTip(QStringLiteral("Italic (Ctrl+I)"));
+    italic->setAutoRaise(true);
+    italic->setStyleSheet(QString(style) + "QToolButton { font-style: italic; }");
+    connect(italic, &QToolButton::clicked, editor,
+            [editor]() { editor->ToggleItalic(); });
+
+    auto* math = new QToolButton(bar);
+    math->setText(QStringLiteral("Inline Math"));
+    math->setToolTip(QStringLiteral("Insert an inline equation"));
+    math->setAutoRaise(true);
+    math->setStyleSheet(style);
+    connect(math, &QToolButton::clicked, editor, [editor]() {
+        editor->InsertInlineEquation(QStringLiteral("x^{2}"));
+    });
+
+    auto* citation = new QToolButton(bar);
+    citation->setText(QStringLiteral("Citation"));
+    citation->setToolTip(QStringLiteral("Insert a citation"));
+    citation->setAutoRaise(true);
+    citation->setStyleSheet(style);
+    connect(citation, &QToolButton::clicked, this,
+            [this, editor]() { ShowCitationPicker(editor); });
+
+    auto* reference = new QToolButton(bar);
+    reference->setText(QStringLiteral("Reference"));
+    reference->setToolTip(QStringLiteral("Insert a cross reference"));
+    reference->setAutoRaise(true);
+    reference->setStyleSheet(style);
+    connect(reference, &QToolButton::clicked, this,
+            [this, editor]() { ShowReferencePicker(editor); });
+
+    // The buttons must never take focus. If one did, clicking it would end the
+    // row's edit, commit the pre-format content, and rebuild every card before
+    // the click handler ran - so the mark landed on a destroyed editor and the
+    // row was re-laid out mid-edit (the "big blank area" report).
+    bold->setFocusPolicy(Qt::NoFocus);
+    italic->setFocusPolicy(Qt::NoFocus);
+    math->setFocusPolicy(Qt::NoFocus);
+    citation->setFocusPolicy(Qt::NoFocus);
+    reference->setFocusPolicy(Qt::NoFocus);
+
+    layout->addWidget(bold);
+    layout->addWidget(italic);
+    layout->addSpacing(6);
+    layout->addWidget(math);
+    layout->addWidget(citation);
+    layout->addWidget(reference);
+    layout->addStretch(1);
+    bar->setStyleSheet(QString("background: %1;").arg(theme::kEditorBackground));
+    return bar;
+}
+
+void BlockEditor::ShowCitationPicker(InlineEditor* editor) {
+    std::vector<PopupList::Item> items;
+    for (const auto& item : reference_items_) {
+        if (!item.payload.startsWith(QStringLiteral("cite:"))) continue;
+        PopupList::Item entry;
+        entry.label = item.label;
+        entry.detail = item.detail;
+        entry.group = QStringLiteral("Citations");
+        entry.payload = item.payload.mid(5);
+        entry.search = item.label.toLower();
+        items.push_back(std::move(entry));
+    }
+    if (items.empty()) {
+        PopupList::Item empty;
+        empty.label = QStringLiteral("No references imported");
+        empty.detail = QStringLiteral("Import a .bib file first");
+        items.push_back(empty);
+    }
+    auto* popup = new PopupList(this);
+    connect(popup, &PopupList::chosen, this, [editor](QString payload) {
+        editor->InsertCitationToken({payload});
+    });
+    popup->popup(editor->mapToGlobal(QPoint(24, editor->height() + 4)), items);
+}
+
+void BlockEditor::ShowReferencePicker(InlineEditor* editor) {
+    std::vector<PopupList::Item> items;
+    // Cross references point at document nodes, so the items come from the
+    // last rebuild's reference list where they were tagged as node:….
+    for (const auto& item : reference_items_) {
+        if (!item.payload.startsWith(QStringLiteral("xref:"))) continue;
+        PopupList::Item entry;
+        entry.label = item.label;
+        entry.detail = item.detail;
+        entry.group = QStringLiteral("Cross References");
+        entry.payload = item.payload.mid(5);
+        entry.search = item.label.toLower();
+        items.push_back(std::move(entry));
+    }
+    if (items.empty()) {
+        PopupList::Item empty;
+        empty.label = QStringLiteral("Nothing to reference yet");
+        empty.detail = QStringLiteral("Add a section, figure or equation first");
+        items.push_back(empty);
+    }
+    auto* popup = new PopupList(this);
+    connect(popup, &PopupList::chosen, this, [editor](QString payload) {
+        editor->InsertCrossReferenceToken(payload);
+    });
+    popup->popup(editor->mapToGlobal(QPoint(24, editor->height() + 4)), items);
+}
+
+QWidget* BlockEditor::MakeTextCard(const QString& node_id,
+                                   const InlineContent& content) {
+    auto* card = MakeCard(node_id, QStringLiteral("Text"),
+                          QStringLiteral("paragraph"), true);
+    auto* card_layout = qobject_cast<QVBoxLayout*>(card->layout());
+
+    auto* editor = new InlineEditor(card);
+    editor->SetContent(content);
+    editor->setProperty("row_node", node_id);
+    editor->setProperty("row_focus_key", node_id);
+    editor->setPlaceholderText(QStringLiteral("Write text…  @ inserts a reference, Ctrl+Enter adds a block"));
+
+    connect(editor, &InlineEditor::Committed, this, [this, editor, node_id]() {
+        for (auto& block : blocks_) {
+            if (block.inline_editor != editor) continue;
+            const InlineContent content = editor->Content();
+            if (content == block.committed_content) {
+                editor->MarkClean();
+                emit RowCommitted();
+                return;
+            }
+            block.committed_content = content;
+            editor->MarkClean();
+            emit ParagraphContentEdited(node_id, content);
+            emit RowCommitted();
+            return;
+        }
+    });
+    connect(editor, &InlineEditor::NewBlockAfter, this, [this, node_id]() {
+        emit InsertBlockRequested(QStringLiteral("text"), node_id);
+    });
+
+    card_layout->addWidget(editor);
+    card_layout->addWidget(BuildFormatToolbar(editor));
+
+    Block block;
+    block.node_id = node_id;
+    block.kind = QStringLiteral("Text");
+    block.card = card;
+    block.inline_editor = editor;
+    block.commit_role = QStringLiteral("paragraph");
+    block.committed_text = ToQ(pf::InlineToPlainText(content));
+    block.committed_content = content;
+    blocks_.push_back(std::move(block));
+    return card;
+}
 QWidget* BlockEditor::MakeCard(const QString& node_id, const QString& kind,
                                const QString& commit_role, bool header_inline) {
     auto* card = new QFrame(host_);
@@ -695,7 +868,23 @@ void BlockEditor::ReflowRow(QWidget* card, const QString& node_id) {
 }
 
 void BlockEditor::CommitBlock(Block& block) {
-    if (rebuilding_ || !block.editor) return;
+    if (rebuilding_) return;
+    // A Text row commits through its InlineEditor (rich content); every other
+    // row is a plain BlockEdit.
+    if (block.inline_editor) {
+        const InlineContent content = block.inline_editor->Content();
+        if (content == block.committed_content) {
+            block.inline_editor->MarkClean();
+            return;
+        }
+        block.committed_content = content;
+        block.committed_text = ToQ(pf::InlineToPlainText(content));
+        block.inline_editor->MarkClean();
+        emit ParagraphContentEdited(block.node_id, content);
+        emit RowCommitted();
+        return;
+    }
+    if (!block.editor) return;
     auto* edit = qobject_cast<BlockEdit*>(block.editor);
     QString text = block.editor->toPlainText();
     // Prose may still carry the hard line breaks of a paste; softening them is
@@ -1213,8 +1402,10 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
             ToQ(pf::InlineToPlainText(section.title)), false, true, 1, true);
         for (const auto& block : section.blocks) {
             if (const auto* para = std::get_if<pf::Paragraph>(&block)) {
-                add(ToQ(para->id.value()), "Text", "paragraph",
-                    ToQ(pf::InlineToPlainText(para->content)), false, true, 2);
+                QWidget* text_card = MakeTextCard(ToQ(para->id.value()),
+                                                  para->content);
+                host_layout->insertWidget(host_layout->count() - 1, text_card);
+                append_gap(ToQ(para->id.value()));
             } else if (const auto* eq = std::get_if<pf::DisplayEquation>(&block)) {
                 add(ToQ(eq->id.value()), "Equation", "equation",
                     ToQ(eq->math_source), true, true, 2);
@@ -1254,9 +1445,14 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
                 caption->setProperty("row_node", ToQ(figure->id.value()));
                 caption->setProperty("row_focus_key", ToQ(figure->id.value()));
                 caption->setProperty("commands_enabled", true);
-                Block gui_block{ToQ(figure->id.value()), "Figure", card,
-                                caption, "caption",
-                                ToQ(pf::InlineToPlainText(figure->caption))};
+                Block gui_block;
+                gui_block.node_id = ToQ(figure->id.value());
+                gui_block.kind = QStringLiteral("Figure");
+                gui_block.card = card;
+                gui_block.editor = caption;
+                gui_block.commit_role = QStringLiteral("caption");
+                gui_block.committed_text =
+                    ToQ(pf::InlineToPlainText(figure->caption));
                 auto* block_edit = qobject_cast<BlockEdit*>(caption);
                 connect(block_edit, &BlockEdit::CommitRequested, this,
                         [this, caption]() {
@@ -1300,9 +1496,14 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
                 caption->setProperty("row_node", ToQ(table->id.value()));
                 caption->setProperty("row_focus_key", ToQ(table->id.value()));
                 caption->setProperty("commands_enabled", true);
-                Block gui_block{ToQ(table->id.value()), "Table", card,
-                                caption, "caption",
-                                ToQ(pf::InlineToPlainText(table->caption))};
+                Block gui_block;
+                gui_block.node_id = ToQ(table->id.value());
+                gui_block.kind = QStringLiteral("Table");
+                gui_block.card = card;
+                gui_block.editor = caption;
+                gui_block.commit_role = QStringLiteral("caption");
+                gui_block.committed_text =
+                    ToQ(pf::InlineToPlainText(table->caption));
                 auto* block_edit = qobject_cast<BlockEdit*>(caption);
                 connect(block_edit, &BlockEdit::CommitRequested, this,
                         [this, caption]() {
@@ -1323,8 +1524,11 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
                 ToQ(pf::InlineToPlainText(sub.title)), false, true, 1, true);
             for (const auto& block : sub.blocks) {
                 if (const auto* para = std::get_if<pf::Paragraph>(&block)) {
-                    add(ToQ(para->id.value()), "Text", "paragraph",
-                        ToQ(pf::InlineToPlainText(para->content)), false, true, 2);
+                    QWidget* text_card = MakeTextCard(ToQ(para->id.value()),
+                                                      para->content);
+                    host_layout->insertWidget(host_layout->count() - 1,
+                                              text_card);
+                    append_gap(ToQ(para->id.value()));
                 } else if (const auto* eq = std::get_if<pf::DisplayEquation>(&block)) {
                     add(ToQ(eq->id.value()), "Equation", "equation",
                         ToQ(eq->math_source), true, true, 2);
@@ -1336,9 +1540,11 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
                     true);
                 for (const auto& block : subsub.blocks) {
                     if (const auto* para = std::get_if<pf::Paragraph>(&block)) {
-                        add(ToQ(para->id.value()), "Text", "paragraph",
-                            ToQ(pf::InlineToPlainText(para->content)), false, true,
-                            2);
+                        QWidget* text_card =
+                            MakeTextCard(ToQ(para->id.value()), para->content);
+                        host_layout->insertWidget(host_layout->count() - 1,
+                                                  text_card);
+                        append_gap(ToQ(para->id.value()));
                     } else if (const auto* eq =
                                    std::get_if<pf::DisplayEquation>(&block)) {
                         add(ToQ(eq->id.value()), "Equation", "equation",
@@ -1418,6 +1624,12 @@ void BlockEditor::SetAssetPathResolver(
 }
 
 bool BlockEditor::HasUncommittedFocus() const {
+    // Text rows (InlineEditor) carry uncommitted input just like the plain
+    // rows; a rebuild while either is dirty would destroy what is being
+    // typed - and, for a rich row, the format state too.
+    if (auto* rich = qobject_cast<InlineEditor*>(focusWidget())) {
+        return rich->IsDirty();
+    }
     if (auto* edit = qobject_cast<BlockEdit*>(focusWidget())) {
         return edit->IsDirty();
     }
@@ -1427,17 +1639,29 @@ bool BlockEditor::HasUncommittedFocus() const {
 void BlockEditor::RefreshHints() { ApplyHints(); }
 
 void BlockEditor::CommitFocused() {
-    auto* edit = qobject_cast<BlockEdit*>(focusWidget());
-    if (!edit) return;
-    for (auto& block : blocks_) {
-        if (block.editor == edit) {
-            CommitBlock(block);
-            return;
+    if (auto* rich = qobject_cast<InlineEditor*>(focusWidget())) {
+        for (auto& block : blocks_) {
+            if (block.inline_editor == rich) {
+                CommitBlock(block);
+                return;
+            }
+        }
+    }
+    if (auto* edit = qobject_cast<BlockEdit*>(focusWidget())) {
+        for (auto& block : blocks_) {
+            if (block.editor == edit) {
+                CommitBlock(block);
+                return;
+            }
         }
     }
 }
 
 std::optional<QString> BlockEditor::FocusedNodeId() const {
+    if (auto* rich = qobject_cast<InlineEditor*>(focusWidget())) {
+        QString node = rich->property("row_node").toString();
+        if (!node.isEmpty()) return node;
+    }
     if (auto* edit = qobject_cast<BlockEdit*>(focusWidget())) {
         QString node = edit->property("row_node").toString();
         if (!node.isEmpty()) return node;

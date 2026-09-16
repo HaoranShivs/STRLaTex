@@ -2,6 +2,11 @@
 
 #include <QApplication>
 #include <QKeyEvent>
+#include <QResizeEvent>
+#include <QShowEvent>
+#include <QAbstractTextDocumentLayout>
+#include <QTextBlock>
+#include <QTextFragment>
 #include <QMimeData>
 #include <QMouseEvent>
 
@@ -33,15 +38,21 @@ InlineEditor::InlineEditor(QWidget* parent) : QTextEdit(parent) {
 }
 
 void InlineEditor::ResizeToContent() {
-    QTextDocument* doc = document();
-    const int wrap_width = qMax(1, viewport()->width());
+    // Measure against the width the editor actually has. viewport() width is
+    // transient - it collapses while the widget is being laid out or has lost
+    // focus during a toolbar click - and measuring against 1px wraps every
+    // word onto its own line, which is the "a big blank area appears, Delete
+    // restores it" symptom.
+    const int wrap_width = qMax(1, width() - 2 * frameWidth());
     const qreal measured = fontMetrics()
                                .boundingRect(QRect(0, 0, wrap_width, 0),
                                              Qt::TextWordWrap, toPlainText())
                                .height();
-    const int target = qMax(static_cast<int>(qCeil(measured)) +
-                                2 * static_cast<int>(doc->documentMargin()) + 6,
-                            fontMetrics().height() + 12);
+    const int one_line = fontMetrics().height() + 12;
+    const int target = qMax(
+        static_cast<int>(qCeil(measured)) +
+            2 * static_cast<int>(document()->documentMargin()) + 6,
+        one_line);
     if (height() != target) setFixedHeight(target);
     updateGeometry();
 }
@@ -93,71 +104,85 @@ void InlineEditor::SetContentClean(const InlineContent& content) {
 }
 
 InlineContent InlineEditor::Content() const {
+    // Read the marks from the document's own structure instead of asking
+    // charFormat() at every caret position: charFormat() reports the format of
+    // the character *before* the position, so a per-character scan shifted
+    // every run by one character - bold "worked" by luck on long runs and
+    // italic lost its first character, which is exactly why italics never
+    // reached the PDF. A QTextFragment is a maximal run of one format, so
+    // walking fragments reproduces the run boundaries exactly.
     InlineContent content;
-    const QString text = toPlainText();
-    int index = 0;
-    while (index < text.length()) {
-        if (text.at(index) == kTokenChar) {
-            const auto hit = TokenAt(index);
-            if (hit) {
-                if (hit->kind == TokenKind::Citation) {
-                    Citation citation;
-                    const QStringList keys = hit->payload.split(',');
-                    for (const QString& key : keys) {
-                        const QString trimmed = key.trimmed();
-                        if (!trimmed.isEmpty()) {
-                            citation.keys.push_back(trimmed.toStdString());
+    for (QTextBlock block = document()->begin(); block.isValid();
+         block = block.next()) {
+        for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
+            const QTextFragment fragment = it.fragment();
+            if (!fragment.isValid() || fragment.length() == 0) continue;
+            const QTextCharFormat format = fragment.charFormat();
+            const QString text = fragment.text();
+
+            int offset = 0;
+            while (offset < text.length()) {
+                if (text.at(offset) == kTokenChar) {
+                    // The fragment's own format is the authoritative token
+                    // description; TokenAt() would report the *previous*
+                    // character's format and misread every token.
+                    const QVariant kind_variant = format.property(kTokenKindProperty);
+                    if (kind_variant.isValid()) {
+                        const TokenKind kind =
+                            static_cast<TokenKind>(kind_variant.toInt());
+                        const QString payload =
+                            format.property(kTokenPayloadProperty).toString();
+                        if (kind == TokenKind::Citation) {
+                            Citation citation;
+                            const QStringList keys = payload.split(',');
+                            for (const QString& key : keys) {
+                                const QString trimmed = key.trimmed();
+                                if (!trimmed.isEmpty()) {
+                                    citation.keys.push_back(trimmed.toStdString());
+                                }
+                            }
+                            if (!citation.keys.empty()) {
+                                content.push_back(std::move(citation));
+                            }
+                        } else if (kind == TokenKind::CrossReference) {
+                            CrossReference ref;
+                            ref.target = NodeId(payload.toStdString());
+                            content.push_back(std::move(ref));
+                        } else {
+                            InlineEquation eq;
+                            eq.math_source = payload.toStdString();
+                            content.push_back(std::move(eq));
                         }
+                        ++offset;
+                        continue;
                     }
-                    if (!citation.keys.empty()) {
-                        content.push_back(std::move(citation));
-                    }
-                } else if (hit->kind == TokenKind::CrossReference) {
-                    CrossReference ref;
-                    ref.target = NodeId(hit->payload.toStdString());
-                    content.push_back(std::move(ref));
-                } else {
-                    InlineEquation eq;
-                    eq.math_source = hit->payload.toStdString();
-                    content.push_back(std::move(eq));
+                    // A token character without a payload is not a token.
+                    ++offset;
+                    continue;
                 }
-                ++index;
-                continue;
-            }
-            // A token character that lost its format: drop it.
-            ++index;
-            continue;
-        }
 
-        // Plain text up to the next token, in one format run.
-        QTextCursor probe(document());
-        probe.setPosition(index);
-        const QTextCharFormat format = probe.charFormat();
-        std::uint8_t marks = 0;
-        SetMark(marks, TextMark::Strong,
-                format.fontWeight() >= QFont::Bold);
-        SetMark(marks, TextMark::Emphasis, format.fontItalic());
+                std::uint8_t marks = 0;
+                SetMark(marks, TextMark::Strong,
+                        format.fontWeight() >= QFont::Bold);
+                SetMark(marks, TextMark::Emphasis, format.fontItalic());
 
-        QString run;
-        while (index < text.length() && text.at(index) != kTokenChar) {
-            // A format change inside the run starts a new one.
-            QTextCursor here(document());
-            here.setPosition(index);
-            const QTextCharFormat current = here.charFormat();
-            const bool bold = current.fontWeight() >= QFont::Bold;
-            const bool italic = current.fontItalic();
-            if (bold != HasMark(marks, TextMark::Strong) ||
-                italic != HasMark(marks, TextMark::Emphasis)) {
-                break;
+                QString run;
+                while (offset < text.length() &&
+                       text.at(offset) != kTokenChar) {
+                    run += text.at(offset);
+                    ++offset;
+                }
+                if (!run.isEmpty()) {
+                    content.push_back(TextRun{run.toStdString(), marks});
+                }
             }
-            run += text.at(index);
-            ++index;
         }
-        if (!run.isEmpty()) {
-            content.push_back(TextRun{run.toStdString(), marks});
-        } else {
-            // Defensive: never stall on a zero-length run.
-            ++index;
+        // Paragraph breaks do not exist inside a single paragraph block: a
+        // newline becomes a space, which is what the document model wants.
+        if (block.next().isValid() && !content.empty()) {
+            if (auto* run = std::get_if<TextRun>(&content.back())) {
+                run->text += " ";
+            }
         }
     }
     return content;
@@ -383,6 +408,33 @@ void InlineEditor::mouseReleaseEvent(QMouseEvent* event) {
         }
     }
     QTextEdit::mouseReleaseEvent(event);
+}
+
+void InlineEditor::resizeEvent(QResizeEvent* event) {
+    QTextEdit::resizeEvent(event);
+    // Measure with the incoming width: width() still reports the old value
+    // while the resize event is being delivered.
+    ResizeToWidth(event->size().width());
+}
+
+void InlineEditor::showEvent(QShowEvent* event) {
+    QTextEdit::showEvent(event);
+    ResizeToContent();
+}
+
+void InlineEditor::ResizeToWidth(int width) {
+    const int wrap_width = qMax(1, width - 2 * frameWidth());
+    const qreal measured = fontMetrics()
+                               .boundingRect(QRect(0, 0, wrap_width, 0),
+                                             Qt::TextWordWrap, toPlainText())
+                               .height();
+    const int one_line = fontMetrics().height() + 12;
+    const int target = qMax(
+        static_cast<int>(qCeil(measured)) +
+            2 * static_cast<int>(document()->documentMargin()) + 6,
+        one_line);
+    if (height() != target) setFixedHeight(target);
+    updateGeometry();
 }
 
 void InlineEditor::focusOutEvent(QFocusEvent* event) {

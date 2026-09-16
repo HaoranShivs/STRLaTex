@@ -61,8 +61,10 @@ target_link_libraries(pf_render PUBLIC pf_document pf_template pf_validation)
 # Build pipeline
 add_library(pf_build STATIC
     build/Compiler.cpp
+    build/CompilerFactory.cpp
     build/DiagnosticMapper.cpp
     build/BuildCoordinator.cpp
+    build/RuntimeManager.cpp
 )
 target_link_libraries(pf_build PUBLIC pf_render)
 

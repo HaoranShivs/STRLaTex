@@ -172,14 +172,29 @@ std::string InlineToRichText(const InlineContent& content) {
 
 namespace {
 
-// True when `pos` starts a fence of exactly `count` asterisks (not part of a
-// longer run, which would be a longer fence).
-bool IsFence(const std::string& text, size_t pos, size_t count) {
+// True when `pos` starts a fence of exactly `count` asterisks that reads as
+// markup rather than as a literal asterisk in prose.
+//
+// Rules that keep "a * b" or "2***3" as text:
+//   * not part of a longer asterisk run,
+//   * either preceded by start-of-text/whitespace (opening) or preceded by
+//     text (closing),
+//   * and the character on the *content* side is not a space, so an opening
+//     fence actually hugs the words it marks.
+bool IsFence(const std::string& text, size_t pos, size_t count, bool opening) {
     if (pos + count > text.size()) return false;
     for (size_t i = 0; i < count; ++i) {
         if (text[pos + i] != '*') return false;
     }
     if (pos + count < text.size() && text[pos + count] == '*') return false;
+    const bool space_before =
+        pos == 0 || std::isspace(static_cast<unsigned char>(text[pos - 1]));
+    if (opening && !space_before) return false;
+    if (!opening && space_before) return false;  // a closer hugs the text
+    const bool content_side_space =
+        pos + count >= text.size() ||
+        std::isspace(static_cast<unsigned char>(text[pos + count]));
+    if (opening && content_side_space) return false;
     return true;
 }
 
@@ -194,12 +209,15 @@ InlineContent InlineFromRichText(const std::string& text) {
     // otherwise start a new one.
     auto flush = [&]() {
         if (plain.empty()) return;
-        if (auto* previous = std::get_if<TextRun>(&content.back());
-            previous && previous->marks == marks) {
-            previous->text += plain;
-        } else {
-            content.push_back(TextRun{plain, marks});
+        if (!content.empty()) {
+            if (auto* previous = std::get_if<TextRun>(&content.back());
+                previous && previous->marks == marks) {
+                previous->text += plain;
+                plain.clear();
+                return;
+            }
         }
+        content.push_back(TextRun{plain, marks});
         plain.clear();
     };
 
@@ -230,22 +248,28 @@ InlineContent InlineFromRichText(const std::string& text) {
             }
         }
         // Character marks. Longest fence wins, so *** is a single toggle.
-        if (IsFence(text, i, 3)) {
+        // A fence only counts as an opener/closer when it hugs the text, so
+        // prose like "a * b" or "x * y * z" survives untouched.
+        const std::uint8_t both = TextMark::Strong | TextMark::Emphasis;
+        if (IsFence(text, i, 3, marks != both)) {
             flush();
-            const std::uint8_t both = TextMark::Strong | TextMark::Emphasis;
             marks = (marks == both) ? 0 : both;
             i += 3;
             continue;
         }
-        if (IsFence(text, i, 2)) {
+        if (IsFence(text, i, 2, marks != TextMark::Strong)) {
             flush();
-            marks = (marks == TextMark::Strong) ? 0u : static_cast<uint8_t>(TextMark::Strong);
+            marks = (marks == TextMark::Strong)
+                        ? 0
+                        : static_cast<uint8_t>(TextMark::Strong);
             i += 2;
             continue;
         }
-        if (IsFence(text, i, 1)) {
+        if (IsFence(text, i, 1, marks != TextMark::Emphasis)) {
             flush();
-            marks = (marks == TextMark::Emphasis) ? 0u : static_cast<uint8_t>(TextMark::Emphasis);
+            marks = (marks == TextMark::Emphasis)
+                        ? 0
+                        : static_cast<uint8_t>(TextMark::Emphasis);
             i += 1;
             continue;
         }

@@ -8,8 +8,38 @@
 #include <vector>
 
 #include "render/LatexRenderer.h"
+#include "build/Toolchain.h"
 
 namespace pf {
+
+
+// Compile-stage configuration (plan §9): which engine, and where the TeX
+// environment lives. texlive_root is the bundled runtime; empty means "not
+// available" and the compiler reports that as a runtime error, not a
+// document error.
+struct CompilerConfig {
+    LatexEngine engine = LatexEngine::PdfLatex;
+    BibliographyEngine bibliography_engine = BibliographyEngine::None;
+    std::filesystem::path texlive_root;
+    bool keep_logs = true;
+};
+
+// Classification of why a compile failed (plan §37). Runtime problems are
+// distinct from document problems so the UI can show them differently.
+enum class CompileFailureKind : std::uint8_t {
+    None,
+    RuntimeMissing,
+    RuntimeCorrupted,
+    PackageMissing,
+    FontMissing,
+    LatexError,
+    BibliographyError,
+    Timeout,
+    Cancelled,
+    InternalError,
+};
+
+const char* ToString(CompileFailureKind kind);
 
 enum class CompileStatus : std::uint8_t {
     Success,
@@ -29,6 +59,9 @@ struct CompileRequest {
     std::filesystem::path workspace;
     // Destination name in the generated package -> source file on disk.
     std::map<std::string, std::filesystem::path> asset_sources;
+    // Resolved toolchain for this build (plan §14): decided by the template at
+    // request time, never re-derived inside the compiler.
+    BuildToolchain toolchain;
 };
 
 struct CompileResult {
@@ -36,6 +69,10 @@ struct CompileResult {
     std::filesystem::path pdf_path;
     std::string log;
     std::vector<CompilerMessage> messages;
+    // Auxiliary logs worth keeping next to build.log (plan §15):
+    // latexmk.log, main.log, main.blg ...
+    std::vector<std::filesystem::path> auxiliary_logs;
+    CompileFailureKind failure_kind = CompileFailureKind::None;
 };
 
 class ICompiler {
@@ -62,6 +99,20 @@ public:
 private:
     std::string executable_;
     std::string cache_dir_;
+};
+
+// The production backend (plan §10, §30): drives latexmk from the bundled
+// portable TeX Live runtime with an isolated environment.
+class TexLiveCompiler final : public ICompiler {
+public:
+    explicit TexLiveCompiler(CompilerConfig config);
+
+    CompileResult Compile(
+        const CompileRequest& request,
+        const std::atomic<bool>* cancel_requested = nullptr) override;
+
+private:
+    CompilerConfig config_;
 };
 
 class MockCompiler final : public ICompiler {

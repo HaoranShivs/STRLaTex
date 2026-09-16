@@ -1,0 +1,10 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/orangepi3/Projects/STRTex/cmake_install.cmake",
+		"/home/orangepi3/Projects/STRTex/src/cmake_install.cmake",
+		"/home/orangepi3/Projects/STRTex/src/app/cmake_install.cmake",
+		"/home/orangepi3/Projects/STRTex/tests/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

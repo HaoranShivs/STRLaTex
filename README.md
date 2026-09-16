@@ -38,19 +38,29 @@ src/
 ├── bibliography/  BibTeX 解析 / BibliographyService / 搜索
 ├── validation/    Validator（语义 / 模板层 Diagnostic）
 ├── render/        LatexRenderer / SourceMap / BuildPackage
-├── build/         ICompiler / TectonicCompiler / MockCompiler / DiagnosticMapper
-│                  / BuildCoordinator（debounce + latest-wins + 两层取消）
+├── build/         ICompiler / TexLiveCompiler（latexmk + 自带 TeX Live）
+│                  / TectonicCompiler / CompilerFactory / RuntimeManager
+│                  / BuildCoordinator（debounce + latest-wins + 两层取消 + 取消/超时）
+├── template/      TemplateRegistry（… + TemplateToolchainRequirement：
+│                  模板声明编译引擎，两模板均 PdfLatex + BibTex）
 ├── persistence/   ProjectSerializer（project.paper JSON）/ 原子保存
 │                  / SaveCoordinator（worker 线程 + 完成事件）
 │                  / ProjectMigrator（schema V1→V2）
 └── cli/           paperforge 命令行工具
 src/app/           Qt6 GUI（paperforge-gui）：结构化编辑器 + Outline + Problems
 │                  + Build 状态 + PDF 预览（pdftoppm 渲染）
-tests/             83 个单元 + 端到端 + 场景回归测试（含真实 Tectonic 构建、
+│                  + InlineEditor（富文本 Text 行：Bold/Italic/行内公式/
+│                    Citation/Reference token + 格式工具栏）
+tests/             106 个单元 + 端到端 + 场景回归测试（含真实 Tectonic 构建、
 │                  自动保存恢复、M1 线程/协议场景、遍历与三级标题、
 │                  Schema migration、GUI 冒烟）
 docs/              architecture-async.md（线程模型）/ structure-semantics.md
-│                  （遍历 + 三级标题 + migration）/ REPOSITORY.md（仓库布局）
+│                  （遍历 + 三级标题 + migration）/ inline-editor.md
+│                  （富文本）/ toolchain.md（编译工具链 + IEEE 字体根因）
+│                  / REPOSITORY.md（仓库布局）
+runtime-tests/     font-test.tex / ieee-test.tex（runtime 健康检查与手工复现）
+tools/build-runtime/  build_runtime.sh + packages.txt + texlive.profile
+│                  （可复现构建自带 Portable TeX Live，user-mode 免 root）
 tools/
 ├── bin/tectonic         静态链接的 tectonic 0.15.0
 └── tectonic-cache/      LaTeX bundle 缓存（离线构建可用）
@@ -60,6 +70,12 @@ tools/
 
 | 基线要求 | 实现 |
 | --- | --- |
+| Text 行内富文本 | `InlineEditor` 直接编辑 `InlineContent`：Bold/Italic 组合、行内公式、Citation/Reference token（不可编辑内部标识、整体删除、点击选中）；提交走 `EditParagraphRich`，不做字符串往返。**标记以 fragment 为准**（`charFormat()` 在光标处报的是前一个字符，逐字符读会让 run 边界错位、斜体丢首字符），token 从 fragment 属性读取，提交/焦点/量高同时识别富行 |
+| 渲染标记组合 | `Strong + Emphasis` → `\textbf{\emph{...}}`，不再互相覆盖 |
+| 编译引擎由模板决定 | `TemplateToolchainRequirement` → `CompilerFactory` → `TexLiveCompiler`；IEEEtran 强制 ptm(Times)，XeTeX 引擎下字体选择失效，故两模板钉住 pdfLaTeX；PDF 中 Regular/Bold/Italic 三种字型可验证 |
+| 自带 TeX 环境 | `runtime/texlive`（`tools/build-runtime/` 重建，user-mode 免 root）；编译进程只看 runtime 的 PATH/HOME/TEXMF*，用户 TeX 与 PATH 不影响结果；runtime 不健康时报 `E-RUNTIME` 而非文档错误 |
+| 真实 PDF 回归 | `IeeeMarksReachPdfLatex`（IEEEtran 四种标记组合经 pdfLaTeX 真实构建）、`FontTestBuildsWithoutSubstitution`、`BoldAndItalicReachTheBuiltPdf`（端到端 + `pdffonts` 字型断言） |
+| 粘贴规则 | `Ctrl+V` 保留 Bold/Italic、丢弃字体/字号/颜色/背景；`Ctrl+Shift+V` 只留文本；PDF 硬换行继续重排 |
 | Document Tree 永远 structurally valid | 闭式 schema：`Section/Subsection/Subsubsection` + `Paragraph/Figure/Table/DisplayEquation` 为固定 `struct` + `std::variant`；Table 由 `MakeTable` 工厂保证矩形 |
 | 遍历逻辑只写一份 | `DocumentTraversal` 提供 `NodeAddress` + `LocateNode/VisitNodes/VisitBlocks/VisitHeadings/VisitInlineContent`；Renderer、Validator、DocumentIndex、Outline、删除/移动定位全部复用，不再各自维护嵌套循环 |
 | 三级标题层级 | `Subsubsection` 挂在 `Subsection` 下，Insert/Rename/Delete/Move/Undo/Redo 全链路可用；Renderer 产出 `\subsubsection{...}\label{node-id}` |
@@ -86,13 +102,17 @@ tools/
 ## 构建
 
 ```bash
+# 一次性构建自带 TeX runtime（user-mode，免 root；约 265MB，不进 git）
+tools/build-runtime/build_runtime.sh
+
 cmake -B build -G Ninja
 cmake --build build
 ```
 
 要求：CMake ≥ 3.16，C++20 编译器（GCC 12+ 已验证），Qt6（可选——未安装时自动
 跳过 GUI，核心库与 CLI 不受影响），poppler-utils（GUI 的 PDF 预览用 `pdftoppm`，
-可选）。
+可选），perl + 网络（仅构建 runtime 时需要）。**编译 PDF 不依赖用户机器上的
+LaTeX**：PaperForge 用自带的 Portable TeX Live。
 
 ## 使用
 
@@ -196,7 +216,9 @@ MyPaper/
 ## 测试
 
 ```bash
-./build/tests/pf_tests          # 83 个测试
+./build/tests/pf_tests                      # 100 个测试
+QT_QPA_PLATFORM=offscreen \
+  ./build/src/app/paperforge-inline-editor-test   # +10 个富文本/widget 测试
 ctest --test-dir build          # 或通过 CTest（pf_tests + gui_input_persistence）
 ```
 
@@ -212,6 +234,22 @@ ProjectSession 工作流、**真实 Tectonic 端到端 PDF 构建**，以及 GUI
 编译中继续输入 / Undo / 切换模板 / 切换项目时旧 build 不得进入预览、
 保存期间继续编辑必须仍是 Dirty、自动保存永远写完整 snapshot、
 删除被引用的 Figure 后文档仍有效且 Validator 报 dangling 诊断。
+
+**编译工具链回归**（`TestRuntime.cpp`）：runtime 健康检查（可执行文件齐全 +
+真实最小编译）、`font-test.tex` 无字体替换、
+`IeeeMarksReachPdfLatex`——**IEEEtran 下四种标记组合经真实 pdfLaTeX 构建**
+（本 bug 的永久回归），以及 toolchain 随请求传递。
+
+**富文本 widget 回归**（`paperforge-inline-editor-test`，15 个）：run 边界不错位、
+斜体整词到达 `\emph{}` 且**没有** `\emph{talic}`、token 重载后不丢、
+点工具栏按钮不抢焦点也不膨胀行高、宽度变化自动重排，以及**真实 tectonic 构建**
+验证 `\textbf{}`/`\emph{}` 进入 LaTeX 与 PDF；`ToolbarMarksWorkOnEveryTemplate`
+对**每个模板**分别断言文档与 LaTeX 都拿到标记（曾出现"默认模板可以、IEEE 不行"
+的报告，实测两模板行为一致，差异来自焦点缺陷而非模板）。
+
+**富文本回归**（`tests/TestInline.cpp`）：TextMark 组合往返无损、
+Renderer 嵌套 `\textbf{\emph{}}`、富内容经编辑协议与保存/重开保持结构、
+行内公式/引用/交叉引用保持语义节点、粘贴重排不丢标记。
 
 **结构语义回归**（`tests/TestStructure.cpp`）：`NodeAddress`/`LocateNode` 对每个
 节点给出完整坐标、遍历顺序与文档顺序一致、`Subsubsection` 的

@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "build/Toolchain.h"
+
 namespace pf {
 
 // Which front-matter fields a template requires. Drives the editor's
@@ -37,6 +39,9 @@ struct TemplateDefinition {
     std::vector<std::string> preamble_lines;
     TemplateRequiredFields required;
     TemplateCapabilities capabilities;
+    // Compile toolchain the template needs (plan §7, §28). The template
+    // author decides the engine; nothing downstream re-derives it.
+    TemplateToolchainRequirement toolchain;
 };
 
 class TemplateRegistry {

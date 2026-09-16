@@ -253,6 +253,15 @@ void MainWindow::WireEditor() {
                                            std::move(text));
                 mark_unsaved();
             });
+    // Rich commit from an InlineEditor row: marks, citations, cross
+    // references and inline equations arrive as InlineContent (plan §4.1).
+    connect(editor_, &BlockEditor::ParagraphContentEdited, this,
+            [this, mark_unsaved](QString node, const InlineContent& content) {
+                if (shutting_down_) return;
+                controller_->EditParagraphRich(NodeId(node.toStdString()),
+                                               content);
+                mark_unsaved();
+            });
     connect(editor_, &BlockEditor::EquationEdited, this,
             [this, mark_unsaved](QString node, QString math) {
                 controller_->EditEquation(NodeId(node.toStdString()),
