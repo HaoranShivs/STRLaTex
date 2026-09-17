@@ -38,7 +38,7 @@ InlineEditor::InlineEditor(QWidget* parent)
     setFrameShape(QFrame::NoFrame);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    document()->setDocumentMargin(6);
+    document()->setDocumentMargin(theme::spacing::kEditorDocMargin);
     document()->documentLayout()->registerHandler(
         inline_math_format::kObjectType, math_object_renderer_.get());
     document()->documentLayout()->registerHandler(
@@ -67,6 +67,23 @@ void InlineEditor::SetReferenceItems(std::vector<ReferenceItem> items) {
 }
 
 // ---------------- Model -> editor ----------------
+
+void InlineEditor::SetBodyTypography(const QFont& font,
+                                     int line_height_percent) {
+    line_height_percent_ = line_height_percent;
+    // Programmatic styling: never a user edit, never dirty.
+    loading_ = true;
+    setFont(font);
+    theme::ApplyDocumentTypography(document(), font, line_height_percent);
+    loading_ = false;
+    ResizeToContent();
+}
+
+void InlineEditor::ApplyLineHeight() {
+    if (line_height_percent_ <= 0) return;
+    theme::ApplyDocumentTypography(document(), document()->defaultFont(),
+                                   line_height_percent_);
+}
 
 void InlineEditor::InsertContent(const InlineContent& content) {
     QTextCursor cursor = textCursor();
@@ -103,6 +120,9 @@ void InlineEditor::SetContent(const InlineContent& content) {
     QTextCursor cursor(document());
     setTextCursor(cursor);
     InsertContent(content);
+    // clear() dropped the block formats: restore the proportional line
+    // height so the row reads at 150% after every reload (UI plan §5).
+    ApplyLineHeight();
     loading_ = false;
     dirty_ = false;
     SanitizeTokens();

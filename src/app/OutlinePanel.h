@@ -25,6 +25,12 @@ public:
     void RebuildFromDocument(const Document& doc,
                              const std::vector<BibEntry>& references);
 
+    // Reverse navigation (UI plan §10): the editor tells the outline which
+    // section owns the row under the caret, so the highlighted item follows
+    // the user through a long manuscript. An empty key clears the selection
+    // (front-matter rows have no outline node).
+    void SelectNode(const QString& outline_key);
+
 signals:
     void NodeActivated(const QString& node_id);
     void CitationChosen(const QString& key);  // double-click inserts @cite
@@ -40,6 +46,9 @@ private:
     QStackedWidget* stack_;
     // Document tab
     QTreeWidget* outline_;
+    // The key SelectNode last highlighted: RebuildFromDocument re-applies it
+    // so the outline keeps tracking the caret across document refreshes.
+    QString selected_key_;
     // References tab
     QLineEdit* ref_search_;
 

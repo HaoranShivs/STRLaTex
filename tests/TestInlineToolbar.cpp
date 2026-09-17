@@ -133,6 +133,12 @@ PF_TEST(ToolbarClickDoesNotGrowTheTextRow) {
 
     const int before = editor->height();
 
+    // A real user clicks into the paragraph before reaching for the toolbar:
+    // the format strip is part of the block chrome and only shows on
+    // hover/focus (UI plan §2), so focus first, then find the button.
+    editor->setFocus(Qt::MouseFocusReason);
+    Spin(120);
+
     // Click the italic button exactly as a user would.
     QToolButton* italic = FindButton(fixture.window, QStringLiteral("I"));
     PF_CHECK(italic != nullptr);

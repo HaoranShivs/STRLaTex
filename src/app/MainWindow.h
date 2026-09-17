@@ -4,8 +4,10 @@
 // state and word count. Welcome page replaces the workspace when no project
 // is open (design #1, #34, #51, #80).
 
+#include <QList>
 #include <QMainWindow>
 #include <QString>
+#include <QStringList>
 
 #include "app/ProjectController.h"
 
@@ -14,7 +16,6 @@ class QLabel;
 class QPushButton;
 class QStackedWidget;
 class QSplitter;
-
 namespace pf::gui {
 
 class BlockEditor;
@@ -68,6 +69,10 @@ private:
     void UpdateRequiredHints();
     void RefreshReferenceItems();
     int CountWords() const;
+    // Focus editing mode (UI plan §11): collapse Outline + Preview so the
+    // editor owns the whole window for long writing sessions; the second
+    // click restores the previous splitter sizes.
+    void OnToggleFocusMode(bool on);
     // Problem -> Block navigation (Build Diagnostics plan §25/§28/§48):
     // focus the owning block, or fall back to the Build Log; a deleted block
     // is reported, never a crash.
@@ -78,10 +83,14 @@ private:
     // Header
     QPushButton* build_button_;
     QComboBox* template_combo_ = nullptr;
+    QPushButton* focus_button_ = nullptr;
     // Workspace
     QStackedWidget* central_stack_;
     WelcomePage* welcome_;
     QWidget* workspace_;
+    QSplitter* main_splitter_ = nullptr;
+    QList<int> pre_focus_sizes_;
+    bool focus_mode_ = false;
     QSplitter* vertical_splitter_ = nullptr;
     OutlinePanel* outline_;
     BlockEditor* editor_;

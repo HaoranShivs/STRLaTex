@@ -44,9 +44,8 @@ BuildCoordinator::BuildCoordinator(Host host, ICompiler *compiler)
 }
 
 BuildCoordinator::BuildCoordinator(
-    Host host,
-    std::function<std::unique_ptr<ICompiler>(const BuildToolchain &)>
-        compiler_provider)
+    Host host, std::function<std::unique_ptr<ICompiler>(const BuildToolchain &)>
+                   compiler_provider)
     : host_(std::move(host)), compiler_provider_(std::move(compiler_provider)) {
   worker_ = std::thread([this] { WorkerLoop(); });
 }
@@ -246,6 +245,20 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
         dump << file.content;
       }
     }
+    // Stage the referenced assets next to the dumped main.tex too, so the
+    // \includegraphics paths in the dumped source resolve to real files
+    // (assets/<name>.<ext>) instead of dangling names.
+    const auto dump_root = host_.debug_dump_dir().value_or("");
+    if (!dump_root.empty()) {
+      for (const auto &[destination_name, source] : snapshot.asset_sources) {
+        const auto dump_asset =
+            std::filesystem::path(dump_root) / destination_name;
+        std::filesystem::create_directories(dump_asset.parent_path(), dump_ec);
+        std::filesystem::copy_file(
+            source, dump_asset,
+            std::filesystem::copy_options::overwrite_existing, dump_ec);
+      }
+    }
   }
 
   SetPhase(BuildPhase::Compiling);
@@ -261,8 +274,8 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
   // thread and carry the current build id, so the application side can drop
   // them if a newer build has started.
   compile_request.on_output = [this, id](const CompileOutputChunk &chunk) {
-    EmitEvent(id, chunk.is_stderr ? BuildEventType::StdErr
-                                  : BuildEventType::StdOut,
+    EmitEvent(id,
+              chunk.is_stderr ? BuildEventType::StdErr : BuildEventType::StdOut,
               chunk.text);
   };
   // The compiler is chosen from the template's toolchain requirement (plan
@@ -319,8 +332,8 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
   // compiler entries but must never fail an otherwise good build or crash
   // the pipeline; the raw log stays complete in BuildResult::log either way.
   try {
-    compiler_diagnostics = DiagnosticMapper().Map(
-        compiled, rendered.source_map, snapshot.revision, id);
+    compiler_diagnostics = DiagnosticMapper().Map(compiled, rendered.source_map,
+                                                  snapshot.revision, id);
   } catch (const std::exception &e) {
     EmitEvent(id, BuildEventType::InternalMessage,
               std::string("Diagnostic parser failure: ") + e.what());
@@ -349,8 +362,8 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
   case CompileStatus::Failure:
     result.outcome = BuildResult::Outcome::Failure;
     EmitEvent(id, BuildEventType::BuildFailed,
-              std::string("Build failed: ") +
-                  ToString(compiled.failure_kind) + duration);
+              std::string("Build failed: ") + ToString(compiled.failure_kind) +
+                  duration);
     break;
   case CompileStatus::Cancelled:
     result.outcome = BuildResult::Outcome::Cancelled;

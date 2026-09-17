@@ -5,6 +5,7 @@
 #include <QStackedWidget>
 #include <QTabBar>
 #include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
 #include <QVBoxLayout>
 
 #include "app/Theme.h"
@@ -14,6 +15,15 @@ namespace pf::gui {
 
 namespace {
 QString ToQ(const std::string& s) { return QString::fromStdString(s); }
+
+// The tree item whose node key matches, or null. Keys are stored in UserRole.
+QTreeWidgetItem* FindOutlineItem(QTreeWidget* tree, const QString& key) {
+    if (key.isEmpty()) return nullptr;
+    for (QTreeWidgetItemIterator it(tree); *it; ++it) {
+        if ((*it)->data(0, Qt::UserRole).toString() == key) return *it;
+    }
+    return nullptr;
+}
 }  // namespace
 
 OutlinePanel::OutlinePanel(QWidget* parent) : QWidget(parent) {
@@ -180,8 +190,34 @@ void OutlinePanel::RebuildFromDocument(
     ref_count_->setText(QString("%1 references").arg(references.size()));
     // Keep the user's search term in force over the freshly built list.
     ApplyReferenceFilter();
+
+    // Re-highlight the row the caret is on: the rebuild replaced every item,
+    // so the tracking highlight (UI plan §10) is restored here. No scroll -
+    // the user may be reading elsewhere in the tree, and a refresh that
+    // yanks the viewport would be worse than no refresh at all.
+    if (!selected_key_.isEmpty()) {
+        if (QTreeWidgetItem* keep = FindOutlineItem(outline_, selected_key_)) {
+            outline_->setCurrentItem(keep);
+        }
+    }
 }
 
 void OutlinePanel::OnTabChanged(int index) { stack_->setCurrentIndex(index); }
+
+void OutlinePanel::SelectNode(const QString& outline_key) {
+    selected_key_ = outline_key;
+    if (!outline_) return;
+    if (outline_key.isEmpty()) {
+        outline_->setCurrentItem(nullptr);
+        return;
+    }
+    if (QTreeWidgetItem* item = FindOutlineItem(outline_, outline_key)) {
+        outline_->setCurrentItem(item);
+        outline_->scrollToItem(item, QAbstractItemView::PositionAtCenter);
+    } else {
+        // A deleted node: leave nothing highlighted.
+        outline_->setCurrentItem(nullptr);
+    }
+}
 
 }  // namespace pf::gui

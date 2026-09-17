@@ -54,6 +54,12 @@ public:
     explicit InlineEditor(QWidget* parent = nullptr);
     ~InlineEditor() override;
 
+    // Establish the row's font environment *before* SetContent (UI plan §6):
+    // inline math objects measure document()->defaultFont() at insertion
+    // time, so the body font and line height must already be in place when
+    // the content is loaded, or pills and math keep the old metrics.
+    void SetBodyTypography(const QFont& font, int line_height_percent);
+
     // Load from the document. Never marks the row dirty.
     void SetContent(const InlineContent& content);
     // What the document should store after this edit.
@@ -193,6 +199,9 @@ private:
         int position;  // position of the token character
     };
     std::optional<TokenHit> TokenAt(int position) const;
+    // Re-apply the stored proportional line height to every block (called
+    // after the document was reloaded, under the loading_ guard).
+    void ApplyLineHeight();
     void OpenMathEditor(const std::optional<TokenHit>& hit);
     // Remove the whole token starting at `position`.
     void RemoveTokenAt(int position);
@@ -207,6 +216,9 @@ private:
     bool refreshing_displays_ = false;
     bool math_editor_open_ = false;
     int protected_inserts_ = 0;
+    // Body typography (UI plan §5): proportional line height re-applied on
+    // every reload so 150% survives SetContent/clear.
+    int line_height_percent_ = 0;
     std::unique_ptr<InlineMathObjectRenderer> math_object_renderer_;
     std::unique_ptr<CitationObjectRenderer> citation_object_renderer_;
     std::shared_ptr<const CitationNumberResolver> citation_numbers_;

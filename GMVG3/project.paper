@@ -1,5 +1,86 @@
 {
-  "assets": [],
+  "assets": [
+    {
+      "fileSize": 9767,
+      "hash": "dc9b265c92ff17d6",
+      "height": 93,
+      "id": "a5",
+      "mediaType": "image/png",
+      "originalName": "弱监督学习范式.png",
+      "path": "_____________________.png",
+      "width": 851
+    },
+    {
+      "fileSize": 123317,
+      "hash": "3b2b7602554cb319",
+      "height": 1042,
+      "id": "a4",
+      "mediaType": "image/jpeg",
+      "originalName": "point_label_examples.jpg",
+      "path": "a3_point_label_examples.jpg",
+      "width": 2100
+    },
+    {
+      "fileSize": 1259751,
+      "hash": "fd1642b0bf736415",
+      "height": 3205,
+      "id": "a3",
+      "mediaType": "image/png",
+      "originalName": "dir_msg_visulization.png",
+      "path": "dir_msg_visulization.png",
+      "width": 2929
+    },
+    {
+      "fileSize": 1259751,
+      "hash": "fd1642b0bf736415",
+      "height": 3205,
+      "id": "a2",
+      "mediaType": "image/png",
+      "originalName": "dir_msg_visulization.png",
+      "path": "a1_dir_msg_visulization.png",
+      "width": 2929
+    },
+    {
+      "fileSize": 123317,
+      "hash": "3b2b7602554cb319",
+      "height": 1042,
+      "id": "a6",
+      "mediaType": "image/jpeg",
+      "originalName": "point_label_examples.jpg",
+      "path": "a5_point_label_examples.jpg",
+      "width": 2100
+    },
+    {
+      "fileSize": 125988,
+      "hash": "a6ea64a0e77f7f0d",
+      "height": 187,
+      "id": "a1",
+      "mediaType": "image/png",
+      "originalName": "IRST-example.png",
+      "path": "IRST-example.png",
+      "width": 747
+    },
+    {
+      "fileSize": 149256,
+      "hash": "3187bcc5c9da062a",
+      "height": 494,
+      "id": "a7",
+      "mediaType": "image/jpeg",
+      "originalName": "fa.jpg",
+      "path": "fa.jpg",
+      "width": 2100
+    },
+    {
+      "fileSize": 557465,
+      "hash": "49381d252bc76def",
+      "height": 1312,
+      "id": "a9",
+      "mediaType": "image/png",
+      "originalName": "GMVG_pipeline.png",
+      "path": "a8_GMVG_pipeline.png",
+      "width": 3131
+    }
+  ],
   "bibliographyPath": "references.bib",
   "body": {
     "sections": [
@@ -8,29 +89,7 @@
           {
             "content": [
               {
-                "marks": 1,
-                "text": "In recent years, infrared small target detection technologies have become increasingly significant in multiple fields, includ ing ecological environment monitoring[1], marine rescue[2], [3] and military surveillance[4], [5].",
-                "type": "text"
-              },
-              {
-                "text": " ",
-                "type": "text"
-              },
-              {
-                "marks": 2,
-                "text": "This is because infrared light exhibits a longer working range and stronger penetration capability compared to visible light.",
-                "type": "text"
-              },
-              {
-                "text": " ",
-                "type": "text"
-              },
-              {
-                "latex": "x_2^4",
-                "type": "inline_math"
-              },
-              {
-                "text": "In IRSTD tasks, targets are generally very small, weak, and are often embedded in complex backgrounds. In IRSTD tasks, targets typically include drones, aerostats, and ships, which commonly exhibit the following characteristics[6]: (i) Low target energy: Due to severe signal attenuation over long-distance propagation, the received infrared signal is weak. This results in low contrast between the target and strong background clutter, making the target highly susceptible to being obscured by background noise. (ii) Small target size: At long imaging ranges, targets occupy only a few pixels in the image and lack discernible texture or structural details. (iii) Complex background",
+                "text": "In recent years, infrared small target detection technologies have become increasingly significant in multiple fields, includ ing ecological environment monitoring",
                 "type": "text"
               },
               {
@@ -41,29 +100,47 @@
                 "type": "citation"
               },
               {
-                "text": ": The operational environment often contains numerous interfering objects that introduce edges, corners, and other salient features, significantly complicating the accurate discrimination of small targets from the background. ",
+                "text": ", marine rescue, and military surveillance. This is because infrared light exhibits a longer working range and stronger penetration capability compared to visible light. In IRSTD tasks, targets are generally very small, weak, and are often embedded in complex backgrounds. In IRSTD tasks, targets typically include drones, aerostats, and ships, which commonly exhibit the following characteristics: (i) Low target energy: Due to severe signal attenuation over long-distance propagation, the received infrared signal is weak. This results in low contrast between the target and strong background clutter, making the target highly susceptible to being obscured by background noise. (ii) Small target size: At long imaging ranges, targets occupy only a few pixels in the image and lack discernible texture or structural details. (iii) Complex background: The operational environment often contains numerous interfering objects that introduce edges, corners, and other salient features, significantly complicating the accurate discrimination of small targets from the background. Some examples are shown in Fig. 1. Therefore, efficiently and accurately detecting infrared small targets remains a critical challenge.",
                 "type": "text"
               },
               {
-                "keys": [
-                  "prasad2017video"
-                ],
-                "mode": "parenthetical",
-                "type": "citation"
-              },
-              {
-                "text": "Some examples are shown in Fig. 1. Therefore, efficiently and accurately detecting infrared small targets remains a critical challenge.",
-                "type": "text"
-              },
-              {
-                "keys": [
-                  "10695116"
-                ],
-                "mode": "parenthetical",
-                "type": "citation"
+                "target": "n1",
+                "type": "crossReference"
               }
             ],
             "id": "n3",
+            "type": "paragraph"
+          },
+          {
+            "alt": "",
+            "assetId": "a1",
+            "caption": [],
+            "id": "n15",
+            "span": "single",
+            "type": "figure",
+            "width": "100"
+          },
+          {
+            "alt": "",
+            "assetId": "a7",
+            "caption": [],
+            "id": "n17",
+            "span": "single",
+            "type": "figure",
+            "width": "100"
+          },
+          {
+            "alt": "",
+            "assetId": "a9",
+            "caption": [],
+            "id": "n18",
+            "span": "double",
+            "type": "figure",
+            "width": "100"
+          },
+          {
+            "content": [],
+            "id": "n16",
             "type": "paragraph"
           }
         ],
@@ -110,7 +187,7 @@
     ]
   },
   "projectId": "p1",
-  "revision": 22,
+  "revision": 55,
   "schemaVersion": "3",
   "template": "ieee-conference"
 }
