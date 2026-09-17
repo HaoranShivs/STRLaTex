@@ -70,6 +70,12 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
     // Citations resolve into the bibliography; math bodies obey the LaTeX
     // input boundary (design §5). Inline math has no node id of its own, so a
     // problem is reported against the block that owns it.
+    //
+    // Citation validation (citation plan §9): a cited key that is not in the
+    // bibliography is an error - never silently dropped - and a document that
+    // cites at all while the project has no bibliography reports that once at
+    // project level instead of one noise error per key.
+    bool document_has_citations = false;
     auto check_inline = [&](const InlineContent& content,
                             const std::optional<NodeId>& owner) {
         const DiagnosticLocation location =
@@ -77,13 +83,15 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
                   : DiagnosticLocation::ForProject();
         for (const auto& node : content) {
             if (const auto* cit = std::get_if<Citation>(&node)) {
+                if (!cit->keys.empty()) document_has_citations = true;
+                if (input.bibliography_keys.empty()) continue;
                 for (const auto& key : cit->keys) {
                     bool found = std::find(input.bibliography_keys.begin(),
                                            input.bibliography_keys.end(),
                                            key) != input.bibliography_keys.end();
                     if (!found) {
                         result->diagnostics.push_back(MakeDiag(
-                            input.revision, DiagnosticSeverity::Error, "E-MISSING-CITATION",
+                            input.revision, DiagnosticSeverity::Error, "E-CITATION-UNKNOWN-KEY",
                             "citation key not in bibliography: " + key,
                             DiagnosticLocation::ForCitationKey(key)));
                     }
@@ -160,6 +168,18 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
     VisitInlineContent(doc, [&](const InlineContent& content, const NodeAddress&) {
         check_ref(content);
     });
+
+    // Cited, but the project has no bibliography at all: one project-level
+    // error (citation plan §9). The per-key pass above was skipped for
+    // exactly this case so the Problems panel stays readable.
+    if (document_has_citations && input.bibliography_keys.empty()) {
+        result->diagnostics.push_back(MakeDiag(
+            input.revision, DiagnosticSeverity::Error,
+            "E-CITATION-NO-BIBLIOGRAPHY",
+            "document cites references but the project has no bibliography "
+            "(import a .bib file)",
+            DiagnosticLocation::ForProject()));
+    }
 }
 
 void Validator::ValidateTemplate(const Document& doc, const ValidationInput& input,

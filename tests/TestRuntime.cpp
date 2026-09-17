@@ -214,3 +214,90 @@ PF_TEST(CompileRequestCarriesToolchain) {
     PF_CHECK(std::string(ToString(LatexEngine::LuaLatex)) == "lualatex");
     PF_CHECK(std::string(ToString(BibliographyEngine::BibTex)) == "bibtex");
 }
+
+PF_TEST(CompileStreamsOutputLiveToSink) {
+    // Build Diagnostics plan §44: the compiler hands stdout/stderr chunks to
+    // the sink while the child runs, so the Build Log grows live, and nothing
+    // is lost: the sink's stdout text reassembles result.log.
+    if (RuntimeManager(RepoRoot()).Initialize().status != RuntimeStatus::Healthy) {
+        std::cout << "    (runtime not healthy; skipping)\n";
+        return;
+    }
+    const auto workspace =
+        std::filesystem::temp_directory_path() / "pf-stream-test";
+    std::filesystem::remove_all(workspace);
+    std::filesystem::create_directories(workspace);
+
+    CompilerConfig config;
+    config.texlive_root = RuntimeRoot();
+    TexLiveCompiler compiler(config);
+    CompileRequest request;
+    request.workspace = workspace;
+    BuildPackageFile file;
+    file.path = "main.tex";
+    file.content =
+        "\\documentclass{article}\n"
+        "\\begin{document}\n"
+        "Stream me\n"
+        "\\end{document}\n";
+    request.package.files.push_back(file);
+    request.package.entry_file = "main.tex";
+    request.toolchain.engine = LatexEngine::PdfLatex;
+
+    std::string streamed_stdout;
+    std::string streamed_stderr;
+    int chunks = 0;
+    request.on_output = [&](const CompileOutputChunk& chunk) {
+        ++chunks;
+        (chunk.is_stderr ? streamed_stderr : streamed_stdout) += chunk.text;
+    };
+
+    auto result = compiler.Compile(request, nullptr);
+    PF_CHECK(result.status == CompileStatus::Success);
+    PF_CHECK(result.exit_code == 0);
+    PF_CHECK(chunks > 0);                 // the sink actually fired
+    PF_CHECK(!streamed_stdout.empty());   // latexmk writes its log there
+    PF_CHECK(result.log == streamed_stdout + streamed_stderr);
+    // The on-disk artifact still exists for inspection (plan §15/§45).
+    PF_CHECK(std::filesystem::exists(workspace / "latexmk.log"));
+}
+
+PF_TEST(CompileFailureCarriesExitCodeAndMessages) {
+    // Build Diagnostics plan §31/§32: success requires exit 0 + a PDF; a
+    // LaTeX error yields a non-zero exit code, failure status and at least
+    // one parsed message for the Problems panel.
+    if (RuntimeManager(RepoRoot()).Initialize().status != RuntimeStatus::Healthy) {
+        std::cout << "    (runtime not healthy; skipping)\n";
+        return;
+    }
+    const auto workspace =
+        std::filesystem::temp_directory_path() / "pf-fail-test";
+    std::filesystem::remove_all(workspace);
+    std::filesystem::create_directories(workspace);
+
+    CompilerConfig config;
+    config.texlive_root = RuntimeRoot();
+    TexLiveCompiler compiler(config);
+    CompileRequest request;
+    request.workspace = workspace;
+    BuildPackageFile file;
+    file.path = "main.tex";
+    file.content =
+        "\\documentclass{article}\n"
+        "\\begin{document}\n"
+        "\\unknownmacrothatdoesnotexist{}\n"
+        "\\end{document}\n";
+    request.package.files.push_back(file);
+    request.package.entry_file = "main.tex";
+    request.toolchain.engine = LatexEngine::PdfLatex;
+
+    auto result = compiler.Compile(request, nullptr);
+    PF_CHECK(result.status == CompileStatus::Failure);
+    PF_CHECK(result.exit_code != 0);
+    PF_CHECK(!result.messages.empty());
+    bool saw_error = false;
+    for (const auto& message : result.messages) {
+        if (message.is_error) saw_error = true;
+    }
+    PF_CHECK(saw_error);
+}

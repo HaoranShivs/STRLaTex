@@ -51,7 +51,11 @@ private slots:
     // Typed preview event: carries project/build/revision identity of the PDF.
     void OnPreviewUpdated(const pf::PreviewUpdate& update);
     void OnSaveFinished(bool success, const QString& detail);
-    void OnDiagnosticsUpdated(const QList<QString>& problems);
+    // Structured diagnostics of the accepted build (Build Diagnostics plan
+    // §36-§37): MainWindow only wires panels to data; no log parsing here.
+    void OnBuildCompleted(const pf::BuildResult& result);
+    // One streamed build-log event of the current build.
+    void OnBuildEvent(const pf::BuildEvent& event);
     void OnBuildStatusChanged(const QString& status);
 
 private:
@@ -64,6 +68,10 @@ private:
     void UpdateRequiredHints();
     void RefreshReferenceItems();
     int CountWords() const;
+    // Problem -> Block navigation (Build Diagnostics plan §25/§28/§48):
+    // focus the owning block, or fall back to the Build Log; a deleted block
+    // is reported, never a crash.
+    void OnProblemActivated(const pf::Diagnostic& diagnostic);
 
     ProjectController* controller_;
 
@@ -86,6 +94,15 @@ private:
     QLabel* word_count_label_;
     QString current_pdf_path_;
     int last_build_revision_ = -1;
+    // Revision of the last completed build, for the stale marker (plan §49).
+    pf::ProjectRevision last_built_revision_;
+    // Outcome of the last build: OnPreviewUpdated reads it so a Cancelled
+    // attempt reports "cancelled", never "failed" (plan §34).
+    pf::BuildResult::Outcome last_outcome_ = pf::BuildResult::Outcome::Failure;
+    bool has_built_ = false;
+    // True from BuildStarted until the terminal event: the Build button then
+    // acts as Cancel (plan §39) and Problems shows "Building...".
+    bool building_ = false;
     // Set once the window is being destroyed: editor signals and document
     // refreshes must then be ignored entirely.
     bool shutting_down_ = false;

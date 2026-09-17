@@ -13,6 +13,32 @@
 
 namespace pf {
 
+namespace {
+// Write a small whole-file resource atomically: temp file + rename. The
+// bibliography must never be observed (or survive a crash) half-written, and
+// a failed write must leave the previous file intact (citation plan §7).
+bool WriteFileAtomically(const std::filesystem::path& path,
+                         const std::string& contents) {
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    const auto temp = path.string() + ".tmp";
+    std::filesystem::remove(temp, ec);
+    {
+        std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+        if (!out) return false;
+        out << contents;
+        out.flush();
+        if (!out.good()) return false;
+    }
+    std::filesystem::rename(temp, path, ec);
+    if (ec) {
+        std::filesystem::remove(temp, ec);
+        return false;
+    }
+    return true;
+}
+}  // namespace
+
 ProjectSession::ProjectSession(Config config)
     : config_(std::move(config)),
       assets_(std::make_unique<AssetManager>(
@@ -71,6 +97,10 @@ ProjectSession::ProjectSession(Config config)
   // Worker thread: publish a value object, never read the live state.
   bhost.on_build_finished = [this](const BuildResult &result) {
     PostBuildResult(result);
+  };
+  // Worker thread: same mailbox for lifecycle/streaming log events.
+  bhost.on_build_event = [this](const BuildEvent &event) {
+    PostBuildEvent(event);
   };
   bhost.on_phase_changed = [this](BuildPhase previous, BuildPhase current) {
     BuildPhaseChangedEvent event;
@@ -134,6 +164,12 @@ void ProjectSession::PostBuildResult(BuildResult result) {
   PostApplicationEvent(std::move(event));
 }
 
+void ProjectSession::PostBuildEvent(BuildEvent event) {
+  BuildEventReadyEvent ready;
+  ready.event = std::move(event);
+  PostApplicationEvent(std::move(ready));
+}
+
 void ProjectSession::SetWakeHandler(std::function<void()> handler) {
   std::lock_guard<std::mutex> lock(events_mutex_);
   wake_handler_ = std::move(handler);
@@ -177,6 +213,18 @@ void ProjectSession::HandleEvent(const BuildPhaseChangedEvent &event) {
 
 void ProjectSession::HandleEvent(const BuildResultReadyEvent &event) {
   AcceptBuildResult(event.result);
+}
+
+void ProjectSession::HandleEvent(const BuildEventReadyEvent &event) {
+  // Old-build isolation (Build Diagnostics plan §35): the decision runs on
+  // the thread that owns the current build identity. A late event from a
+  // superseded attempt must never append to the log the user is watching.
+  if (!latest_build_id_.empty() &&
+      event.event.build_id != latest_build_id_) {
+    return;
+  }
+  if (build_event_handler_)
+    build_event_handler_(event.event);
 }
 
 void ProjectSession::HandleEvent(const SaveCompletedEvent &event) {
@@ -514,10 +562,14 @@ SaveResult ProjectSession::Save() {
                        .value();
   persistence_state_ = PersistenceState::Saving;
   // Bibliography side-car: one small file, written on the owner thread.
+  // Atomic (temp + rename) so a crash can never leave a truncated
+  // references.bib behind, and at the *configured* project-relative path so
+  // OpenProject reads back exactly what Save wrote (citation plan §7).
   if (!bibliography_bibtex_.empty()) {
-    std::ofstream out(paths_.project_dir / "references.bib",
-                      std::ios::binary | std::ios::trunc);
-    out << bibliography_bibtex_;
+    const std::string rel = state_.settings().bibliography_path.empty()
+                                ? std::string("references.bib")
+                                : state_.settings().bibliography_path;
+    WriteFileAtomically(paths_.project_dir / rel, bibliography_bibtex_);
   }
   return queued;
 }
@@ -662,6 +714,13 @@ ProjectSession::ImportBibliography(const std::string &bibtex_text) {
   if (result.status == BibliographyImportResult::Status::Ok) {
     bibliography_bibtex_ = bibtex_text;
     bibliography_revision_ = result.bibliography_revision;
+    // Citation plan §7: a successful import makes the .bib a persisted
+    // project resource immediately - the raw source is written atomically to
+    // <project>/references.bib and the (relative) path is recorded in the
+    // project settings, which SaveSnapshot carries. A failed import never
+    // reaches this point, so it can never clobber the previous file.
+    state_.mutable_settings().bibliography_path = "references.bib";
+    WriteFileAtomically(paths_.project_dir / "references.bib", bibtex_text);
     // Bibliography change: ProjectRevision +1 (architecture section 40).
     state_.BumpRevision();
     MarkDirty();

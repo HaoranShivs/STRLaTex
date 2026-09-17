@@ -31,7 +31,8 @@ const char* InlineEditor::InlineMimeType() {
 
 InlineEditor::InlineEditor(QWidget* parent)
     : QTextEdit(parent),
-      math_object_renderer_(std::make_unique<InlineMathObjectRenderer>()) {
+      math_object_renderer_(std::make_unique<InlineMathObjectRenderer>()),
+      citation_object_renderer_(std::make_unique<CitationObjectRenderer>()) {
     setAcceptRichText(false);
     setWordWrapMode(QTextOption::WordWrap);
     setFrameShape(QFrame::NoFrame);
@@ -40,10 +41,12 @@ InlineEditor::InlineEditor(QWidget* parent)
     document()->setDocumentMargin(6);
     document()->documentLayout()->registerHandler(
         inline_math_format::kObjectType, math_object_renderer_.get());
+    document()->documentLayout()->registerHandler(
+        citation_format::kObjectType, citation_object_renderer_.get());
     connect(this, &QTextEdit::textChanged, this, [this]() {
         SanitizeTokens();
         ResizeToContent();
-        if (!loading_) dirty_ = true;
+        if (!loading_ && !refreshing_displays_) dirty_ = true;
     });
     ResizeToContent();
 }
@@ -52,6 +55,8 @@ InlineEditor::~InlineEditor() {
     if (document() && document()->documentLayout()) {
         document()->documentLayout()->unregisterHandler(
             inline_math_format::kObjectType, math_object_renderer_.get());
+        document()->documentLayout()->unregisterHandler(
+            citation_format::kObjectType, citation_object_renderer_.get());
     }
 }
 
@@ -77,15 +82,16 @@ void InlineEditor::InsertContent(const InlineContent& content) {
         } else if (const auto* math = std::get_if<InlineMath>(&node)) {
             InsertMathObject(cursor, QString::fromStdString(math->expression.latex));
         } else if (const auto* cit = std::get_if<Citation>(&node)) {
-            QString keys;
-            for (size_t i = 0; i < cit->keys.size(); ++i) {
-                if (i) keys += QStringLiteral(",");
-                keys += QString::fromStdString(cit->keys[i]);
+            QStringList keys;
+            for (const auto& key : cit->keys) {
+                keys << QString::fromStdString(key);
             }
-            InsertToken(cursor, TokenKind::Citation, keys, keys);
+            InsertPillObject(cursor, TokenKind::Citation, keys.join(','),
+                             CitationDisplayText(keys));
         } else if (const auto* ref = std::get_if<CrossReference>(&node)) {
             const QString target = QString::fromStdString(ref->target.value());
-            InsertToken(cursor, TokenKind::CrossReference, target, target);
+            InsertPillObject(cursor, TokenKind::CrossReference, target,
+                             CrossReferenceDisplayText(target));
         }
     }
     setTextCursor(cursor);
@@ -144,33 +150,39 @@ InlineContent InlineEditor::ContentInRange(int begin, int end) const {
                     format.property(kTokenPayloadProperty).toString();
                 // Usually one token per fragment; a merged fragment may hold
                 // several identical ones.
-                int token_count =
+                const int token_count =
                     text.count(kTokenChar) + text.count(kObjectChar);
-                if (token_count == 0) token_count = 1;
-                for (int t = 0; t < token_count; ++t) {
-                    if (kind == TokenKind::Citation) {
-                        Citation citation;
-                        const QStringList keys = payload.split(',');
-                        for (const QString& key : keys) {
-                            const QString trimmed = key.trimmed();
-                            if (!trimmed.isEmpty()) {
-                                citation.keys.push_back(trimmed.toStdString());
+                if (token_count > 0) {
+                    for (int t = 0; t < token_count; ++t) {
+                        if (kind == TokenKind::Citation) {
+                            Citation citation;
+                            const QStringList keys = payload.split(',');
+                            for (const QString& key : keys) {
+                                const QString trimmed = key.trimmed();
+                                if (!trimmed.isEmpty()) {
+                                    citation.keys.push_back(
+                                        trimmed.toStdString());
+                                }
                             }
+                            if (!citation.keys.empty()) {
+                                content.push_back(std::move(citation));
+                            }
+                        } else if (kind == TokenKind::CrossReference) {
+                            CrossReference ref;
+                            ref.target = NodeId(payload.toStdString());
+                            content.push_back(std::move(ref));
+                        } else {
+                            InlineMath math;
+                            math.expression.latex = payload.toStdString();
+                            content.push_back(std::move(math));
                         }
-                        if (!citation.keys.empty()) {
-                            content.push_back(std::move(citation));
-                        }
-                    } else if (kind == TokenKind::CrossReference) {
-                        CrossReference ref;
-                        ref.target = NodeId(payload.toStdString());
-                        content.push_back(std::move(ref));
-                    } else {
-                        InlineMath math;
-                        math.expression.latex = payload.toStdString();
-                        content.push_back(std::move(math));
                     }
+                    continue;
                 }
-                continue;
+                // A token format spread over characters that are not token
+                // markers is a format leak (e.g. a foreign cursor inheriting
+                // the object format while typing). Never invent a semantic
+                // node out of it - fall through and keep the text.
             }
 
             // Ordinary text: take the part that overlaps [begin, end) and drop
@@ -243,19 +255,99 @@ bool InlineEditor::IsItalicActive() const {
     return const_cast<InlineEditor*>(this)->textCursor().charFormat().fontItalic();
 }
 
-// ---------------- Tokens ----------------
+// ---------------- Semantic inline objects ----------------
 
-void InlineEditor::InsertToken(QTextCursor& cursor, TokenKind kind,
-                               const QString& payload, const QString& label) {
+// Citation / cross reference pills. One object replacement character painted
+// by CitationObjectRenderer (citation plan §1); the payload (keys or target
+// node) lives in the char format and the display text is resolved from the
+// document-wide numbering map, never from what the character itself shows.
+void InlineEditor::InsertPillObject(QTextCursor& cursor, TokenKind kind,
+                                    const QString& payload,
+                                    const QString& display) {
     QTextCharFormat format;
+    format.setObjectType(citation_format::kObjectType);
+    format.setFont(document()->defaultFont());
+    // The pill must not grow the line: AlignNormal reserves exactly the
+    // height the renderer reports.
+    format.setVerticalAlignment(QTextCharFormat::AlignNormal);
     format.setProperty(kTokenKindProperty, static_cast<int>(kind));
     format.setProperty(kTokenPayloadProperty, payload);
-    format.setForeground(QColor(theme::kAccent));
-    format.setBackground(QColor(theme::kAccentSoft));
-    format.setFontWeight(QFont::DemiBold);
-    // One character, so Backspace/Delete removes it whole.
-    cursor.insertText(QString(kTokenChar), format);
-    (void)label;
+    format.setProperty(citation_format::kDisplayTextProperty, display);
+    cursor.insertText(QString(kObjectChar), format);
+    // New typing must never inherit the object identity.
+    cursor.setCharFormat(QTextCharFormat());
+}
+
+QString InlineEditor::CitationDisplayText(const QStringList& keys) const {
+    if (!citation_numbers_) {
+        // No numbering snapshot yet (fresh widget): show the keys so the pill
+        // is still honest about what it stands for.
+        return QStringLiteral("[") + keys.join(QStringLiteral(", ")) +
+               QStringLiteral("]");
+    }
+    std::vector<std::string> std_keys;
+    std_keys.reserve(keys.size());
+    for (const QString& key : keys) std_keys.push_back(key.toStdString());
+    return QString::fromStdString(citation_numbers_->FormatPill(std_keys));
+}
+
+QString InlineEditor::CrossReferenceDisplayText(const QString& target) const {
+    const auto it = xref_labels_.find(target);
+    return it != xref_labels_.end() && !it->second.isEmpty()
+               ? it->second
+               : QStringLiteral("[ref]");
+}
+
+void InlineEditor::SetCitationNumbers(
+    std::shared_ptr<const CitationNumberResolver> numbers) {
+    if (citation_numbers_ == numbers) return;
+    citation_numbers_ = std::move(numbers);
+    RefreshObjectDisplays();
+}
+
+void InlineEditor::SetCrossReferenceLabels(std::map<QString, QString> labels) {
+    if (xref_labels_ == labels) return;
+    xref_labels_ = std::move(labels);
+    RefreshObjectDisplays();
+}
+
+void InlineEditor::RefreshObjectDisplays() {
+    if (!document() || !document()->documentLayout()) return;
+    // Repainting the pills rewrites *format* only. The base class still
+    // reports that as a content change, so the row must not mistake it for
+    // user input: refreshing the displays never dirties the editor.
+    refreshing_displays_ = true;
+    QTextCursor cursor(document());
+    for (QTextBlock block = document()->begin(); block.isValid();
+         block = block.next()) {
+        for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
+            const QTextFragment fragment = it.fragment();
+            if (!fragment.isValid() || fragment.length() == 0) continue;
+            const QTextCharFormat format = fragment.charFormat();
+            const QVariant kind = format.property(kTokenKindProperty);
+            if (!kind.isValid()) continue;
+            const TokenKind token_kind = static_cast<TokenKind>(kind.toInt());
+            if (token_kind == TokenKind::Math) continue;
+            const QString payload =
+                format.property(kTokenPayloadProperty).toString();
+            const QString display =
+                token_kind == TokenKind::Citation
+                    ? CitationDisplayText(payload.split(',', Qt::SkipEmptyParts))
+                    : CrossReferenceDisplayText(payload);
+            if (format.property(citation_format::kDisplayTextProperty)
+                    .toString() == display) {
+                continue;
+            }
+            cursor.setPosition(fragment.position());
+            cursor.setPosition(fragment.position() + fragment.length(),
+                               QTextCursor::KeepAnchor);
+            QTextCharFormat update;
+            update.setProperty(citation_format::kDisplayTextProperty, display);
+            cursor.mergeCharFormat(update);
+        }
+    }
+    refreshing_displays_ = false;
+    if (viewport()) viewport()->update();
 }
 
 void InlineEditor::InsertMathObject(QTextCursor& cursor, const QString& latex) {
@@ -344,42 +436,65 @@ void InlineEditor::SanitizeTokens() {
             const QString fragment_text = fragment.text();
             const bool has_token_char = fragment_text.contains(kTokenChar);
             const bool has_object_char = fragment_text.contains(kObjectChar);
-            if (!has_token_char && !has_object_char) continue;
-            if (fragment.charFormat().property(kTokenKindProperty).isValid()) {
-                continue;
+            const bool has_kind =
+                fragment.charFormat().property(kTokenKindProperty).isValid();
+            if (has_token_char || has_object_char) {
+                if (has_kind) continue;
+                // Orphan token character: strip it and re-run the scan.
+                QTextCursor cursor(document());
+                cursor.setPosition(fragment.position());
+                cursor.setPosition(fragment.position() + fragment.length(),
+                                   QTextCursor::KeepAnchor);
+                QString replacement = fragment_text;
+                replacement.remove(kTokenChar);
+                replacement.remove(kObjectChar);
+                cursor.insertText(replacement);
+                return;  // textChanged re-runs the scan
             }
-            QTextCursor cursor(document());
-            cursor.setPosition(fragment.position());
-            cursor.setPosition(fragment.position() + fragment.length(),
-                               QTextCursor::KeepAnchor);
-            QString replacement = fragment_text;
-            replacement.remove(kTokenChar);
-            replacement.remove(kObjectChar);
-            cursor.insertText(replacement);
-            return;  // textChanged re-runs the scan
+            if (has_kind) {
+                // The object identity leaked onto ordinary characters (e.g.
+                // typing through a raw cursor parked behind a pill). Strip
+                // the semantics - never let plain text masquerade as a token.
+                // setCharFormat replaces the whole format, so keep the two
+                // legitimate visual properties (bold / italic).
+                QTextCursor cursor(document());
+                cursor.setPosition(fragment.position());
+                cursor.setPosition(fragment.position() + fragment.length(),
+                                   QTextCursor::KeepAnchor);
+                QTextCharFormat clean;
+                clean.setFontWeight(fragment.charFormat().fontWeight());
+                clean.setFontItalic(fragment.charFormat().fontItalic());
+                cursor.setCharFormat(clean);
+                return;  // textChanged re-runs the scan
+            }
         }
     }
 }
 
-void InlineEditor::InsertCitationToken(const QStringList& keys) {
-    QString joined;
-    for (int i = 0; i < keys.size(); ++i) {
-        if (i) joined += QStringLiteral(",");
-        joined += keys.at(i);
+void InlineEditor::InsertCitationObject(const QStringList& keys) {
+    QStringList cleaned;
+    for (const QString& key : keys) {
+        const QString trimmed = key.trimmed();
+        if (!trimmed.isEmpty()) cleaned << trimmed;
     }
-    if (joined.isEmpty()) return;
+    if (cleaned.isEmpty()) return;
     QTextCursor cursor = textCursor();
-    InsertToken(cursor, TokenKind::Citation, joined, joined);
+    InsertPillObject(cursor, TokenKind::Citation,
+                     cleaned.join(QLatin1Char(',')),
+                     CitationDisplayText(cleaned));
     setTextCursor(cursor);
     dirty_ = true;
+    ResizeToContent();
 }
 
-void InlineEditor::InsertCrossReferenceToken(const QString& target_node) {
+void InlineEditor::InsertCrossReferenceObject(const QString& target_node) {
     if (target_node.isEmpty()) return;
     QTextCursor cursor = textCursor();
-    InsertToken(cursor, TokenKind::CrossReference, target_node, target_node);
+    InsertPillObject(cursor, TokenKind::CrossReference, target_node,
+                     CrossReferenceDisplayText(target_node));
     setTextCursor(cursor);
     dirty_ = true;
+    ResizeToContent();
 }
 
 void InlineEditor::InsertInlineMath(const QString& latex) {
@@ -621,7 +736,10 @@ void InlineEditor::ResizeToWidth(int width) {
 
 void InlineEditor::focusOutEvent(QFocusEvent* event) {
     QTextEdit::focusOutEvent(event);
-    if (!math_editor_open_) emit Committed();
+    // A focus loss caused by the citation/reference picker (or the math
+    // editor) opening is *not* "the user finished editing" (citation plan
+    // §4): the picker will insert an object and commit itself.
+    if (!math_editor_open_ && !IsProtectedInsertOpen()) emit Committed();
 }
 
 }  // namespace pf::gui

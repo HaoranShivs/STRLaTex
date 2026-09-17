@@ -12,6 +12,7 @@
 #include <QMimeData>
 #include <QPixmap>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSyntaxHighlighter>
@@ -75,7 +76,6 @@ std::vector<InsertEntry> InsertEntries(bool body_empty) {
 // hard-wrapped paste has to be softened (see ReflowHardWrappedText).
 bool IsProseRole(const QString& role) {
     return role == QLatin1String("abstract") ||
-           role == QLatin1String("paragraph") ||
            role == QLatin1String("caption");
 }
 
@@ -256,7 +256,6 @@ public:
 
 signals:
     void TriggerSlash();
-    void TriggerAt();
     void CommitRequested();
     void NewBlockAfter();
 
@@ -270,11 +269,9 @@ protected:
                 return;
             }
         }
-        if (property("references_enabled").toBool() &&
-            event->text() == QStringLiteral("@")) {
-            emit TriggerAt();
-            return;
-        }
+        // The old "@" reference menu was part of the [cite:key] text
+        // encoding path and is gone: citations are semantic objects inserted
+        // through the toolbar picker (citation plan §5).
         if ((event->modifiers() & Qt::ControlModifier) &&
             (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
             emit CommitRequested();
@@ -323,27 +320,6 @@ private:
     bool dirty_ = false;  // user typed something not yet in the document
     bool reflow_on_paste_ = false;  // long-text rows re-flow pasted text
     int min_height_ = 0;
-};
-
-class InlineTokenHighlighter final : public QSyntaxHighlighter {
-public:
-    explicit InlineTokenHighlighter(QTextDocument* document)
-        : QSyntaxHighlighter(document) {}
-
-protected:
-    void highlightBlock(const QString& text) override {
-        static const QRegularExpression token_pattern(
-            QStringLiteral(R"(\[(?:cite|ref):[^\]]+\])"));
-        QTextCharFormat format;
-        format.setForeground(QColor(theme::kAccent));
-        format.setBackground(QColor(theme::kAccentSoft));
-        format.setFontWeight(QFont::DemiBold);
-        auto matches = token_pattern.globalMatch(text);
-        while (matches.hasNext()) {
-            const auto match = matches.next();
-            setFormat(match.capturedStart(), match.capturedLength(), format);
-        }
-    }
 };
 
 // The "\u22ee\u22ee" grip in a card header. Dragging it starts a reorder; the gaps
@@ -613,6 +589,7 @@ QWidget* BlockEditor::BuildFormatToolbar(InlineEditor* editor) {
 }
 
 void BlockEditor::ShowCitationPicker(InlineEditor* editor) {
+    if (!editor) return;
     std::vector<PopupList::Item> items;
     for (const auto& item : reference_items_) {
         if (!item.payload.startsWith(QStringLiteral("cite:"))) continue;
@@ -630,14 +607,61 @@ void BlockEditor::ShowCitationPicker(InlineEditor* editor) {
         empty.detail = QStringLiteral("Import a .bib file first");
         items.push_back(empty);
     }
+
+    // Citation plan §4: the picker works on the caret the user had *before*
+    // the popup took focus. The popup's focus round trip must not be
+    // mistaken for the end of body editing (BeginProtectedInsert suppresses
+    // the focusOut commit), and choosing an entry completes the semantic
+    // insert + commit at once - there is no "some later focusOut will
+    // submit this".
+    const QString node_id = editor->property("row_node").toString();
+    const int caret = editor->textCursor().position();
+    editor->BeginProtectedInsert();
+    QPointer<InlineEditor> guard(editor);
+
     auto* popup = new PopupList(this);
-    connect(popup, &PopupList::chosen, this, [editor](QString payload) {
-        editor->InsertCitationToken({payload});
+    connect(popup, &PopupList::chosen, this,
+            [this, guard, node_id, caret](QString payload) {
+        const QString key = payload.trimmed();
+        if (guard) guard->EndProtectedInsert();
+        if (key.isEmpty() || !guard) return;
+        // Restore the caret to where the user was, insert the citation
+        // object there, and commit the whole row's rich content now.
+        QTextCursor cursor(guard->document());
+        cursor.setPosition(qMax(0, qMin(caret,
+                                        guard->document()->characterCount() - 1)));
+        guard->setTextCursor(cursor);
+        guard->InsertCitationObject({key});
+        guard->setFocus(Qt::OtherFocusReason);
+        CommitInlineRow(guard.data());
+        // The commit above rebuilds the rows with fresh citation numbers;
+        // re-attach to the (new) row so typing can continue right behind
+        // the inserted pill.
+        const int after = caret + 1;
+        QTimer::singleShot(0, this, [this, node_id, after]() {
+            for (auto& block : blocks_) {
+                if (block.inline_editor && block.node_id == node_id) {
+                    QTextCursor c(block.inline_editor->document());
+                    c.setPosition(
+                        qMax(0, qMin(after, block.inline_editor->document()
+                                                ->characterCount() - 1)));
+                    block.inline_editor->setTextCursor(c);
+                    block.inline_editor->setFocus(Qt::OtherFocusReason);
+                    return;
+                }
+            }
+        });
     });
+    auto end_protection = [guard]() {
+        if (guard) guard->EndProtectedInsert();
+    };
+    connect(popup, &PopupList::dismissed, this, end_protection);
+    connect(popup, &QObject::destroyed, this, end_protection);
     popup->popup(editor->mapToGlobal(QPoint(24, editor->height() + 4)), items);
 }
 
 void BlockEditor::ShowReferencePicker(InlineEditor* editor) {
+    if (!editor) return;
     std::vector<PopupList::Item> items;
     // Cross references point at document nodes, so the items come from the
     // last rebuild's reference list where they were tagged as node:….
@@ -657,11 +681,107 @@ void BlockEditor::ShowReferencePicker(InlineEditor* editor) {
         empty.detail = QStringLiteral("Add a section, figure or equation first");
         items.push_back(empty);
     }
+    const QString node_id = editor->property("row_node").toString();
+    const int caret = editor->textCursor().position();
+    editor->BeginProtectedInsert();
+    QPointer<InlineEditor> guard(editor);
     auto* popup = new PopupList(this);
-    connect(popup, &PopupList::chosen, this, [editor](QString payload) {
-        editor->InsertCrossReferenceToken(payload);
+    connect(popup, &PopupList::chosen, this,
+            [this, guard, node_id, caret](QString payload) {
+        const QString target = payload.trimmed();
+        if (guard) guard->EndProtectedInsert();
+        if (target.isEmpty() || !guard) return;
+        QTextCursor cursor(guard->document());
+        cursor.setPosition(qMax(0, qMin(caret,
+                                        guard->document()->characterCount() - 1)));
+        guard->setTextCursor(cursor);
+        guard->InsertCrossReferenceObject(target);
+        guard->setFocus(Qt::OtherFocusReason);
+        CommitInlineRow(guard.data());
+        const int after = caret + 1;
+        QTimer::singleShot(0, this, [this, node_id, after]() {
+            for (auto& block : blocks_) {
+                if (block.inline_editor && block.node_id == node_id) {
+                    QTextCursor c(block.inline_editor->document());
+                    c.setPosition(
+                        qMax(0, qMin(after, block.inline_editor->document()
+                                                ->characterCount() - 1)));
+                    block.inline_editor->setTextCursor(c);
+                    block.inline_editor->setFocus(Qt::OtherFocusReason);
+                    return;
+                }
+            }
+        });
     });
+    auto end_protection = [guard]() {
+        if (guard) guard->EndProtectedInsert();
+    };
+    connect(popup, &PopupList::dismissed, this, end_protection);
+    connect(popup, &QObject::destroyed, this, end_protection);
     popup->popup(editor->mapToGlobal(QPoint(24, editor->height() + 4)), items);
+}
+
+// Commit a rich row now: the picker must not rely on a later focusOut. The
+// document is updated synchronously through ParagraphContentEdited.
+void BlockEditor::CommitInlineRow(InlineEditor* editor) {
+    if (!editor) return;
+    for (auto& block : blocks_) {
+        if (block.inline_editor != editor) continue;
+        const InlineContent content = editor->Content();
+        if (content == block.committed_content) {
+            editor->MarkClean();
+            return;
+        }
+        block.committed_content = content;
+        block.committed_text = ToQ(pf::InlineToPlainText(content));
+        editor->MarkClean();
+        emit ParagraphContentEdited(block.node_id, content);
+        emit RowCommitted();
+        return;
+    }
+}
+
+bool BlockEditor::InsertCitationIntoParagraph(const QString& node_id,
+                                              const QString& citation_key,
+                                              int insert_offset) {
+    for (auto& block : blocks_) {
+        if (block.node_id != node_id || !block.inline_editor) continue;
+        InlineEditor* editor = block.inline_editor;
+        if (insert_offset >= 0) {
+            QTextCursor cursor(editor->document());
+            cursor.setPosition(qMin(insert_offset,
+                                    editor->document()->characterCount() - 1));
+            editor->setTextCursor(cursor);
+        }
+        editor->InsertCitationObject({citation_key});
+        editor->setFocus(Qt::OtherFocusReason);
+        CommitInlineRow(editor);
+        return true;
+    }
+    return false;
+}
+
+void BlockEditor::SetCitationNumbers(
+    std::shared_ptr<const pf::CitationNumberResolver> numbers) {
+    if (citation_numbers_ == numbers) return;
+    citation_numbers_ = std::move(numbers);
+    for (auto& block : blocks_) {
+        if (block.inline_editor) {
+            block.inline_editor->SetCitationNumbers(citation_numbers_);
+        }
+    }
+}
+
+std::map<QString, QString> BlockEditor::CrossReferenceLabels() const {
+    std::map<QString, QString> labels;
+    for (const auto& item : reference_items_) {
+        if (!item.payload.startsWith(QStringLiteral("xref:"))) continue;
+        const QString node = item.payload.mid(5);
+        if (!node.isEmpty() && !item.label.isEmpty()) {
+            labels[node] = item.label;
+        }
+    }
+    return labels;
 }
 
 QWidget* BlockEditor::MakeTextCard(const QString& node_id,
@@ -674,7 +794,13 @@ QWidget* BlockEditor::MakeTextCard(const QString& node_id,
     editor->SetContent(content);
     editor->setProperty("row_node", node_id);
     editor->setProperty("row_focus_key", node_id);
-    editor->setPlaceholderText(QStringLiteral("Write text…  @ inserts a reference, Ctrl+Enter adds a block"));
+    editor->setPlaceholderText(
+        QStringLiteral("Write text…  Ctrl+Enter adds a new block"));
+    // Pills render with the document-wide numbering / label maps (citation
+    // plan §3): the row's Citation object stays semantic, only its paint
+    // depends on these.
+    editor->SetCitationNumbers(citation_numbers_);
+    editor->SetCrossReferenceLabels(CrossReferenceLabels());
 
     connect(editor, &InlineEditor::Committed, this, [this, editor, node_id]() {
         for (auto& block : blocks_) {
@@ -1057,7 +1183,6 @@ void BlockEditor::CommitBlock(Block& block) {
     else if (role == "affiliations") emit AffiliationsEdited(text);
     else if (role == "abstract") emit AbstractEdited(text);
     else if (role == "keywords") emit KeywordsEdited(text);
-    else if (role == "paragraph") emit ParagraphEdited(block.node_id, text);
     else if (role == "equation") {
         emit EquationEdited(block.node_id, text, block.equation_numbered,
                             block.equation_label);
@@ -1307,42 +1432,6 @@ void BlockEditor::OpenSlashMenu(QPlainTextEdit* origin) {
     popup->popup(anchor, items);
 }
 
-void BlockEditor::OpenAtMenu(QPlainTextEdit* origin) {
-    if (reference_items_.empty()) {
-        reference_items_.push_back(
-            {QStringLiteral("No references loaded — import a .bib file"),
-             {}, {}, {}, {}});
-    }
-    QString paragraph;
-    for (const auto& block : blocks_) {
-        if (block.editor == origin) {
-            paragraph = block.node_id;
-            break;
-        }
-    }
-    const QString editor_text = origin->toPlainText();
-    const int cursor_position = origin->textCursor().position();
-    auto* popup = new PopupList(this);
-    connect(popup, &PopupList::chosen, this,
-            [this, paragraph, editor_text,
-             cursor_position](QString payload) {
-        // payload format: "cite:<key>" or "xref:<node>"
-        QString token;
-        if (payload.startsWith("cite:")) {
-            token = "[cite:" + payload.mid(5) + "]";
-        } else if (payload.startsWith("xref:")) {
-            token = "[ref:" + payload.mid(5) + "]";
-        }
-        if (!token.isEmpty()) {
-            QString updated = editor_text;
-            updated.insert(qBound(0, cursor_position, updated.size()), token);
-            emit ParagraphEdited(paragraph, updated);
-        }
-    });
-    QPoint anchor = origin->mapToGlobal(QPoint(60, origin->height() + 4));
-    popup->popup(anchor, reference_items_);
-}
-
 void BlockEditor::RebuildFromDocument(const Document& doc) {
     // The insert menus resolve anchors against this document until the next
     // rebuild; MainWindow keeps the session alive for the editor's lifetime,
@@ -1356,6 +1445,13 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
     QString pending_key;
     QString pending_text;
     bool has_pending = false;
+    // A rich row keeps its caret across the rebuild too: the citation picker
+    // commits through a row rebuild and expects typing to continue exactly
+    // where the pill was inserted (citation plan §4).
+    if (auto* rich = qobject_cast<InlineEditor*>(focusWidget())) {
+        focus_node_ = rich->property("row_focus_key").toString();
+        focus_pos_ = rich->textCursor().position();
+    }
     if (auto* edit = qobject_cast<BlockEdit*>(focusWidget())) {
         focus_node_ = edit->property("row_focus_key").toString();
         focus_pos_ = edit->textCursor().position();
@@ -1418,7 +1514,6 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
         edit->setProperty("row_node", node_id);
         edit->setProperty("row_focus_key", focus_key);
         edit->setProperty("commands_enabled", !node_id.isEmpty());
-        edit->setProperty("references_enabled", commit_role == "paragraph");
         auto center_text = [edit]() {
             auto* block_edit = qobject_cast<BlockEdit*>(edit);
             if (block_edit) block_edit->BeginProgrammaticEdit();
@@ -1454,10 +1549,6 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
         } else if (kind == "Subsubsection Title") {
             edit->setFont(theme::UiFont(12, true));
             edit->setPlaceholderText("Subsubsection title");
-        } else if (kind == "Text") {
-            edit->setPlaceholderText(
-                "Write text…  @ inserts a reference, Ctrl+Enter adds a block");
-            new InlineTokenHighlighter(edit->document());
         } else if (kind == "Equation") {
             edit->setPlaceholderText("LaTeX equation");
         }
@@ -1489,8 +1580,6 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
         });
         connect(block_edit, &BlockEdit::TriggerSlash, this,
                 [this, edit]() { OpenSlashMenu(edit); });
-        connect(block_edit, &BlockEdit::TriggerAt, this,
-                [this, edit]() { OpenAtMenu(edit); });
         connect(block_edit, &BlockEdit::NewBlockAfter, this, [this, node_id]() {
             emit InsertBlockRequested("paragraph", node_id);
         });
@@ -1720,6 +1809,18 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
     // Restore focus.
     if (!focus_node_.isEmpty()) {
         for (const auto& block : blocks_) {
+            // Text rows: the rich editor, caret clamped to its document.
+            if (block.inline_editor &&
+                block.inline_editor->property("row_focus_key").toString() ==
+                    focus_node_) {
+                auto cursor = block.inline_editor->textCursor();
+                cursor.setPosition(qMin(
+                    focus_pos_, block.inline_editor->document()->characterCount() -
+                                    1));
+                block.inline_editor->setTextCursor(cursor);
+                block.inline_editor->setFocus();
+                break;
+            }
             if (block.editor &&
                 block.editor->property("row_focus_key").toString() ==
                     focus_node_) {
@@ -1776,6 +1877,13 @@ void BlockEditor::ApplyHints() {
 
 void BlockEditor::SetReferenceItems(std::vector<PopupList::Item> items) {
     reference_items_ = std::move(items);
+    // Cross-reference pills display the target's label.
+    const auto labels = CrossReferenceLabels();
+    for (auto& block : blocks_) {
+        if (block.inline_editor) {
+            block.inline_editor->SetCrossReferenceLabels(labels);
+        }
+    }
 }
 
 void BlockEditor::SetAssetPathResolver(
@@ -1786,9 +1894,14 @@ void BlockEditor::SetAssetPathResolver(
 bool BlockEditor::HasUncommittedFocus() const {
     // A modal formula editor temporarily owns focus, but its row still
     // contains the pending edit and must survive document notifications.
+    // So does a row with an open citation/reference picker: the picker will
+    // insert into *that* widget and commit it itself (citation plan §4).
     for (const auto& block : blocks_) {
-        if (block.inline_editor && block.inline_editor->IsMathEditorOpen())
+        if (block.inline_editor &&
+            (block.inline_editor->IsMathEditorOpen() ||
+             block.inline_editor->IsProtectedInsertOpen())) {
             return true;
+        }
     }
     // Text rows (InlineEditor) carry uncommitted input just like the plain
     // rows; a rebuild while either is dirty would destroy what is being
@@ -1844,10 +1957,19 @@ void BlockEditor::RevealNode(const QString& node_id) {
                               block.editor->property("row_focus_key")
                                       .toString() == node_id);
         if (matches && block.card) {
+            // Problem navigation lands here (Build Diagnostics plan §26):
+            // scroll, brief strong highlight, and move focus into the row.
             scroll_->ensureWidgetVisible(block.card, 0, 80);
             block.card->setStyleSheet(QString(
                 "QFrame#blockCard { border-left: 3px solid %1; border-radius: 4px; }")
                 .arg(theme::kAccent));
+            if (block.inline_editor) {
+                block.inline_editor->setFocus();
+            } else if (block.editor) {
+                block.editor->setFocus();
+            } else {
+                block.card->setFocus();
+            }
             QTimer::singleShot(1200, this, [this]() { ApplyHints(); });
             return;
         }

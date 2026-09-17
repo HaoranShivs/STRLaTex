@@ -7,8 +7,11 @@
 #include <QString>
 #include <memory>
 
+#include "build/BuildCoordinator.h"
+#include "build/BuildEvent.h"
 #include "project/PreviewUpdate.h"
 #include "project/ProjectSession.h"
+#include "numbering/CitationNumberResolver.h"
 
 class QTimer;
 
@@ -84,9 +87,9 @@ public:
     EditResult InsertFigure(const NodeId& parent, const QString& image_path);
     EditResult InsertFigureAfter(const NodeId& anchor, const QString& image_path);
     EditResult InsertTableAfter(const NodeId& anchor);
-    EditResult EditParagraph(const NodeId& paragraph, const QString& text);
-    // Structured variant used by InlineEditor: bold/italic runs, citations,
-    // cross references and inline equations survive the round trip.
+    // Structured commit used by InlineEditor: bold/italic runs, citations,
+    // cross references and inline equations survive the round trip. Body
+    // text has exactly one data path into the document (citation plan §5).
     EditResult EditParagraphRich(const NodeId& paragraph,
                                  const InlineContent& content);
     EditResult EditEquation(const NodeId& equation, const QString& math,
@@ -102,17 +105,20 @@ public:
     // subsection or a section). Keeps the document order everywhere else.
     EditResult MoveNodeAfter(const NodeId& node, const NodeId& anchor);
     EditResult DeleteSection(size_t index);
-    EditResult InsertCitation(const NodeId& paragraph, const QStringList& keys);
-    EditResult InsertCrossReference(const NodeId& paragraph,
-                                    const NodeId& target);
     void Undo();
     void Redo();
     void ChangeTemplate(const QString& template_id);
     void RequestBuild(bool manual = true);
     void CancelBuild();
 
-    // Bibliography
-    bool ImportBibliographyText(const QString& bibtex);
+    // Citation plan §3: the document-wide citation key -> display number map
+    // the editor pills are painted from. Rebuilt from the live document plus
+    // the imported bibliography; nullptr without an open project.
+    std::shared_ptr<const pf::CitationNumberResolver> CitationNumbers() const;
+
+    // Bibliography. The import result (entry count, duplicate keys) is
+    // surfaced to the UI so a duplicate never disappears silently.
+    BibliographyImportResult ImportBibliographyText(const QString& bibtex);
     CitationSearchResult SearchCitations(const QString& query) const;
 
 signals:
@@ -122,7 +128,12 @@ signals:
     // project/build/revision identity of the PDF so the view can reject
     // anything that no longer belongs to the current document.
     void previewUpdated(const pf::PreviewUpdate& update);
-    void diagnosticsUpdated(QList<QString> problems);
+    // Structured build diagnostics (Build Diagnostics plan §36-§37): the
+    // accepted, final BuildResult for the current build. The GUI never parses
+    // log text; ProblemsPanel consumes these value objects directly.
+    void buildCompleted(const pf::BuildResult& result);
+    // One build-log event of the current build, streamed while it runs (§4).
+    void buildEvent(const pf::BuildEvent& event);
     void saveFinished(bool success, QString detail);
     void stateChanged(QString persistence, QString preview, QString revision);
     void templateChanged(QString template_id);
@@ -150,3 +161,8 @@ private:
 }  // namespace pf::gui
 
 Q_DECLARE_METATYPE(pf::PreviewUpdate)
+// Value objects crossing the async boundary into the GUI (plan §36). They are
+// copied by queued connections, which is exactly the isolation the plan asks
+// for: the worker never touches a widget.
+Q_DECLARE_METATYPE(pf::BuildResult)
+Q_DECLARE_METATYPE(pf::BuildEvent)

@@ -118,7 +118,9 @@ int main(int argc, char* argv[]) {
         }
         check(controller.ImportBibliographyText(QString(
                   "@article{gui2024, author={G. User}, title={GUI Paper}, "
-                  "year={2024}}")) == true, "import bibliography");
+                  "year={2024}}"))
+                  .status == pf::BibliographyImportResult::Status::Ok,
+              "import bibliography");
         // Citations target a Paragraph block (find the one we inserted).
         pf::NodeId paragraph;
         {
@@ -136,17 +138,25 @@ int main(int argc, char* argv[]) {
             }
         }
         check(!paragraph.empty(), "found paragraph for citation");
-        check(controller.InsertCitation(paragraph, {"gui2024"})
-                  .status == pf::EditStatus::Applied, "insert citation");
-        check(controller.InsertCrossReference(paragraph, sec.created_node)
-                  .status == pf::EditStatus::Applied,
-              "insert cross reference");
-        check(controller.EditParagraph(
-                  paragraph,
-                  "Edited [cite:gui2024] near [ref:" +
-                      QString::fromStdString(sec.created_node.value()) + "].")
-                  .status == pf::EditStatus::Applied,
-              "edit paragraph without flattening inline references");
+        // Citation plan §5: the only body-text path is the rich commit. The
+        // widget-level insertion (InlineEditor::InsertCitationObject) is
+        // covered by paperforge-inline-editor-test; here (no QApplication)
+        // drive the same commit with the InlineContent the editor would have
+        // produced.
+        {
+            pf::InlineContent content;
+            content.push_back(pf::TextRun{"Prior work ", 0});
+            pf::Citation cit;
+            cit.keys = {"gui2024"};
+            content.push_back(std::move(cit));
+            content.push_back(pf::TextRun{" near ", 0});
+            content.push_back(
+                pf::CrossReference{sec.created_node});
+            content.push_back(pf::TextRun{".", 0});
+            check(controller.EditParagraphRich(paragraph, content)
+                      .status == pf::EditStatus::Applied,
+                  "rich paragraph commit accepted");
+        }
         {
             const auto& blocks = controller.session()
                                      .state()

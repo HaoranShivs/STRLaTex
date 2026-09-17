@@ -8,8 +8,59 @@
           {
             "content": [
               {
-                "text": "In recent years, infrared small target detection technologies have become increasingly significant in multiple fields, includ ing ecological environment monitoring[1], marine rescue[2], [3] and military surveillance[4], [5]. This is because infrared light exhibits a longer working range and stronger penetration capability compared to visible light. In IRSTD tasks, targets are generally very small, weak, and are often embedded in complex backgrounds. In IRSTD tasks, targets typically include drones, aerostats, and ships, which commonly exhibit the following characteristics[6]: (i) Low target energy: Due to severe signal attenuation over long-distance propagation, the received infrared signal is weak. This results in low contrast between the target and strong background clutter, making the target highly susceptible to being obscured by background noise. (ii) Small target size: At long imaging ranges, targets occupy only a few pixels in the image and lack discernible texture or structural details. (iii) Complex background: The operational environment often contains numerous interfering objects that introduce edges, corners, and other salient features, significantly complicating the accurate discrimination of small targets from the background. Some examples are shown in Fig. 1. Therefore, efficiently and accurately detecting infrared small targets remains a critical challenge.",
+                "marks": 1,
+                "text": "In recent years, infrared small target detection technologies have become increasingly significant in multiple fields, includ ing ecological environment monitoring[1], marine rescue[2], [3] and military surveillance[4], [5].",
                 "type": "text"
+              },
+              {
+                "text": " ",
+                "type": "text"
+              },
+              {
+                "marks": 2,
+                "text": "This is because infrared light exhibits a longer working range and stronger penetration capability compared to visible light.",
+                "type": "text"
+              },
+              {
+                "text": " ",
+                "type": "text"
+              },
+              {
+                "latex": "x_2^4",
+                "type": "inline_math"
+              },
+              {
+                "text": "In IRSTD tasks, targets are generally very small, weak, and are often embedded in complex backgrounds. In IRSTD tasks, targets typically include drones, aerostats, and ships, which commonly exhibit the following characteristics[6]: (i) Low target energy: Due to severe signal attenuation over long-distance propagation, the received infrared signal is weak. This results in low contrast between the target and strong background clutter, making the target highly susceptible to being obscured by background noise. (ii) Small target size: At long imaging ranges, targets occupy only a few pixels in the image and lack discernible texture or structural details. (iii) Complex background",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "2006Random"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": ": The operational environment often contains numerous interfering objects that introduce edges, corners, and other salient features, significantly complicating the accurate discrimination of small targets from the background. ",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "prasad2017video"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": "Some examples are shown in Fig. 1. Therefore, efficiently and accurately detecting infrared small targets remains a critical challenge.",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "10695116"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
               }
             ],
             "id": "n3",
@@ -59,7 +110,7 @@
     ]
   },
   "projectId": "p1",
-  "revision": 11,
+  "revision": 22,
   "schemaVersion": "3",
   "template": "ieee-conference"
 }

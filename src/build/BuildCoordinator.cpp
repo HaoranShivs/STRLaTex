@@ -1,5 +1,8 @@
 #include "build/BuildCoordinator.h"
 
+#include <cstdio>
+#include <exception>
+
 #include "build/DiagnosticMapper.h"
 #include "core/IdGenerator.h"
 #include "render/LatexRenderer.h"
@@ -148,6 +151,18 @@ void BuildCoordinator::WorkerLoop() {
   }
 }
 
+void BuildCoordinator::EmitEvent(const BuildId &build_id, BuildEventType type,
+                                 std::string message) const {
+  if (!host_.on_build_event)
+    return;
+  BuildEvent event;
+  event.build_id = build_id;
+  event.timestamp_ms = BuildEventNowMs();
+  event.type = type;
+  event.message = std::move(message);
+  host_.on_build_event(event);
+}
+
 BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
   BuildResult result;
   result.project_id = snapshot.project_id;
@@ -158,6 +173,12 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
                         ? BuildId(IdGenerator::NewBuildId())
                         : snapshot.build_id;
   result.revision = snapshot.revision;
+  result.started_ms = BuildEventNowMs();
+  const BuildId &id = result.build_id;
+
+  EmitEvent(id, BuildEventType::BuildStarted,
+            "Build started (snapshot " + snapshot.snapshot_id + ")");
+  EmitEvent(id, BuildEventType::GenerationStarted, "Generating LaTeX");
 
   ValidationInput validation_input;
   validation_input.snapshot_id = snapshot.snapshot_id;
@@ -175,6 +196,10 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
   result.diagnostics = validation.diagnostics;
   if (!validation.can_render) {
     result.outcome = BuildResult::Outcome::Failure;
+    result.exit_code = -1;
+    result.finished_ms = BuildEventNowMs();
+    EmitEvent(id, BuildEventType::BuildFailed,
+              "Build failed: validation blocked rendering");
     return result;
   }
 
@@ -192,8 +217,14 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
                             rendered.diagnostics.end());
   if (rendered.status != RenderResult::Status::Ok) {
     result.outcome = BuildResult::Outcome::Failure;
+    result.exit_code = -1;
+    result.finished_ms = BuildEventNowMs();
+    EmitEvent(id, BuildEventType::BuildFailed,
+              "Build failed: LaTeX generation failed");
     return result;
   }
+  EmitEvent(id, BuildEventType::GenerationFinished,
+            "Generated " + rendered.package.entry_file);
 
   // TEMP-DEBUG: dump the generated LaTeX next to the project so the user
   // can inspect what the renderer produced before tectonic compiles it.
@@ -225,6 +256,15 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
                               snapshot.snapshot_id;
   compile_request.asset_sources = snapshot.asset_sources;
   compile_request.toolchain = snapshot.toolchain;
+  // Stream the compiler's live output as structured events (plan §44): the
+  // Build Log grows while the process runs. Callbacks fire on this (worker)
+  // thread and carry the current build id, so the application side can drop
+  // them if a newer build has started.
+  compile_request.on_output = [this, id](const CompileOutputChunk &chunk) {
+    EmitEvent(id, chunk.is_stderr ? BuildEventType::StdErr
+                                  : BuildEventType::StdOut,
+              chunk.text);
+  };
   // The compiler is chosen from the template's toolchain requirement (plan
   // §13); a single-request compiler is still honoured for tests.
   const std::unique_ptr<ICompiler> selected =
@@ -234,20 +274,33 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
   if (!used) {
     result.outcome = BuildResult::Outcome::Failure;
     result.failure_kind = CompileFailureKind::RuntimeMissing;
+    result.exit_code = -1;
+    result.finished_ms = BuildEventNowMs();
     Diagnostic diagnostic;
+    diagnostic.build_id = id;
     diagnostic.source = DiagnosticSource::Compiler;
     diagnostic.severity = DiagnosticSeverity::Error;
-    diagnostic.code = "E-RUNTIME";
-    diagnostic.message = "STRLaTex TeX runtime is incomplete or corrupted";
+    diagnostic.code = "BUILD_PROCESS_START_FAILED";
+    diagnostic.message =
+        "Failed to start LaTeX compiler: STRLaTex TeX runtime is incomplete "
+        "or corrupted";
     diagnostic.revision = snapshot.revision;
     result.diagnostics.push_back(std::move(diagnostic));
     result.log = "STRLaTex TeX runtime is incomplete or corrupted";
+    EmitEvent(id, BuildEventType::InternalMessage,
+              "Compiler unavailable: " + result.log);
+    EmitEvent(id, BuildEventType::BuildFailed, "Build failed");
     return result;
   }
+  EmitEvent(id, BuildEventType::ProcessStarted,
+            "Running compiler (" +
+                std::string(ToString(snapshot.toolchain.engine)) +
+                " via latexmk)");
   auto compiled = used->Compile(compile_request, &cancel_requested_);
   result.pdf_path = compiled.pdf_path;
   result.log = compiled.log;
   result.failure_kind = compiled.failure_kind;
+  result.exit_code = compiled.exit_code;
 
   // TEMP-DEBUG: copy the compiled PDF next to the project for comparison
   // with what the preview window shows.
@@ -260,20 +313,49 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
           std::filesystem::copy_options::overwrite_existing, copy_ec);
     }
   }
-  auto compiler_diagnostics =
-      DiagnosticMapper().Map(compiled, rendered.source_map, snapshot.revision);
-  result.diagnostics.insert(result.diagnostics.begin(),
+  std::vector<Diagnostic> compiler_diagnostics;
+  // Parser robustness (plan §46): classification is best-effort. A parser
+  // fault is an internal log message - it may cost the Problems list its
+  // compiler entries but must never fail an otherwise good build or crash
+  // the pipeline; the raw log stays complete in BuildResult::log either way.
+  try {
+    compiler_diagnostics = DiagnosticMapper().Map(
+        compiled, rendered.source_map, snapshot.revision, id);
+  } catch (const std::exception &e) {
+    EmitEvent(id, BuildEventType::InternalMessage,
+              std::string("Diagnostic parser failure: ") + e.what());
+  } catch (...) {
+    EmitEvent(id, BuildEventType::InternalMessage,
+              "Diagnostic parser failure (unknown exception)");
+  }
+  // Merge order (Build Diagnostics plan §18): validator, generator, compiler.
+  result.diagnostics.insert(result.diagnostics.end(),
                             compiler_diagnostics.begin(),
                             compiler_diagnostics.end());
+  result.finished_ms = BuildEventNowMs();
+
+  EmitEvent(id, BuildEventType::ProcessFinished,
+            "Process exited with code " + std::to_string(compiled.exit_code));
+  const double seconds =
+      static_cast<double>(result.finished_ms - result.started_ms) / 1000.0;
+  char duration[32];
+  std::snprintf(duration, sizeof(duration), " (%.3f s)", seconds);
   switch (compiled.status) {
   case CompileStatus::Success:
     result.outcome = BuildResult::Outcome::Success;
+    EmitEvent(id, BuildEventType::BuildSucceeded,
+              std::string("Build succeeded") + duration);
     break;
   case CompileStatus::Failure:
     result.outcome = BuildResult::Outcome::Failure;
+    EmitEvent(id, BuildEventType::BuildFailed,
+              std::string("Build failed: ") +
+                  ToString(compiled.failure_kind) + duration);
     break;
   case CompileStatus::Cancelled:
     result.outcome = BuildResult::Outcome::Cancelled;
+    EmitEvent(id, BuildEventType::BuildCancelled,
+              std::string("Build cancelled") + duration);
     break;
   }
   return result;

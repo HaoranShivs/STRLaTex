@@ -26,6 +26,7 @@ struct BuildTestRig {
     std::unique_ptr<MockCompiler> compiler;
     std::unique_ptr<BuildCoordinator> coordinator;
     std::vector<BuildResult> results;
+    std::vector<BuildEvent> events;
     std::atomic<bool> done{false};
 
     explicit BuildTestRig(bool compiler_succeeds = true,
@@ -42,6 +43,9 @@ struct BuildTestRig {
         host.on_build_finished = [this](const BuildResult& r) {
             results.push_back(r);
             done.store(true);
+        };
+        host.on_build_event = [this](const BuildEvent& e) {
+            events.push_back(e);
         };
         coordinator = std::make_unique<BuildCoordinator>(std::move(host),
                                                          compiler.get());
@@ -98,9 +102,24 @@ PF_TEST(BuildFailureProducesDiagnostics) {
     PF_CHECK(rig.WaitForResult());
     PF_CHECK(rig.results.size() == 1);
     PF_CHECK(rig.results[0].outcome == BuildResult::Outcome::Failure);
-    // MockCompiler emits "main.tex:1: simulated error" -> mapped diagnostic
+    // MockCompiler emits "main.tex:1: simulated error" -> mapped diagnostic.
+    // Merge order is validator, generator, compiler (Build Diagnostics plan
+    // §18), so the compiler diagnostic is looked up by source, not by index.
     PF_CHECK(!rig.results[0].diagnostics.empty());
-    PF_CHECK(rig.results[0].diagnostics[0].source == DiagnosticSource::Compiler);
+    const Diagnostic* compiler_diag = nullptr;
+    for (const auto& d : rig.results[0].diagnostics) {
+        if (d.source == DiagnosticSource::Compiler) compiler_diag = &d;
+    }
+    PF_CHECK(compiler_diag != nullptr);
+    if (compiler_diag) {
+        PF_CHECK(compiler_diag->severity == DiagnosticSeverity::Error);
+        PF_CHECK(compiler_diag->code == "LATEX_ERROR");
+        // Every diagnostic is tagged with the build that produced it (§12).
+        PF_CHECK(compiler_diag->build_id == rig.results[0].build_id);
+        // The generated-source position survives even without a node map.
+        PF_CHECK(compiler_diag->location.file == "main.tex");
+        PF_CHECK(compiler_diag->location.line.value_or(0) == 1);
+    }
 }
 
 PF_TEST(BuildLatestWinsPending) {
@@ -161,6 +180,92 @@ PF_TEST(DiagnosticMapperMapsLineToNode) {
     PF_CHECK(diagnostics[0].location.node == NodeId("eq12"));
 }
 
+PF_TEST(DiagnosticMapperClassifiesLatexMessages) {
+    // Classification (Build Diagnostics plan §13/§16/§19): stable codes,
+    // warnings stay warnings (they must never fail a build, §31), and exact
+    // duplicates from latexmk's reruns are shown once.
+    SourceMap smap;
+    CompileResult cres;
+    cres.status = CompileStatus::Failure;
+    cres.messages.push_back({"main.tex", 42, true, "Overfull \\hbox (5.2pt too wide)"});
+    cres.messages.push_back({"main.tex", 43, false, "LaTeX Warning: Citation `x99' on page 1 undefined"});
+    cres.messages.push_back({"main.tex", 44, false, "LaTeX Warning: Reference `sec:a' on page 1 undefined"});
+    cres.messages.push_back({"main.tex", 9, true, "! LaTeX Error: Emergency stop."});
+    // Same message twice (rerun repeats it): deduped.
+    cres.messages.push_back({"main.tex", 9, true, "! LaTeX Error: Emergency stop."});
+
+    DiagnosticMapper mapper;
+    const BuildId build("build-77");
+    auto diagnostics = mapper.Map(cres, smap, ProjectRevision{5}, build);
+    PF_CHECK(diagnostics.size() == 4);
+    PF_CHECK(diagnostics[0].code == "LATEX_OVERFULL_HBOX");
+    PF_CHECK(diagnostics[0].severity == DiagnosticSeverity::Warning);
+    PF_CHECK(diagnostics[1].code == "LATEX_UNDEFINED_CITATION");
+    PF_CHECK(diagnostics[1].severity == DiagnosticSeverity::Warning);
+    PF_CHECK(diagnostics[2].code == "LATEX_UNDEFINED_REFERENCE");
+    PF_CHECK(diagnostics[3].code == "LATEX_EMERGENCY_STOP");
+    PF_CHECK(diagnostics[3].severity == DiagnosticSeverity::Error);
+    for (const auto& d : diagnostics) {
+        PF_CHECK(d.build_id == build);
+        PF_CHECK(!d.raw_message.empty());
+        // No source-map entry -> no node, but the generated-file position
+        // survives so Problems can still show main.tex:LINE (plan §47).
+        PF_CHECK(d.location.kind == DiagnosticLocationKind::GeneratedFile);
+    }
+}
+
+PF_TEST(BuildEmitsLifecycleEvents) {
+    // One successful build produces the whole event story, all tagged with
+    // the same build id (Build Diagnostics plan §3-§5, §60 "正常 Build").
+    BuildTestRig rig(true);
+    auto snapshot = rig.MakeSnapshot(ProjectRevision{1});
+    const BuildId build_id = snapshot.build_id;
+    rig.coordinator->RequestBuild(std::move(snapshot), true);
+    PF_CHECK(rig.WaitForResult());
+    PF_CHECK(!rig.events.empty());
+
+    std::vector<BuildEventType> order;
+    for (const auto& e : rig.events) {
+        PF_CHECK(e.build_id == build_id);
+        PF_CHECK(e.timestamp_ms > 0);
+        order.push_back(e.type);
+    }
+    auto has = [&](BuildEventType t) {
+        return std::find(order.begin(), order.end(), t) != order.end();
+    };
+    PF_CHECK(has(BuildEventType::BuildStarted));
+    PF_CHECK(has(BuildEventType::GenerationStarted));
+    PF_CHECK(has(BuildEventType::GenerationFinished));
+    PF_CHECK(has(BuildEventType::ProcessStarted));
+    PF_CHECK(has(BuildEventType::ProcessFinished));
+    PF_CHECK(has(BuildEventType::StdOut));  // mock log streamed live
+    PF_CHECK(has(BuildEventType::BuildSucceeded));
+    // First event is the start, last is the terminal one (§5 state flow).
+    PF_CHECK(order.front() == BuildEventType::BuildStarted);
+    PF_CHECK(order.back() == BuildEventType::BuildSucceeded);
+    // Session bookkeeping for the Build Log footer (§3).
+    PF_CHECK(rig.results[0].finished_ms >= rig.results[0].started_ms);
+    PF_CHECK(rig.results[0].exit_code == 0);
+}
+
+PF_TEST(BuildFailureEmitsFailedEvent) {
+    BuildTestRig rig(false);
+    auto snapshot = rig.MakeSnapshot(ProjectRevision{1});
+    const BuildId build_id = snapshot.build_id;
+    rig.coordinator->RequestBuild(std::move(snapshot), true);
+    PF_CHECK(rig.WaitForResult());
+    bool saw_failed = false;
+    bool saw_succeeded = false;
+    for (const auto& e : rig.events) {
+        if (e.build_id != build_id) continue;
+        if (e.type == BuildEventType::BuildFailed) saw_failed = true;
+        if (e.type == BuildEventType::BuildSucceeded) saw_succeeded = true;
+    }
+    PF_CHECK(saw_failed);
+    PF_CHECK(!saw_succeeded);  // Failed must never be followed by Success (§5)
+    PF_CHECK(rig.results[0].exit_code == 1);
+}
+
 PF_TEST(ValidatorMissingCitation) {
     Document doc;
     DocumentEditor editor(doc);
@@ -181,7 +286,7 @@ PF_TEST(ValidatorMissingCitation) {
     auto result = validator.Validate(input);
     bool found = false;
     for (const auto& d : result.diagnostics) {
-        if (d.code == "E-MISSING-CITATION") found = true;
+        if (d.code == "E-CITATION-UNKNOWN-KEY") found = true;
     }
     PF_CHECK(found);
     PF_CHECK(result.can_render);  // semantic issues do not block rendering

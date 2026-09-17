@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -54,6 +55,14 @@ struct CompilerMessage {
     std::string text;
 };
 
+// Raw output chunk handed to the UI while the compiler runs (Build
+// Diagnostics plan §44): the compiler keeps streaming stdout/stderr into the
+// Build Log even though the Diagnostic parser only sees the finished log.
+struct CompileOutputChunk {
+    bool is_stderr = false;
+    std::string text;
+};
+
 struct CompileRequest {
     BuildPackage package;
     std::filesystem::path workspace;
@@ -62,6 +71,10 @@ struct CompileRequest {
     // Resolved toolchain for this build (plan §14): decided by the template at
     // request time, never re-derived inside the compiler.
     BuildToolchain toolchain;
+    // Optional live output hook. Invoked from the compiler's own thread for
+    // each chunk of the child process's stdout/stderr; the receiver must copy
+    // anything it keeps (the chunk is reused).
+    std::function<void(const CompileOutputChunk&)> on_output;
 };
 
 struct CompileResult {
@@ -73,6 +86,9 @@ struct CompileResult {
     // latexmk.log, main.log, main.blg ...
     std::vector<std::filesystem::path> auxiliary_logs;
     CompileFailureKind failure_kind = CompileFailureKind::None;
+    // Exit code of the compiler process; -1 when no process ran (plan §3:
+    // part of the BuildSession record).
+    int exit_code = -1;
 };
 
 class ICompiler {

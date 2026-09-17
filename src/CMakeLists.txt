@@ -52,6 +52,15 @@ add_library(pf_bibliography STATIC
 )
 target_link_libraries(pf_bibliography PUBLIC pf_core)
 
+# Citation numbering policy (citation plan §3): citation key -> display number
+# for the whole document. Sits above document + bibliography; the GUI renders
+# its pills from here so the editor shows exactly the numbers citation-order
+# BibTeX styles (unsrtnat / IEEEtran) will print in the PDF.
+add_library(pf_numbering STATIC
+    numbering/CitationNumberResolver.cpp
+)
+target_link_libraries(pf_numbering PUBLIC pf_document pf_bibliography)
+
 # Validation
 add_library(pf_validation STATIC
     validation/Validator.cpp
@@ -67,6 +76,7 @@ target_link_libraries(pf_render PUBLIC pf_document pf_template pf_validation)
 
 # Build pipeline
 add_library(pf_build STATIC
+    build/BuildEvent.cpp
     build/Compiler.cpp
     build/CompilerFactory.cpp
     build/DiagnosticMapper.cpp
@@ -91,7 +101,7 @@ add_library(pf_app STATIC
     project/SnapshotFactory.cpp
     project/ProjectSession.cpp
 )
-target_link_libraries(pf_app PUBLIC pf_build pf_persistence pf_editing)
+target_link_libraries(pf_app PUBLIC pf_build pf_persistence pf_editing pf_numbering)
 
 # CLI executable
 add_executable(paperforge

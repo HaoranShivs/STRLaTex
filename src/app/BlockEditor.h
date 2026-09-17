@@ -3,7 +3,8 @@
 // #3-#8, #61-#62).
 // Each block shows a hover-only header (drag handle + type label + actions),
 // a focused accent line on the left, and a self-sizing editor. "/" opens the
-// block command popup, "@" opens the reference popup (design #6, #9).
+// block command popup (design #6). Body text, citations and references all
+// commit through the rich InlineEditor path (citation plan §5).
 //
 // Visual states (design #4):
 //   idle    - no visible chrome, just content
@@ -14,11 +15,14 @@
 #include <QScrollArea>
 #include <QWidget>
 #include <functional>
+#include <map>
+#include <memory>
 #include <optional>
 
 #include "app/PopupList.h"
 #include "document/Document.h"
 #include "document/DocumentTraversal.h"
+#include "numbering/CitationNumberResolver.h"
 
 class QPlainTextEdit;
 class QVBoxLayout;
@@ -55,6 +59,12 @@ public:
     // Reference items for the "@" popup (label, detail, payload=key|node).
     void SetReferenceItems(std::vector<PopupList::Item> items);
 
+    // Document-wide citation numbering (citation plan §3). The pills in the
+    // Text rows are the visual projection of this map; the document still
+    // only stores keys. Shared_ptr because every row reads the same map.
+    void SetCitationNumbers(
+        std::shared_ptr<const pf::CitationNumberResolver> numbers);
+
     // Resolve a document AssetId to a local image path for figure previews.
     void SetAssetPathResolver(
         std::function<QString(const AssetId&)> resolver);
@@ -79,9 +89,10 @@ signals:
     void AffiliationsEdited(const QString& text);
     void AbstractEdited(const QString& text);
     void KeywordsEdited(const QString& text);
-    void ParagraphEdited(const QString& node_id, const QString& text);
     // Rich commit from an InlineEditor row: the whole InlineContent arrives
-    // structured (marks, citations, references, inline equations).
+    // structured (marks, citations, references, inline equations). This is
+    // the only body-text data path (citation plan §5) - the old plain
+    // ParagraphEdited/[cite:key] encoding is gone.
     void ParagraphContentEdited(const QString& node_id,
                                 const InlineContent& content);
     void EquationEdited(const QString& node_id, const QString& math,
@@ -104,8 +115,16 @@ signals:
     void InsertBlockRequested(const QString& block_type, const QString& after_node);
     void DeleteBlockRequested(const QString& node_id);
     void MoveBlockRequested(const QString& node_id, int direction);  // -1 / +1
-    void InsertCitationRequested(const QString& paragraph_node, const QString& key);
-    void InsertCrossRefRequested(const QString& paragraph_node, const QString& target_node);
+
+public:
+    // Semantic citation insertion for one paragraph row, used by the toolbar
+    // picker and by OutlinePanel double-clicks. It goes through the row's
+    // InlineEditor and commits immediately, so the only data path is
+    // InlineEditor -> ParagraphContentEdited -> EditParagraphRich
+    // (citation plan §4/§5). Returns false when the row is not a Text row.
+    bool InsertCitationIntoParagraph(const QString& node_id,
+                                     const QString& citation_key,
+                                     int insert_offset = -1);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -141,9 +160,14 @@ private:
     // The [B] [I] [Inline Math] [Citation] [Reference] strip shown while a
     // text row is focused (plan §4.4).
     QWidget* BuildFormatToolbar(InlineEditor* editor);
-    // Reference pickers behind the Citation / Reference buttons.
+    // Reference pickers behind the Citation / Reference buttons. The picker
+    // commits the row immediately after inserting the object (citation plan
+    // §4) - no "some later focusOut will submit it".
     void ShowCitationPicker(InlineEditor* editor);
     void ShowReferencePicker(InlineEditor* editor);
+    // Node id -> display label for cross-reference pills, from the current
+    // "@" reference items.
+    std::map<QString, QString> CrossReferenceLabels() const;
 
     QWidget* MakeCard(const QString& node_id, const QString& kind,
                       const QString& commit_role, bool header_inline);
@@ -151,6 +175,8 @@ private:
     QPlainTextEdit* NewEditor(QWidget* card, const QString& text, bool mono,
                               int min_lines, bool single_line = false);
     void CommitBlock(Block& block);
+    // Immediately commit a Text row's rich content (used by the pickers).
+    void CommitInlineRow(InlineEditor* editor);
     // Softens the hard line breaks of a pasted paragraph in one row and
     // commits the result (used by the block menu's "Reflow Text").
     void ReflowRow(QWidget* card, const QString& node_id);
@@ -160,7 +186,6 @@ private:
     // One row per author under the Authors card: pick the institutions.
     void BuildAuthorBindingPanel(QWidget* card, const FrontMatter& front);
     void OpenSlashMenu(QPlainTextEdit* origin);
-    void OpenAtMenu(QPlainTextEdit* origin);
     void ApplyHints();
 
     QScrollArea* scroll_;
@@ -169,6 +194,7 @@ private:
     std::vector<Block> blocks_;
     RequiredHints hints_;
     std::vector<PopupList::Item> reference_items_;
+    std::shared_ptr<const pf::CitationNumberResolver> citation_numbers_;
     std::function<QString(const AssetId&)> asset_path_resolver_;
     // Document the insert menus consult for the container of an anchor. Only
     // valid during RebuildFromDocument-driven use; refreshed on each rebuild.

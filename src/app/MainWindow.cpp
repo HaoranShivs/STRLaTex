@@ -61,8 +61,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             &MainWindow::OnPreviewUpdated);
     connect(controller_, &ProjectController::saveFinished, this,
             &MainWindow::OnSaveFinished);
-    connect(controller_, &ProjectController::diagnosticsUpdated, this,
-            &MainWindow::OnDiagnosticsUpdated);
+    // Problems and Build Log consume the structured pipeline directly
+    // (Build Diagnostics plan §37): MainWindow wires the components, it never
+    // parses logs, computes source mappings or creates Diagnostics.
+    connect(controller_, &ProjectController::buildCompleted, this,
+            &MainWindow::OnBuildCompleted);
+    connect(controller_, &ProjectController::buildEvent, this,
+            &MainWindow::OnBuildEvent);
+    connect(problems_, &ProblemsPanel::DiagnosticActivated, this,
+            [this](const pf::Diagnostic& diagnostic) {
+                OnProblemActivated(diagnostic);
+            });
     connect(controller_, &ProjectController::buildStatusChanged, this,
             &MainWindow::OnBuildStatusChanged);
 
@@ -246,15 +255,10 @@ void MainWindow::WireEditor() {
                 controller_->SetKeywordsText(std::move(t));
                 mark_unsaved();
             });
-    connect(editor_, &BlockEditor::ParagraphEdited, this,
-            [this, mark_unsaved](QString node, QString text) {
-                if (shutting_down_) return;
-                controller_->EditParagraph(NodeId(node.toStdString()),
-                                           std::move(text));
-                mark_unsaved();
-            });
     // Rich commit from an InlineEditor row: marks, citations, cross
     // references and inline equations arrive as InlineContent (plan §4.1).
+    // Body text has exactly one path into the document - the old
+    // ParagraphEdited / "[cite:key]" text encoding is gone (citation plan §5).
     connect(editor_, &BlockEditor::ParagraphContentEdited, this,
             [this, mark_unsaved](QString node, const InlineContent& content) {
                 if (shutting_down_) return;
@@ -390,25 +394,27 @@ void MainWindow::WireEditor() {
                     statusBar()->showMessage(ToQ(result.detail), 3000);
                 }
             });
-    connect(editor_, &BlockEditor::InsertCitationRequested, this,
-            [this, mark_unsaved](QString paragraph, QString key) {
-                controller_->InsertCitation(NodeId(paragraph.toStdString()),
-                                            {key});
-                mark_unsaved();
-            });
-    connect(editor_, &BlockEditor::InsertCrossRefRequested, this,
-            [this, mark_unsaved](QString paragraph, QString target) {
-                auto result = controller_->InsertCrossReference(
-                    NodeId(paragraph.toStdString()),
-                    NodeId(target.toStdString()));
-                if (result.status == EditStatus::Applied) mark_unsaved();
-            });
+    // The legacy InsertCitationRequested / InsertCrossRefRequested detour is
+    // gone (citation plan §5): every citation enters through the focused
+    // row's InlineEditor and commits as rich content.
     connect(outline_, &OutlinePanel::NodeActivated, this,
             [this](QString node) { editor_->RevealNode(node); });
-    connect(outline_, &OutlinePanel::CitationChosen, this, [this](QString key) {
+    connect(outline_, &OutlinePanel::CitationChosen, this,
+            [this, mark_unsaved](QString key) {
         auto focused = editor_->FocusedNodeId();
-        if (focused) {
-            controller_->InsertCitation(NodeId(focused->toStdString()), {key});
+        if (!focused) {
+            statusBar()->showMessage(
+                "Click into a Text block first, then pick a reference", 4000);
+            return;
+        }
+        // Same rich path as the toolbar picker: insert the Citation object at
+        // the row's caret and commit immediately.
+        if (editor_->InsertCitationIntoParagraph(*focused, key)) {
+            mark_unsaved();
+        } else {
+            statusBar()->showMessage(
+                "The focused block is not a text row - citations attach to "
+                "paragraphs", 4000);
         }
     });
 }
@@ -504,6 +510,9 @@ int MainWindow::CountWords() const {
 // ---------------- Actions ----------------
 
 void MainWindow::OnNewProject() {
+    // Flush the row the user is editing before the old document is replaced
+    // (citation plan §6); the autosave then captures the final state.
+    if (controller_->has_project()) editor_->CommitFocused();
     QString dir = QFileDialog::getExistingDirectory(this,
                                                     "New Project Directory");
     if (dir.isEmpty()) return;
@@ -558,6 +567,9 @@ bool MainWindow::OpenProjectDir(const QString& dir) {
 
 void MainWindow::OnSave() {
     if (!controller_->has_project()) return;
+    // Citation plan §6: anything that reads the Document must first flush the
+    // focused row, or the snapshot silently misses what the GUI already shows.
+    editor_->CommitFocused();
     save_state_label_->setText("Saving…");
     // Save is asynchronous: the snapshot is captured now and written by the
     // save worker; OnSaveFinished reports the outcome on the app thread.
@@ -588,28 +600,73 @@ void MainWindow::OnRedo() { controller_->Redo(); RefreshDocumentView(); }
 
 void MainWindow::OnBuild() {
     if (!controller_->has_project()) return;
+    if (building_) {
+        // The button doubles as Cancel during a build (plan §34/§39). The
+        // worker finishes the attempt as Cancelled; its preview and Problems
+        // results are gated out, its log stays visible until replaced.
+        controller_->CancelBuild();
+        build_button_->setText("Cancelling \u25EF");
+        return;
+    }
+    // Citation plan §6: Commit → the commit path runs synchronously
+    // (ParagraphContentEdited → EditParagraphRich → EditingSystem → the
+    // Document now holds the fresh content and its revision was bumped) →
+    // only then RequestBuild, so the build snapshot can never lag behind
+    // what the user sees - the exact failure mode that made a freshly
+    // chosen Citation vanish from the PDF.
+    editor_->CommitFocused();
     build_button_->setText("Building ◌");
     controller_->RequestBuild(true);
 }
 
 void MainWindow::OnImportBibliography() {
     if (!controller_->has_project()) return;
+    // Flush first: the import triggers a validation + build, and validation
+    // reads the Document (citation plan §6/§9).
+    editor_->CommitFocused();
     QString path = QFileDialog::getOpenFileName(this, "Import BibTeX", {},
                                                 "BibTeX (*.bib)");
     if (path.isEmpty()) return;
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return;
     QString text = QString::fromUtf8(file.readAll());
-    if (controller_->ImportBibliographyText(text)) {
-        statusBar()->showMessage("Bibliography imported: " + path);
+    auto result = controller_->ImportBibliographyText(text);
+    if (result.status == BibliographyImportResult::Status::Ok) {
+        QString message = QString("Bibliography imported: %1 entries from %2")
+                              .arg(result.entry_count)
+                              .arg(path);
+        if (!result.duplicate_keys.empty()) {
+            // Citation plan §9: a duplicate key is surfaced, never silently
+            // merged. BibTeX keeps the last definition; so do we.
+            QStringList dups;
+            for (const auto& key : result.duplicate_keys) {
+                dups << QString::fromStdString(key);
+            }
+            message += QString(" - WARNING: duplicate keys: %1")
+                           .arg(dups.join(", "));
+            statusBar()->showMessage(message, 10000);
+            QMessageBox::warning(
+                this, "PaperForge",
+                "The imported file contains duplicate BibTeX keys:\n" +
+                    dups.join("\n") +
+                    "\n\nThe last definition of each duplicate was kept.");
+        } else {
+            statusBar()->showMessage(message);
+        }
         RefreshReferenceItems();
     } else {
+        // A failed import leaves the previous bibliography and its
+        // references.bib untouched (citation plan §7).
         QMessageBox::warning(this, "PaperForge",
-                             "Failed to parse BibTeX file.");
+                             "Failed to parse BibTeX file: nothing was "
+                             "imported; the current bibliography is unchanged.");
     }
 }
 
 void MainWindow::OnChangeTemplate(const QString& template_id) {
+    // A template change re-renders everything from the Document; flush the
+    // focused row first (citation plan §6).
+    editor_->CommitFocused();
     controller_->ChangeTemplate(template_id);
     UpdateRequiredHints();
 }
@@ -632,6 +689,22 @@ void MainWindow::RefreshDocumentView() {
     if (shutting_down_) return;
     if (!controller_->has_project()) return;
     const Document& doc = controller_->session().state().document();
+    // Diagnostics belong to the build that produced them: once the document
+    // moves on, mark the visible set Outdated (plan §49). The content of the
+    // diagnostics is not rewritten - the next build replaces the whole set.
+    if (has_built_) {
+        const auto revision = controller_->current_revision();
+        problems_->SetStale(revision != last_built_revision_,
+                            static_cast<int>(revision.value >
+                                                     last_built_revision_.value
+                                                 ? revision.value -
+                                                       last_built_revision_.value
+                                                 : 0));
+    }
+    // Citation plan §3: hand the editor the document-wide key -> number map
+    // before rebuilding rows. The "[1]" pills in the GUI and the numbers in
+    // the PDF are the same projection of the same citation-order policy.
+    editor_->SetCitationNumbers(controller_->CitationNumbers());
     // The insert and "/" menus are filtered by what the current template can
     // express (plan §9).
     if (const auto* tpl = TemplateRegistry::Instance().Find(
@@ -688,6 +761,11 @@ void MainWindow::OnPreviewUpdated(const pf::PreviewUpdate& update) {
         current_pdf_path_ = ToQ(update.pdf.path.string());
         last_build_revision_ = revision;
         RefreshPreview();
+    } else if (last_outcome_ == BuildResult::Outcome::Cancelled) {
+        // A cancelled attempt is not a document failure (plan §34): the
+        // preview keeps showing the last valid PDF and the button says so.
+        build_button_->setText("Build cancelled");
+        build_state_label_->setText("Build: cancelled");
     } else {
         build_button_->setText("! Build failed");
         build_state_label_->setText("Build: failed");
@@ -697,17 +775,103 @@ void MainWindow::OnPreviewUpdated(const pf::PreviewUpdate& update) {
             .arg(theme::kError));
     }
     QTimer::singleShot(3000, this, [this]() {
+        // A newer attempt may already own the button (Cancel); don't clobber
+        // its state (plan §39).
+        if (building_) return;
         build_button_->setText("Build  ▶");
         build_button_->setStyleSheet("");
     });
 }
 
-void MainWindow::OnDiagnosticsUpdated(const QList<QString>& problems) {
-    (void)problems;  // rendered by ProblemsPanel via its own data path
+void MainWindow::OnBuildCompleted(const pf::BuildResult& result) {
+    if (shutting_down_) return;
+    // One update per finished build (plan §30); the diagnostics are already
+    // structured - nothing here inspects log text.
+    problems_->SetDiagnostics(result.diagnostics);
+    last_built_revision_ = result.revision;
+    last_outcome_ = result.outcome;
+    has_built_ = true;
+
+    if (result.outcome == BuildResult::Outcome::Cancelled) {
+        // Cancelled builds update neither Preview nor tab visibility; only
+        // the transient status changes (plan §34).
+        return;
+    }
+    // Automatic tab switch (plan §40): success never steals the view; a
+    // document-level failure reveals Problems; a runtime-level failure -
+    // where no Problems entry can name a block - reveals the Build Log.
+    if (result.outcome == BuildResult::Outcome::Failure) {
+        const bool system_failure =
+            result.failure_kind == CompileFailureKind::RuntimeMissing ||
+            result.failure_kind == CompileFailureKind::RuntimeCorrupted ||
+            result.failure_kind == CompileFailureKind::PackageMissing ||
+            result.failure_kind == CompileFailureKind::FontMissing ||
+            result.failure_kind == CompileFailureKind::Timeout ||
+            result.failure_kind == CompileFailureKind::InternalError;
+        if (system_failure)
+            problems_->ShowBuildLog();
+        else
+            problems_->ShowProblemsTab();
+    }
+}
+
+void MainWindow::OnBuildEvent(const pf::BuildEvent& event) {
+    if (shutting_down_) return;
+    problems_->AppendEvent(event);
+    switch (event.type) {
+        case BuildEventType::BuildStarted:
+            building_ = true;
+            // Build button becomes Cancel while an attempt is in flight
+            // (plan §39).
+            build_button_->setText("Cancel  \u25A0");
+            break;
+        case BuildEventType::BuildSucceeded:
+        case BuildEventType::BuildFailed:
+        case BuildEventType::BuildCancelled:
+            building_ = false;
+            break;
+        default:
+            break;
+    }
+}
+
+void MainWindow::OnProblemActivated(const pf::Diagnostic& diagnostic) {
+    if (shutting_down_ || !controller_->has_project()) return;
+    // Navigation (plan §25/§28/§29/§48): block first, then the Build Log as
+    // fallback, otherwise nothing.
+    if (diagnostic.location.has_block_location()) {
+        const Document& doc = controller_->session().state().document();
+        if (doc.ContainsNode(diagnostic.location.node)) {
+            editor_->RevealNode(ToQ(diagnostic.location.node.value()));
+            return;
+        }
+        // The block was deleted after this build: report, never crash.
+        statusBar()->showMessage(
+            "Location unavailable - that block is gone; rebuild to refresh "
+            "the problems list",
+            5000);
+        return;
+    }
+    if (diagnostic.location.has_file_location() ||
+        !diagnostic.raw_message.empty()) {
+        problems_->ShowBuildLog();
+    }
 }
 
 void MainWindow::OnBuildStatusChanged(const QString& status) {
     build_state_label_->setText("Build: " + status);
+    // The phase observer is the reliable "no build in flight" signal: it also
+    // fires when a request is dropped during the debounce. Release the Cancel
+    // affordance whenever the coordinator returns to Idle (plan §39).
+    if (status == "Idle") {
+        building_ = false;
+        if (build_button_->text() == "Cancel  \u25A0" ||
+            build_button_->text() == "Cancelling \u25EF" ||
+            build_button_->text() == "Building \u25CC") {
+            build_button_->setText("Build  \u25B6");
+            build_button_->setStyleSheet("");
+        }
+    }
 }
 
 void MainWindow::ZoomPreviewForTest(double zoom, double scroll_x,

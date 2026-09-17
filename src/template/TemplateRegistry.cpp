@@ -15,7 +15,13 @@ TemplateRegistry::TemplateRegistry() {
         t.document_class = "article";
         t.class_options = {"11pt", "a4paper"};
         t.two_column = false;
-        t.bibliography_style = "plain";
+        // Citation plan §3: the GUI numbers citations by first-citation order
+        // (CitationNumberResolver). `plain` sorts the bibliography
+        // alphabetically, so [1] in the editor would not match the PDF.
+        // `unsrtnat` numbers entries in citation order - exactly the GUI
+        // policy - and natbib (loaded by the renderer whenever a .bib is
+        // present) provides it. IEEE keeps `IEEEtran`, also citation-order.
+        t.bibliography_style = "unsrtnat";
         t.preamble_lines = {
             "\\usepackage{amsmath}",
             "\\usepackage{amssymb}",

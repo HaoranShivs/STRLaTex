@@ -44,6 +44,16 @@ std::string Diagnostic::Summary() const {
         out += ")";
     } else if (location.kind == DiagnosticLocationKind::CitationKey) {
         out += " (key " + location.citation_key + ")";
+    } else if (location.kind == DiagnosticLocationKind::GeneratedFile) {
+        out += " (" + location.file + ":" +
+               std::to_string(location.line.value_or(0)) + ")";
+    }
+    // A mapped compiler error carries both identities: the block it belongs
+    // to and the generated-source position it came from (plan §17).
+    if (location.kind != DiagnosticLocationKind::GeneratedFile &&
+        location.has_file_location()) {
+        out += " [" + location.file + ":" +
+               std::to_string(location.line.value_or(0)) + "]";
     }
     return out;
 }

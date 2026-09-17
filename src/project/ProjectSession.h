@@ -114,6 +114,10 @@ public:
     // to inject a late/foreign result and prove the gate rejects it. The
     // result is only *applied* in ProcessApplicationEvents().
     void PostBuildResult(BuildResult result);
+    // Thread-safe. One build-log event from the worker (Build Diagnostics
+    // plan §4). Applied (or dropped as belonging to a superseded build) in
+    // ProcessApplicationEvents().
+    void PostBuildEvent(BuildEvent event);
 
     // Application/owner thread only. Drains queued events and applies them
     // (phase changes, build results, save completions, autosave ticks).
@@ -225,6 +229,12 @@ public:
     void SetBuildResultHandler(std::function<void(const BuildResult&)> handler) {
         build_result_handler_ = std::move(handler);
     }
+    // Live build-log events for the *current* build only (plan §35): an event
+    // whose build id no longer matches latest_build_id() is dropped here, so
+    // an old build can never write into the new build's log.
+    void SetBuildEventHandler(std::function<void(const BuildEvent&)> handler) {
+        build_event_handler_ = std::move(handler);
+    }
     // Typed preview event: which project/build/revision produced the PDF.
     void SetPreviewUpdateHandler(
         std::function<void(const PreviewUpdate&)> handler) {
@@ -254,6 +264,7 @@ private:
     // Event application (application thread).
     void HandleEvent(const BuildPhaseChangedEvent& event);
     void HandleEvent(const BuildResultReadyEvent& event);
+    void HandleEvent(const BuildEventReadyEvent& event);
     void HandleEvent(const SaveCompletedEvent& event);
     void HandleEvent(const AutosaveTickEvent& event);
     void ApplySaveCompletion(const SaveCompletion& completion);
@@ -302,6 +313,7 @@ private:
     SaveResult last_user_save_result_;
 
     std::function<void(const BuildResult&)> build_result_handler_;
+    std::function<void(const BuildEvent&)> build_event_handler_;
     std::function<void(const PreviewUpdate&)> preview_update_handler_;
     std::function<void(const SaveResult&, SaveKind)> save_result_handler_;
     std::function<void(BuildPhase, BuildPhase)> phase_handler_;

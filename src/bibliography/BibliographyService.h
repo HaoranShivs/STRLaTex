@@ -34,6 +34,10 @@ struct BibliographyImportResult {
     std::string detail;
     size_t entry_count = 0;
     std::uint64_t bibliography_revision = 0;
+    // Keys that appeared more than once inside the imported file (citation
+    // plan §9). The last definition wins - as it does in BibTeX - but the
+    // importer must surface the conflict instead of silently merging.
+    std::vector<std::string> duplicate_keys;
 };
 
 class BibliographyDatabase {

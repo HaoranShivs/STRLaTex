@@ -15,6 +15,7 @@ add_executable(paperforge-gui
     WelcomePage.cpp
     MathPreviewRenderer.cpp
     InlineMathObjectRenderer.cpp
+    CitationObjectRenderer.cpp
     MathEditorDialog.cpp
 )
 
@@ -36,6 +37,7 @@ add_executable(paperforge-gui-smoke
     ProjectController.cpp
     MathPreviewRenderer.cpp
     InlineMathObjectRenderer.cpp
+    CitationObjectRenderer.cpp
     MathEditorDialog.cpp
 )
 set_property(TARGET paperforge-gui-smoke PROPERTY AUTOMOC ON)
@@ -57,6 +59,7 @@ add_executable(paperforge-ui-verify
     WelcomePage.cpp
     MathPreviewRenderer.cpp
     InlineMathObjectRenderer.cpp
+    CitationObjectRenderer.cpp
     MathEditorDialog.cpp
 )
 set_property(TARGET paperforge-ui-verify PROPERTY AUTOMOC ON)
@@ -81,6 +84,7 @@ add_executable(paperforge-gui-persistence-test
     WelcomePage.cpp
     MathPreviewRenderer.cpp
     InlineMathObjectRenderer.cpp
+    CitationObjectRenderer.cpp
     MathEditorDialog.cpp
 )
 set_property(TARGET paperforge-gui-persistence-test PROPERTY AUTOMOC ON)
@@ -93,6 +97,8 @@ add_executable(paperforge-inline-editor-test
     ${CMAKE_SOURCE_DIR}/tests/TestInlineToolbar.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestMathPreview.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestInlineMathGui.cpp
+    ${CMAKE_SOURCE_DIR}/tests/TestCitationGui.cpp
+    ${CMAKE_SOURCE_DIR}/tests/TestProblemsPanel.cpp
     EditorItemKind.cpp
     InlineEditor.cpp
     MainWindow.cpp
@@ -105,6 +111,7 @@ add_executable(paperforge-inline-editor-test
     WelcomePage.cpp
     MathPreviewRenderer.cpp
     InlineMathObjectRenderer.cpp
+    CitationObjectRenderer.cpp
     MathEditorDialog.cpp
 )
 set_property(TARGET paperforge-inline-editor-test PROPERTY AUTOMOC ON)

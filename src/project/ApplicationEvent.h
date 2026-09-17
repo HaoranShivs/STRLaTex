@@ -26,6 +26,13 @@ struct BuildResultReadyEvent {
     BuildResult result;
 };
 
+// One structured build-log event (Build Diagnostics plan §4/§35). Posted by
+// the build worker as the attempt progresses; the application thread decides
+// whether its build id is still current before showing it.
+struct BuildEventReadyEvent {
+    BuildEvent event;
+};
+
 // A save worker finished one snapshot.
 struct SaveCompletedEvent {
     SaveCompletion completion;
@@ -37,7 +44,7 @@ struct AutosaveTickEvent {};
 
 using ApplicationEvent =
     std::variant<BuildPhaseChangedEvent, BuildResultReadyEvent,
-                 SaveCompletedEvent, AutosaveTickEvent>;
+                 BuildEventReadyEvent, SaveCompletedEvent, AutosaveTickEvent>;
 
 // Short label used by tracing/logging.
 const char* ToString(const ApplicationEvent& event);

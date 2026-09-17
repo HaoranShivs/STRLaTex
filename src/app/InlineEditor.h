@@ -19,14 +19,25 @@
 // Double-clicking it (or the toolbar's Inline Math action) opens the math
 // editor, which shows the LaTeX body and a live preview; the stored document
 // value is always the bare body - the \(...\) delimiters are generated later.
+//
+// Citations and cross references (citation plan §1) follow the same
+// architecture: each is a real inline object (object replacement character +
+// CitationObjectRenderer) showing a compact pill - "[1]", "[1, 3]", "[?]" for
+// a citation, the target's label for a reference. The pill is only a visual
+// projection of the key set the document stores; numbers come from the
+// CitationNumberResolver the window feeds in, never from user text.
 
 #include <QTextEdit>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
+#include <string>
 
+#include "app/CitationObjectRenderer.h"
 #include "document/Document.h"
+#include "numbering/CitationNumberResolver.h"
 
 class QAction;
 class QMimeData;
@@ -35,7 +46,7 @@ class QTextCursor;
 namespace pf::gui {
 
 class InlineMathObjectRenderer;
-
+class CitationObjectRenderer;
 class InlineEditor : public QTextEdit {
     Q_OBJECT
 
@@ -73,6 +84,13 @@ public:
     };
     void SetReferenceItems(std::vector<ReferenceItem> items);
 
+    // Citation-order numbering for the pills (citation plan §3). Ownership
+    // is a shared_ptr so every row can resolve display numbers against the
+    // same document-wide map; reloading the row repaints the pills.
+    void SetCitationNumbers(std::shared_ptr<const CitationNumberResolver> numbers);
+    // Node id -> display label for cross-reference pills (the "@" list).
+    void SetCrossReferenceLabels(std::map<QString, QString> labels);
+
     // Format the current selection (or, when the selection is collapsed, turn
     // typing on/off) - the [B] / [I] toolbar and Ctrl+B / Ctrl+I entry points.
     void ToggleBold();
@@ -80,9 +98,11 @@ public:
     bool IsBoldActive() const;
     bool IsItalicActive() const;
 
-    // Insert a token at the cursor. Used by the toolbar and by re-picking.
-    void InsertCitationToken(const QStringList& keys);
-    void InsertCrossReferenceToken(const QString& target_node);
+    // Insert a semantic inline object at the cursor. Each builds a real
+    // renderable object (citation plan §2): no shared "InsertToken(kind,
+    // payload, label)" pseudo interface.
+    void InsertCitationObject(const QStringList& keys);
+    void InsertCrossReferenceObject(const QString& target_node);
     // Insert an inline math object from a LaTeX body (no delimiters).
     void InsertInlineMath(const QString& latex);
     // Toolbar entry point: ask the user for a math body, then insert it.
@@ -90,6 +110,14 @@ public:
     // Open the math editor for the object at `position` and replace it when
     // the user accepts.
     void EditMathAt(int position);
+
+    // A picker (citation / reference popup) is about to take focus and insert
+    // an object into this row. While it is open, focusOut must not be
+    // mistaken for "the user finished editing the body" (citation plan §4):
+    // the popup's focus round trip must not commit the mid-edit state.
+    void BeginProtectedInsert() { ++protected_inserts_; }
+    void EndProtectedInsert() { protected_inserts_ = qMax(0, protected_inserts_ - 1); }
+    bool IsProtectedInsertOpen() const { return protected_inserts_ > 0; }
 
     // Test seams for the private clipboard flavour that carries marks, tokens
     // and math objects across copy/paste.
@@ -127,21 +155,35 @@ protected:
     void focusOutEvent(QFocusEvent* event) override;
 
 private:
-    // ---- token model ----
-    // A token occupies exactly one QChar: the private-use marker for a
-    // citation/reference pill, or the object replacement character for an
-    // inline math preview image. Its payload lives in the char format.
+    // ---- semantic inline objects ----
+    // Every inline object occupies exactly one character in the QTextDocument
+    // - the object replacement character - and paints through a dedicated
+    // renderer (math: InlineMathObjectRenderer; citation / cross reference:
+    // CitationObjectRenderer). Its identity (kind + payload) lives in the
+    // character format, so Backspace/Delete removes the whole object and text
+    // editing never touches its interior. kTokenChar is the private-use
+    // character the old pill encoding used; it can still arrive via a stale
+    // paste and is stripped.
     static constexpr QChar kTokenChar{0xE000};
     static constexpr QChar kObjectChar{0xFFFC};
-    static constexpr int kTokenKindProperty = QTextFormat::UserProperty + 1;
-    static constexpr int kTokenPayloadProperty = QTextFormat::UserProperty + 2;
+    static constexpr int kTokenKindProperty =
+        inline_object_format::kKindProperty;
+    static constexpr int kTokenPayloadProperty =
+        inline_object_format::kPayloadProperty;
     // Clipboard type that preserves math objects, marks and semantic tokens.
     static const char* InlineMimeType();
 
-    void InsertToken(QTextCursor& cursor, TokenKind kind,
-                     const QString& payload, const QString& label);
+    // Insert a citation/reference pill rendering `display` for `payload`.
+    void InsertPillObject(QTextCursor& cursor, TokenKind kind,
+                          const QString& payload, const QString& display);
     // Insert a rendered math object carrying its LaTeX body as payload.
     void InsertMathObject(QTextCursor& cursor, const QString& latex);
+    // Pill texts resolved against the current numbering / label maps.
+    QString CitationDisplayText(const QStringList& keys) const;
+    QString CrossReferenceDisplayText(const QString& target) const;
+    // Repaint the pills of this row without touching the dirty state or the
+    // caret (used when the numbering map or the label set changed).
+    void RefreshObjectDisplays();
     // Insert already-structured content at the cursor.
     void InsertContent(const InlineContent& content);
     // The token under the cursor, if any (caret must be *inside* it).
@@ -162,8 +204,13 @@ private:
     std::vector<ReferenceItem> reference_items_;
     bool dirty_ = false;
     bool loading_ = false;
+    bool refreshing_displays_ = false;
     bool math_editor_open_ = false;
+    int protected_inserts_ = 0;
     std::unique_ptr<InlineMathObjectRenderer> math_object_renderer_;
+    std::unique_ptr<CitationObjectRenderer> citation_object_renderer_;
+    std::shared_ptr<const CitationNumberResolver> citation_numbers_;
+    std::map<QString, QString> xref_labels_;
 };
 
 }  // namespace pf::gui

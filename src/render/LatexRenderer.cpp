@@ -189,12 +189,26 @@ void LatexRenderer::RenderBlock(const Block& block, std::string* out,
     auto end_line = static_cast<std::uint32_t>(
         1 + std::count(out->begin(), out->end(), '\n'));
     NodeId node_id = std::visit([](const auto& b) { return b.id; }, block);
+    // The block kind travels with the mapping (Build Diagnostics plan §10):
+    // Problems displays it as the location of a mapped compiler error.
+    const std::string block_label = std::visit(
+        [](const auto& b) -> std::string {
+            using T = std::decay_t<decltype(b)>;
+            if constexpr (std::is_same_v<T, Paragraph>) return "Text";
+            else if constexpr (std::is_same_v<T, Figure>) return "Figure";
+            else if constexpr (std::is_same_v<T, Table>) return "Table";
+            else if constexpr (std::is_same_v<T, EquationBlock>)
+                return "Equation";
+            else
+                return "Block";
+        },
+        block);
     if (end_line > start_line) {
         GeneratedSourceRange range;
         range.file = "main.tex";
         range.begin_line = start_line;
         range.end_line = end_line - 1;
-        smap->AddMapping(range, node_id);
+        smap->AddMapping(range, node_id, block_label);
     }
 }
 

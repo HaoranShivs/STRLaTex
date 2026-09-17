@@ -36,6 +36,8 @@ const char* ToString(PreviewState state) {
 
 ProjectController::ProjectController(QObject* parent) : QObject(parent) {
     qRegisterMetaType<pf::PreviewUpdate>("pf::PreviewUpdate");
+    qRegisterMetaType<pf::BuildResult>("pf::BuildResult");
+    qRegisterMetaType<pf::BuildEvent>("pf::BuildEvent");
 
     ProjectSession::Config config;
     // The bundled portable TeX Live is the production environment (plan §3):
@@ -66,14 +68,16 @@ ProjectController::ProjectController(QObject* parent) : QObject(parent) {
         emit buildStatusChanged(text);
     });
     // Runs on the application thread, and only for results that passed the
-    // ProjectSession preview gate (project id + revision + build id).
+    // ProjectSession preview gate (project id + revision + build id). The
+    // whole BuildResult travels: diagnostics keep their structure, so the
+    // Problems panel never re-parses text (plan §37).
     session_->SetBuildResultHandler([this](const BuildResult& result) {
-        QList<QString> problems;
-        for (const auto& d : result.diagnostics) {
-            problems.append(ToQ(d.Summary()));
-        }
-        emit diagnosticsUpdated(problems);
+        emit buildCompleted(result);
     });
+    // Live build-log events of the current build (the session already dropped
+    // any event whose build id went stale).
+    session_->SetBuildEventHandler(
+        [this](const BuildEvent& event) { emit buildEvent(event); });
     session_->SetPreviewUpdateHandler(
         [this](const PreviewUpdate& update) { emit previewUpdated(update); });
     session_->SetSaveResultHandler([this](const SaveResult& result, SaveKind) {
@@ -582,16 +586,6 @@ EditResult ProjectController::InsertTableAfter(const NodeId& anchor) {
     return ExecuteAndNotify(std::move(payload));
 }
 
-EditResult ProjectController::EditParagraph(const NodeId& paragraph,
-                                            const QString& text) {
-    EditParagraphPayload p;
-    p.paragraph = paragraph;
-    p.content = InlineFromEditorText(ToStd(text));
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied) EmitDocumentChanged();
-    return r;
-}
-
 EditResult ProjectController::EditParagraphRich(const NodeId& paragraph,
                                                 const InlineContent& content) {
     EditParagraphPayload p;
@@ -897,23 +891,10 @@ EditResult ProjectController::DeleteSection(size_t index) {
     return r;
 }
 
-EditResult ProjectController::InsertCitation(const NodeId& paragraph,
-                                             const QStringList& keys) {
-    InsertCitationPayload p;
-    p.paragraph = paragraph;
-    for (const auto& k : keys) p.keys.push_back(ToStd(k));
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied) EmitDocumentChanged();
-    return r;
-}
-
-EditResult ProjectController::InsertCrossReference(const NodeId& paragraph,
-                                                   const NodeId& target) {
-    InsertCrossReferencePayload payload;
-    payload.paragraph = paragraph;
-    payload.target = target;
-    return ExecuteAndNotify(std::move(payload));
-}
+// The old GUI-side InsertCitation / InsertCrossReference helpers were removed
+// (citation plan §5): citations now enter the document exclusively through
+// InlineEditor::InsertCitationObject -> ParagraphContentEdited ->
+// EditParagraphRich, so the picker commit and the document can never diverge.
 
 void ProjectController::Undo() {
     auto r = session_->Undo();
@@ -937,15 +918,30 @@ void ProjectController::RequestBuild(bool manual) {
 
 void ProjectController::CancelBuild() { session_->CancelBuild(); }
 
-bool ProjectController::ImportBibliographyText(const QString& bibtex) {
+BibliographyImportResult ProjectController::ImportBibliographyText(
+    const QString& bibtex) {
     auto r = session_->ImportBibliography(ToStd(bibtex));
-    if (r.status == BibliographyImportResult::Status::Ok) EmitDocumentChanged();
-    return r.status == BibliographyImportResult::Status::Ok;
+    if (r.status == BibliographyImportResult::Status::Ok) {
+        // The bibliography is a project resource: ProjectSession persists it
+        // atomically into <project>/references.bib on a successful import, so
+        // an import failure can never destroy the previous file (citation
+        // plan §7).
+        EmitDocumentChanged();
+    }
+    return r;
 }
 
 CitationSearchResult ProjectController::SearchCitations(
     const QString& query) const {
     return session_->SearchCitations(ToStd(query));
+}
+
+std::shared_ptr<const pf::CitationNumberResolver>
+ProjectController::CitationNumbers() const {
+    if (!session_) return nullptr;
+    return std::make_shared<const pf::CitationNumberResolver>(
+        pf::CitationNumberResolver::Build(session_->state().document(),
+                                          session_->bibliography()));
 }
 
 }  // namespace pf::gui

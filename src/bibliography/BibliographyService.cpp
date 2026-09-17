@@ -242,6 +242,22 @@ BibliographyImportResult BibliographyService::ImportText(const std::string& bibt
         result.detail = "no valid entries found";
         return result;
     }
+    // Duplicate keys *inside this file* are a data problem: keep the last
+    // definition (BibTeX's own behaviour) but report every repeated key so
+    // the importer can warn (citation plan §9). Re-imports that overwrite an
+    // existing key are an update, not a duplicate, and stay silent.
+    std::vector<std::string> seen;
+    for (const auto& e : entries) {
+        if (std::find(seen.begin(), seen.end(), e.key) == seen.end()) {
+            seen.push_back(e.key);
+            continue;
+        }
+        if (std::find(result.duplicate_keys.begin(),
+                      result.duplicate_keys.end(),
+                      e.key) == result.duplicate_keys.end()) {
+            result.duplicate_keys.push_back(e.key);
+        }
+    }
     for (auto& e : entries) {
         db_.AddEntry(std::move(e));
     }

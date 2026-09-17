@@ -8,6 +8,7 @@
 
 #ifndef _WIN32
 #include <csignal>
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -184,43 +185,131 @@ std::vector<CompilerMessage> ParseMessages(const std::string& log,
 // Run `command`, wait up to the deadline, and kill the whole process group on
 // cancel or timeout (plan §36): latexmk spawns pdflatex/bibtex children, so
 // killing only the parent would leave writers behind on the workspace.
+//
+// While waiting, the child's stdout and stderr are drained through two pipes
+// and forwarded to `on_output` chunk by chunk (Build Diagnostics plan §44),
+// so the Build Log shows live compiler progress and never loses a byte. The
+// full text of both streams is accumulated for the caller: stdout lands in
+// `combined` (the log the parser reads) and `stderr_text` separately.
 int RunCommand(const std::string& command,
                const std::chrono::seconds timeout,
                const std::atomic<bool>* cancel_requested,
-               bool* cancelled) {
+               bool* cancelled,
+               std::string* combined,
+               std::string* stderr_text,
+               const std::function<void(const CompileOutputChunk&)>&
+                   on_output) {
 #ifdef _WIN32
     (void)cancel_requested;
     (void)timeout;
+    (void)combined;
+    (void)stderr_text;
+    (void)on_output;
     return std::system(command.c_str());
 #else
+    int out_pipe[2] = {-1, -1};
+    int err_pipe[2] = {-1, -1};
+    if (pipe(out_pipe) != 0) return -1;
+    if (pipe(err_pipe) != 0) {
+        close(out_pipe[0]);
+        close(out_pipe[1]);
+        return -1;
+    }
+
     const pid_t child = fork();
     if (child == 0) {
         setpgid(0, 0);  // own process group, so a kill reaches the children
+        dup2(out_pipe[1], STDOUT_FILENO);
+        dup2(err_pipe[1], STDERR_FILENO);
+        close(out_pipe[0]);
+        close(out_pipe[1]);
+        close(err_pipe[0]);
+        close(err_pipe[1]);
         execl("/bin/sh", "sh", "-c", command.c_str(),
               static_cast<char*>(nullptr));
         _exit(127);
     }
-    if (child < 0) return -1;
+    close(out_pipe[1]);
+    close(err_pipe[1]);
+    if (child < 0) {
+        close(out_pipe[0]);
+        close(err_pipe[0]);
+        return -1;
+    }
 
-    const auto deadline =
-        std::chrono::steady_clock::now() + timeout;
+    // Non-blocking reads keep the wait loop fair to both streams.
+    fcntl(out_pipe[0], F_SETFL, fcntl(out_pipe[0], F_GETFL) | O_NONBLOCK);
+    fcntl(err_pipe[0], F_SETFL, fcntl(err_pipe[0], F_GETFL) | O_NONBLOCK);
+
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
     int status = 0;
-    while (waitpid(child, &status, WNOHANG) == 0) {
-        if ((cancel_requested && cancel_requested->load()) ||
-            std::chrono::steady_clock::now() >= deadline) {
+    bool reaped = false;
+    char buffer[8192];
+    auto drain = [&](bool stop_reading) {
+        for (int i = 0; i < 2; ++i) {
+            const bool is_err = i == 1;
+            const int fd = is_err ? err_pipe[0] : out_pipe[0];
+            if (fd < 0) continue;
+            ssize_t got = 0;
+            while ((got = ::read(fd, buffer, sizeof(buffer))) > 0) {
+                const std::string chunk(buffer, static_cast<size_t>(got));
+                if (is_err) {
+                    if (stderr_text) *stderr_text += chunk;
+                } else if (combined) {
+                    *combined += chunk;
+                }
+                if (on_output)
+                    on_output(CompileOutputChunk{is_err, chunk});
+            }
+            if (stop_reading && got == 0) {
+                close(fd);
+                if (is_err)
+                    err_pipe[0] = -1;
+                else
+                    out_pipe[0] = -1;
+            }
+        }
+    };
+
+    while (true) {
+        const pid_t gone = waitpid(child, &status, WNOHANG);
+        if (gone == child) reaped = true;
+        drain(/*stop_reading=*/reaped);
+        if (reaped && out_pipe[0] < 0 && err_pipe[0] < 0) break;
+        if (!reaped &&
+            ((cancel_requested && cancel_requested->load()) ||
+             std::chrono::steady_clock::now() >= deadline)) {
             *cancelled = true;
             // SIGTERM to the whole group first, then SIGKILL if it survives.
             kill(-child, SIGTERM);
-            for (int grace = 0; grace < 20; ++grace) {
-                if (waitpid(child, &status, WNOHANG) != 0) break;
+            for (int grace = 0; grace < 20 && !reaped; ++grace) {
+                if (waitpid(child, &status, WNOHANG) == child) reaped = true;
+                drain(/*stop_reading=*/false);
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
-            kill(-child, SIGKILL);
-            waitpid(child, &status, 0);
+            if (!reaped) {
+                kill(-child, SIGKILL);
+                waitpid(child, &status, 0);
+                reaped = true;
+            }
+            drain(/*stop_reading=*/true);
+            // Finish draining whatever is left, then close.
+            while (out_pipe[0] >= 0 || err_pipe[0] >= 0) {
+                const size_t before =
+                    (combined ? combined->size() : 0) +
+                    (stderr_text ? stderr_text->size() : 0);
+                drain(/*stop_reading=*/true);
+                const size_t after =
+                    (combined ? combined->size() : 0) +
+                    (stderr_text ? stderr_text->size() : 0);
+                if (before == after) break;
+            }
             break;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        if (!reaped) std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
+    if (out_pipe[0] >= 0) close(out_pipe[0]);
+    if (err_pipe[0] >= 0) close(err_pipe[0]);
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 #endif
 }
@@ -318,17 +407,21 @@ CompileResult TectonicCompiler::Compile(
         env_prefix + QuoteShell(executable_) +
         " -X compile --keep-logs --outdir " +
         QuoteShell(request.workspace.string()) + " " +
-        QuoteShell(request.package.entry_file) + " >" +
-        QuoteShell(log_path.string()) + " 2>&1";
+        QuoteShell(request.package.entry_file);
     bool cancelled = false;
+    std::string stdout_text;
+    std::string stderr_text;
     const int exit_code =
         RunCommand(command, std::chrono::minutes{2}, cancel_requested,
-                   &cancelled);
-
-    std::ifstream log_file(log_path, std::ios::binary);
-    std::ostringstream log;
-    log << log_file.rdbuf();
-    result.log = log.str();
+                   &cancelled, &stdout_text, &stderr_text, request.on_output);
+    result.exit_code = exit_code;
+    // Keep the on-disk log as an artifact; the in-memory text is what the
+    // parser reads (plan §44/§45).
+    {
+        std::ofstream log_file(log_path, std::ios::binary | std::ios::trunc);
+        log_file << stdout_text << stderr_text;
+    }
+    result.log = stdout_text + stderr_text;
     CompileFailureKind kind = CompileFailureKind::None;
     result.messages = ParseMessages(result.log, &kind);
     result.auxiliary_logs.push_back(log_path);
@@ -425,17 +518,21 @@ CompileResult TexLiveCompiler::Compile(
         "TEXMFCACHE=" + QuoteShell((config_.texlive_root / "texmf-cache").string()) + " " +
         QuoteShell(latexmk) + " " + engine_flag +
         " -interaction=nonstopmode -file-line-error -halt-on-error " +
-        QuoteShell(request.package.entry_file) + " >" +
-        QuoteShell(log_path.string()) + " 2>&1";
+        QuoteShell(request.package.entry_file);
     bool cancelled = false;
+    std::string stdout_text;
+    std::string stderr_text;
     const int exit_code =
         RunCommand(command, std::chrono::seconds{120}, cancel_requested,
-                   &cancelled);
-
-    std::ifstream log_file(log_path, std::ios::binary);
-    std::ostringstream log;
-    log << log_file.rdbuf();
-    result.log = log.str();
+                   &cancelled, &stdout_text, &stderr_text, request.on_output);
+    result.exit_code = exit_code;
+    // Keep the on-disk latexmk.log artifact (plan §15/§45): what the child
+    // wrote to its terminal streams, collected through the pipe.
+    {
+        std::ofstream log_file(log_path, std::ios::binary | std::ios::trunc);
+        log_file << stdout_text << stderr_text;
+    }
+    result.log = stdout_text + stderr_text;
     CompileFailureKind kind = CompileFailureKind::None;
     result.messages = ParseMessages(result.log, &kind);
     result.auxiliary_logs.push_back(log_path);
@@ -486,12 +583,19 @@ CompileResult MockCompiler::Compile(
         pdf << "%PDF-1.4\n% PaperForge mock compiler\n";
         result.status = CompileStatus::Success;
         result.log = "mock compilation succeeded";
+        result.exit_code = 0;
     } else {
         result.status = CompileStatus::Failure;
         result.failure_kind = CompileFailureKind::LatexError;
         result.log = "main.tex:1: simulated error";
+        result.exit_code = 1;
         result.messages.push_back(
             {"main.tex", 1, true, "simulated error"});
+    }
+    // The mock behaves like the real compilers for the output contract: if a
+    // sink was provided, the log reaches it (plan §44).
+    if (request.on_output && !result.log.empty()) {
+        request.on_output(CompileOutputChunk{false, result.log + "\n"});
     }
     return result;
 }

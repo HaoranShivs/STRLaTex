@@ -12,6 +12,7 @@
 #include <thread>
 #include <vector>
 
+#include "build/BuildEvent.h"
 #include "build/Compiler.h"
 #include "core/Diagnostic.h"
 #include "document/Document.h"
@@ -63,6 +64,12 @@ struct BuildResult {
   std::filesystem::path pdf_path;
   std::string log;
   std::vector<Diagnostic> diagnostics;
+  // Session bookkeeping (Build Diagnostics plan §3): the wall-clock span of
+  // the attempt and the compiler's exit code, so the Build Log footer can
+  // show "Duration: 1.662 s" and the success rule is auditable (§31).
+  std::int64_t started_ms = 0;
+  std::int64_t finished_ms = 0;
+  int exit_code = -1;
 };
 
 class BuildCoordinator {
@@ -75,6 +82,12 @@ public:
     std::function<std::optional<std::string>()> debug_dump_dir;
     std::function<void(const BuildResult &)> on_build_finished;
     std::function<void(BuildPhase, BuildPhase)> on_phase_changed;
+    // Structured lifecycle events (Build Diagnostics plan §4). Emitted on the
+    // worker thread for every step of a build, each carrying the build id it
+    // belongs to. The host republishes them to the application thread; the
+    // Build Log view renders them. The compiler also streams stdout/stderr
+    // here so the log grows live during a compile (§44).
+    std::function<void(const BuildEvent &)> on_build_event;
   };
 
   BuildCoordinator(Host host, ICompiler *compiler);
@@ -98,6 +111,10 @@ public:
 private:
   void WorkerLoop();
   void SetPhase(BuildPhase phase);
+  // Publish one lifecycle event tagged with the build id (plan §4). No-op
+  // when the host has no sink, so tests that ignore events keep working.
+  void EmitEvent(const BuildId &build_id, BuildEventType type,
+                 std::string message) const;
   BuildResult BuildOne(const BuildSnapshot &snapshot);
 
   Host host_;

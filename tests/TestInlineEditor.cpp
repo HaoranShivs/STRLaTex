@@ -191,8 +191,8 @@ PF_TEST(InlineEditorKeepsTokensAcrossAReload) {
     EnsureApp();
     InlineEditor editor;
     TypeRun(&editor, QStringLiteral("see "), 0);
-    editor.InsertCitationToken({QStringLiteral("smith2024")});
-    editor.InsertCrossReferenceToken(QStringLiteral("n7"));
+    editor.InsertCitationObject({QStringLiteral("smith2024")});
+    editor.InsertCrossReferenceObject(QStringLiteral("n7"));
     TypeRun(&editor, QStringLiteral(" end"), 0);
 
     const InlineContent committed = editor.Content();
@@ -217,6 +217,16 @@ PF_TEST(InlineEditorKeepsTokensAcrossAReload) {
     std::cout << "\n";
     PF_CHECK(citations == 1);
     PF_CHECK(references == 1);
+
+    // Citation plan §1/§2: both are real renderable objects - exactly one
+    // object replacement character each, no stray U+E000 pseudo text.
+    const QString as_text = editor.toPlainText();
+    PF_CHECK(!as_text.contains(QChar(0xE000)));
+    int object_chars = 0;
+    for (const QChar ch : as_text) {
+        if (ch == QChar(0xFFFC)) ++object_chars;
+    }
+    PF_CHECK(object_chars == 2);
 
     // A reload must keep both tokens, with the same payload.
     InlineEditor reloaded;
