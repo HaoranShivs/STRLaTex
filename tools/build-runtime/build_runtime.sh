@@ -24,10 +24,29 @@ PACKAGES="${HERE}/packages.txt"
 PROFILE="${HERE}/texlive.profile"
 YEAR="${TEXLIVE_YEAR:-2026}"
 
+# The TeX Live installer (~5MB). It is *not* committed, so fetch it when it is
+# missing instead of failing with a bare tar error. Override with
+# TEXLIVE_INSTALLER_TARBALL to reuse a local/offline copy, or
+# TEXLIVE_INSTALLER_URL to pick a faster mirror.
+INSTALLER_TARBALL="${TEXLIVE_INSTALLER_TARBALL:-/tmp/install-tl-unx.tar.gz}"
+INSTALLER_URL="${TEXLIVE_INSTALLER_URL:-https://mirror.ctan.org/systems/texlive/tlnet/install-tl-unx.tar.gz}"
+
+if [ ! -f "${INSTALLER_TARBALL}" ]; then
+  echo "==> downloading installer: ${INSTALLER_URL}"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fL --retry 3 --connect-timeout 20 -o "${INSTALLER_TARBALL}" "${INSTALLER_URL}"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -O "${INSTALLER_TARBALL}" "${INSTALLER_URL}"
+  else
+    echo "need curl or wget to download ${INSTALLER_URL}" >&2
+    exit 1
+  fi
+fi
+
 echo "==> TeX Live ${YEAR} user-mode install into ${TEXLIVE_ROOT}"
 mkdir -p "${TEXLIVE_ROOT}"
 
-tar -xzf /tmp/install-tl-unx.tar.gz -C "${WORK}"
+tar -xzf "${INSTALLER_TARBALL}" -C "${WORK}"
 INSTALLER_DIR="$(find "${WORK}" -maxdepth 1 -type d -name 'install-tl-*' | head -1)"
 echo "==> installer: ${INSTALLER_DIR}"
 
