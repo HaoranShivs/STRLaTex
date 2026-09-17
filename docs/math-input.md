@@ -60,18 +60,24 @@ back to the node id otherwise. Persistence writes only `latex` + `numbered` +
 
 ## 4. Preview: `MathPreviewRenderer`
 
-`src/app/MathPreviewRenderer.{h,cpp}` renders a math body to a `QPixmap` with
-`QPainter` – fractions, scripts, radicals, big operators, `\left…\right`,
-accents, `aligned`/`cases`/`matrix` and font commands. Unsupported syntax
-degrades to literal source text with `exact == false`; it never throws, never
-hangs and never edits the user's source (design §7). The renderer is shared by
-the inline object and the equation row, so both show the same picture
-(design §7: `MathExpression → MathRenderer → Preview`).
+`src/app/MathPreviewRenderer.{h,cpp}` compiles a validated math body with the
+bundled TeX Live `pdflatex`, emits a one-box tightly cropped PDF, reads the TeX
+box ascent/descent from the compiler log, and rasterises the result at the
+requested device-pixel ratio. Results are cached by source, font/style,
+template and backend. If the TeX runtime or rasteriser is unavailable, the
+bounded `QPainter` renderer remains as a fast fallback with
+`exact == false`; the source is never rewritten.
+
+`InlineMathObjectRenderer` implements `QTextObjectInterface`. It uses the TeX
+baseline rather than the image bottom, scales ascent and descent into the
+current `QFontMetricsF` line box, and paints the descent below the text
+baseline. Inline math therefore does not increase the Text row height.
 
 ## 5. Inline math in a Text block
 
-`InlineEditor` stores an inline math object as a **preview image** carrying the
-LaTeX body in its character format (kind + payload). Consequences:
+`InlineEditor` stores an inline math object as a custom **inline preview
+object** carrying the LaTeX body and render metrics in its character format.
+Consequences:
 
 * the paragraph shows the rendered formula, not the source;
 * clicking selects the object whole, Backspace/Delete removes it whole;

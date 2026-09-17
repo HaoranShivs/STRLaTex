@@ -1,24 +1,27 @@
-// MathPreviewRenderer: a self-contained, pure-Qt LaTeX math preview engine.
-//
-// There is deliberately no TeX here: the caller types a math *body* (no
-// `$`/`\(` delimiters) and gets a QPixmap back. The implementation is a small
-// recursive-descent parser that turns the source into a box tree (width /
-// ascent / descent + a paint closure) and then paints that tree with
-// QPainter. Anything the parser does not understand degrades to literal text
-// and flips MathRenderResult::exact to false; nothing here throws, and every
-// parse loop is guaranteed to advance, so no input can hang or crash.
+// MathPreviewRenderer: real-TeX GUI math with a bounded pure-Qt fallback.
 #include "MathPreviewRenderer.h"
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QFont>
 #include <QFontMetricsF>
 #include <QGuiApplication>
 #include <QHash>
 #include <QImage>
+#include <QImageReader>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPen>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QRectF>
+#include <QRegularExpression>
 #include <QSet>
+#include <QStandardPaths>
+#include <QTemporaryDir>
 #include <QVector>
 
 #include <algorithm>
@@ -27,6 +30,8 @@
 #include <memory>
 #include <tuple>
 #include <vector>
+
+#include "math/MathValidator.h"
 
 namespace pf::gui {
 namespace {
@@ -39,6 +44,11 @@ constexpr int kMaxDepth = 48;        // recursion guard for groups/environments
 constexpr qreal kScriptScale = 0.7;  // ^ / _ shrink factor
 constexpr qreal kFracScale = 0.85;   // numerator / denominator shrink factor
 constexpr qreal kMinScale = 0.45;    // never shrink below this (keeps glyphs legible)
+constexpr int kTexTimeoutMs = 12000;
+constexpr int kRasterTimeoutMs = 8000;
+constexpr int kMaxCacheEntries = 256;
+constexpr qreal kTexBasePointSize = 10.0;
+constexpr qreal kPagePaddingPt = 0.75;
 
 void NoopDraw(QPainter&, qreal, qreal) {}
 
@@ -1467,17 +1477,8 @@ MathRenderResult RenderLiteralFallback(const QString& latex, const MathRenderSty
     return FinishImage(box, style, false, note, style.device_pixel_ratio);
 }
 
-}  // namespace
-
-MathRenderResult RenderMathPreview(const QString& latex, const MathRenderStyle& style) {
-    MathRenderResult empty;
-    if (latex.trimmed().isEmpty()) return empty;
-    if (!QGuiApplication::instance()) {
-        MathRenderResult res;
-        res.exact = false;
-        res.note = QStringLiteral("no QGuiApplication: cannot render");
-        return res;
-    }
+MathRenderResult RenderApproximate(const QString& latex,
+                                   const MathRenderStyle& style) {
     try {
         ParseState st;
         st.style = &style;
@@ -1495,11 +1496,311 @@ MathRenderResult RenderMathPreview(const QString& latex, const MathRenderStyle& 
             row.push_back(p.Parse(false, false));
             lines.push_back(std::move(row));
         }
-        const BoxPtr content = MakeGrid(lines, ColAlign::Left, false, 0.0, fpx * 0.45);
-        return FinishImage(content, style, st.exact, st.note, style.device_pixel_ratio);
+        const BoxPtr content =
+            MakeGrid(lines, ColAlign::Left, false, 0.0, fpx * 0.45);
+        return FinishImage(content, style, st.exact, st.note,
+                           style.device_pixel_ratio);
     } catch (...) {
-        return RenderLiteralFallback(latex, style, QStringLiteral("internal error: literal fallback"));
+        return RenderLiteralFallback(
+            latex, style, QStringLiteral("internal error: literal fallback"));
     }
+}
+
+struct TexExecutable {
+    QString path;
+    QString texlive_root;
+};
+
+TexExecutable FindTexExecutable() {
+    const QString configured = qEnvironmentVariable("PF_INLINE_MATH_TEX");
+    if (!configured.isEmpty() && QFileInfo::exists(configured)) {
+        return {QFileInfo(configured).absoluteFilePath(), {}};
+    }
+
+#ifdef PF_INSTALL_ROOT
+    const QString texlive_root =
+        QDir(QStringLiteral(PF_INSTALL_ROOT)).filePath("runtime/texlive");
+    const QDir bin_root(QDir(texlive_root).filePath("bin"));
+    const QFileInfoList platforms = bin_root.entryInfoList(
+        QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    for (const QFileInfo& platform : platforms) {
+        const QString executable =
+            QDir(platform.absoluteFilePath()).filePath("pdflatex");
+        if (QFileInfo::exists(executable)) {
+            return {executable, texlive_root};
+        }
+    }
+#endif
+
+    const QString system = QStandardPaths::findExecutable("pdflatex");
+    return {system, {}};
+}
+
+QProcessEnvironment TexEnvironment(const TexExecutable& executable) {
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    if (executable.texlive_root.isEmpty()) return environment;
+
+    const QDir root(executable.texlive_root);
+    const QString bin = QFileInfo(executable.path).absolutePath();
+    environment.insert("PATH", bin + QStringLiteral(":/usr/bin:/bin"));
+    environment.insert("HOME", executable.texlive_root);
+    environment.insert("TEXMFHOME", root.filePath("texmf-home"));
+    environment.insert("TEXMFVAR", root.filePath("texmf-var"));
+    environment.insert("TEXMFCACHE", root.filePath("texmf-cache"));
+    return environment;
+}
+
+bool RunProcess(const QString& program, const QStringList& arguments,
+                const QString& working_directory,
+                const QProcessEnvironment& environment, int timeout_ms,
+                QString* output) {
+    QProcess process;
+    process.setProgram(program);
+    process.setArguments(arguments);
+    process.setWorkingDirectory(working_directory);
+    process.setProcessEnvironment(environment);
+    process.setProcessChannelMode(QProcess::MergedChannels);
+    process.start();
+    if (!process.waitForStarted(2000) || !process.waitForFinished(timeout_ms)) {
+        process.kill();
+        process.waitForFinished(1000);
+        if (output) *output = QStringLiteral("renderer process timed out");
+        return false;
+    }
+    if (output) *output = QString::fromUtf8(process.readAll());
+    return process.exitStatus() == QProcess::NormalExit &&
+           process.exitCode() == 0;
+}
+
+QString TexDocument(const QString& latex) {
+    // A custom one-box page avoids depending on the standalone/preview
+    // packages. PF-* values in the log are TeX box metrics, not bitmap
+    // estimates, so the caller receives a real mathematical baseline.
+    return QStringLiteral(
+               "\\documentclass{article}\n"
+               "\\usepackage{amsmath,amssymb}\n"
+               "\\newsavebox{\\PFMathBox}\n"
+               "\\newdimen\\PFPad\\PFPad=.75pt\n"
+               "\\pagestyle{empty}\n"
+               "\\begin{document}\n"
+               "\\sbox{\\PFMathBox}{$\\textstyle ") +
+           latex +
+           QStringLiteral(
+               "$}\n"
+               "\\typeout{PF-WIDTH=\\the\\wd\\PFMathBox}\n"
+               "\\typeout{PF-ASCENT=\\the\\ht\\PFMathBox}\n"
+               "\\typeout{PF-DESCENT=\\the\\dp\\PFMathBox}\n"
+               "\\paperwidth=\\dimexpr\\wd\\PFMathBox+2\\PFPad\\relax\n"
+               "\\paperheight=\\dimexpr\\ht\\PFMathBox+\\dp\\PFMathBox+2\\PFPad\\relax\n"
+               "\\ifdefined\\pdfpagewidth\\pdfpagewidth=\\paperwidth\\pdfpageheight=\\paperheight\\fi\n"
+               "\\ifdefined\\XeTeXversion\\special{papersize=\\the\\paperwidth,\\the\\paperheight}\\fi\n"
+               "\\hoffset=-1in\\voffset=-1in\\topmargin=0pt\n"
+               "\\headheight=0pt\\headsep=0pt\\oddsidemargin=0pt\n"
+               "\\textwidth=\\paperwidth\\textheight=\\paperheight\\parindent=0pt\n"
+               "\\noindent\\hspace*{\\PFPad}\\raisebox{\\dimexpr\\dp\\PFMathBox+\\PFPad\\relax}[0pt][0pt]{\\usebox{\\PFMathBox}}\n"
+               "\\end{document}\n");
+}
+
+qreal ParsePointMetric(const QString& log, const QString& name) {
+    const QRegularExpression expression(
+        QStringLiteral("PF-%1=([0-9]+(?:\\.[0-9]+)?)pt").arg(name));
+    const QRegularExpressionMatch match = expression.match(log);
+    if (!match.hasMatch()) return -1.0;
+    bool ok = false;
+    const qreal value = match.captured(1).toDouble(&ok);
+    return ok ? value : -1.0;
+}
+
+MathRenderResult RenderWithTex(const QString& latex,
+                               const MathRenderStyle& style,
+                               QString* failure) {
+    MathRenderResult result;
+    const TexExecutable tex = FindTexExecutable();
+    const QString rasterizer = QStandardPaths::findExecutable("pdftocairo");
+    if (tex.path.isEmpty() || rasterizer.isEmpty()) {
+        if (failure) *failure = QStringLiteral("real TeX renderer unavailable");
+        return result;
+    }
+
+    QTemporaryDir directory(QDir(QDir::tempPath()).filePath(
+        QStringLiteral("strlatex-inline-math-XXXXXX")));
+    if (!directory.isValid()) {
+        if (failure) *failure = QStringLiteral("cannot create render workspace");
+        return result;
+    }
+
+    QFile source(directory.filePath("main.tex"));
+    if (!source.open(QIODevice::WriteOnly | QIODevice::Truncate) ||
+        source.write(TexDocument(latex).toUtf8()) < 0) {
+        if (failure) *failure = QStringLiteral("cannot write render source");
+        return result;
+    }
+    source.close();
+
+    QString compiler_output;
+    const QStringList compiler_arguments = {
+        QStringLiteral("-interaction=nonstopmode"),
+        QStringLiteral("-halt-on-error"), QStringLiteral("-file-line-error"),
+        QStringLiteral("-no-shell-escape"), QStringLiteral("main.tex")};
+    const QProcessEnvironment environment = TexEnvironment(tex);
+    if (!RunProcess(tex.path, compiler_arguments, directory.path(), environment,
+                    kTexTimeoutMs, &compiler_output)) {
+        if (failure) *failure = QStringLiteral("TeX compile failed");
+        return result;
+    }
+
+    QFile log_file(directory.filePath("main.log"));
+    QString log = compiler_output;
+    if (log_file.open(QIODevice::ReadOnly)) {
+        log += QString::fromUtf8(log_file.readAll());
+    }
+    const qreal ascent_pt = ParsePointMetric(log, QStringLiteral("ASCENT"));
+    const qreal descent_pt = ParsePointMetric(log, QStringLiteral("DESCENT"));
+    const qreal width_pt = ParsePointMetric(log, QStringLiteral("WIDTH"));
+    if (ascent_pt < 0 || descent_pt < 0 || width_pt <= 0) {
+        if (failure) *failure = QStringLiteral("TeX metrics unavailable");
+        return result;
+    }
+
+    qreal dpr = style.device_pixel_ratio;
+    if (!std::isfinite(dpr) || dpr <= 0) dpr = 1.0;
+    dpr = std::clamp(dpr, 1.0, 4.0);
+    const qreal scale = std::max(4, style.font_px) / kTexBasePointSize;
+    const int dpi = std::clamp(qRound(72.0 * scale * dpr), 96, 1200);
+    const int target_width = qMax(
+        1, qCeil((width_pt + 2.0 * kPagePaddingPt) * scale * dpr));
+    const int target_height = qMax(
+        1, qCeil((ascent_pt + descent_pt + 2.0 * kPagePaddingPt) *
+                 scale * dpr));
+    QString raster_output;
+    const QString prefix = directory.filePath("formula");
+    QImage image;
+    bool used_svg = false;
+
+    // Keep the TeX PDF vector geometry through the last possible step. Qt's
+    // SVG image plugin is optional, so PNG remains the deterministic fallback.
+    const QString svg_path = prefix + QStringLiteral(".svg");
+    if (RunProcess(rasterizer,
+                   {QStringLiteral("-svg"), directory.filePath("main.pdf"),
+                    svg_path},
+                   directory.path(), environment, kRasterTimeoutMs,
+                   &raster_output)) {
+        QImageReader svg_reader(svg_path);
+        svg_reader.setScaledSize(QSize(target_width, target_height));
+        image = svg_reader.read();
+        used_svg = !image.isNull();
+    }
+
+    if (image.isNull()) {
+        if (!RunProcess(rasterizer,
+                        {QStringLiteral("-png"),
+                         QStringLiteral("-singlefile"),
+                         QStringLiteral("-transp"), QStringLiteral("-r"),
+                         QString::number(dpi), directory.filePath("main.pdf"),
+                         prefix},
+                        directory.path(), environment, kRasterTimeoutMs,
+                        &raster_output)) {
+            if (failure) *failure = QStringLiteral("PDF rasterization failed");
+            return result;
+        }
+        image.load(prefix + QStringLiteral(".png"));
+    }
+    if (image.isNull()) {
+        if (failure) *failure = QStringLiteral("rendered image unavailable");
+        return result;
+    }
+    image = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < image.height(); ++y) {
+        QRgb* scan = reinterpret_cast<QRgb*>(image.scanLine(y));
+        for (int x = 0; x < image.width(); ++x) {
+            const int alpha = qAlpha(scan[x]);
+            scan[x] = qPremultiply(qRgba(style.color.red(), style.color.green(),
+                                         style.color.blue(), alpha));
+        }
+    }
+
+    result.pixmap = QPixmap::fromImage(image);
+    result.pixmap.setDevicePixelRatio(dpr);
+    result.width = qMax(1, qRound(image.width() / dpr));
+    result.height = qMax(1, qRound(image.height() / dpr));
+    const qreal total_pt = ascent_pt + descent_pt + 2.0 * kPagePaddingPt;
+    const qreal baseline_ratio =
+        (ascent_pt + kPagePaddingPt) / qMax<qreal>(0.01, total_pt);
+    result.baseline = std::clamp(qRound(result.height * baseline_ratio), 1,
+                                 qMax(1, result.height - 1));
+    result.exact = true;
+    result.used_tex = true;
+    result.note = used_svg ? QStringLiteral("real TeX (SVG)")
+                           : QStringLiteral("real TeX (raster fallback)");
+    return result;
+}
+
+QString CacheKey(const QString& latex, const MathRenderStyle& style) {
+    return latex + QChar(0x1f) + QString::number(style.font_px) + QChar(0x1f) +
+           style.color.name(QColor::HexArgb) + QChar(0x1f) +
+           QString::number(style.device_pixel_ratio, 'f', 2) + QChar(0x1f) +
+           style.font_family + QChar(0x1f) + style.template_id + QChar(0x1f) +
+           QString::number(static_cast<int>(style.backend));
+}
+
+QHash<QString, MathRenderResult>& RenderCache() {
+    static QHash<QString, MathRenderResult> cache;
+    return cache;
+}
+
+QMutex& RenderCacheMutex() {
+    static QMutex mutex;
+    return mutex;
+}
+
+}  // namespace
+
+MathRenderResult RenderMathPreview(const QString& latex, const MathRenderStyle& style) {
+    MathRenderResult empty;
+    if (latex.trimmed().isEmpty()) return empty;
+    if (!QGuiApplication::instance()) {
+        MathRenderResult res;
+        res.exact = false;
+        res.note = QStringLiteral("no QGuiApplication: cannot render");
+        return res;
+    }
+    const QString cache_key = CacheKey(latex, style);
+    {
+        QMutexLocker lock(&RenderCacheMutex());
+        const auto found = RenderCache().constFind(cache_key);
+        if (found != RenderCache().constEnd()) return found.value();
+    }
+
+    MathRenderResult rendered;
+    if (style.backend == MathRenderBackend::RealTexPreferred) {
+        QString failure;
+        const pf::MathValidation validation =
+            pf::ValidateMath(latex.toStdString(), pf::MathFlavor::Inline);
+        if (validation.valid()) {
+            rendered = RenderWithTex(latex, style, &failure);
+        } else {
+            failure = validation.pending()
+                          ? QStringLiteral("math source is incomplete")
+                          : QStringLiteral("math source is invalid");
+        }
+        if (rendered.pixmap.isNull()) {
+            rendered = RenderApproximate(latex, style);
+            rendered.exact = false;
+            rendered.used_tex = false;
+            rendered.note = failure.isEmpty()
+                                ? QStringLiteral("approximate fallback")
+                                : failure + QStringLiteral("; approximate fallback");
+        }
+    } else {
+        rendered = RenderApproximate(latex, style);
+    }
+
+    {
+        QMutexLocker lock(&RenderCacheMutex());
+        if (RenderCache().size() >= kMaxCacheEntries) RenderCache().clear();
+        RenderCache().insert(cache_key, rendered);
+    }
+    return rendered;
 }
 
 }  // namespace pf::gui

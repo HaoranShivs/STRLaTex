@@ -133,6 +133,30 @@ PF_TEST(InlineMathObjectRoundTripsThroughTheEditor) {
     PF_CHECK(again == content);
 }
 
+PF_TEST(InlineMathDoesNotIncreaseTheTextLineHeight) {
+    EnsureQApplication();
+    InlineEditor plain;
+    plain.resize(640, 80);
+    plain.SetContent(InlineFromText("before after"));
+    plain.ResizeToContent();
+    const int plain_height = plain.height();
+
+    InlineContent with_math = InlineFromText("before ");
+    InlineMath fraction;
+    fraction.expression.latex = "\\frac{a}{b}";
+    with_math.push_back(fraction);
+    with_math.push_back(TextRun{" after", 0});
+
+    InlineEditor formula;
+    formula.resize(640, 80);
+    formula.SetContent(with_math);
+    formula.ResizeToContent();
+
+    std::cout << "  plain height=" << plain_height
+              << " formula height=" << formula.height() << "\n";
+    PF_CHECK(formula.height() <= plain_height + 1);
+}
+
 PF_TEST(InlineMathObjectIsNotUserEditableText) {
     EnsureQApplication();
     InlineEditor editor;

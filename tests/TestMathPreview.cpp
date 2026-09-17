@@ -1,8 +1,8 @@
 // MathPreviewRenderer tests: widget-level (they need the QApplication that
 // InlineEditorEditorTest.cpp already creates) but headless-safe.
 //
-// The renderer is a pure-Qt fallback used for per-keystroke preview, so the
-// contract these tests defend is mostly "always returns something usable":
+// These stress tests select the bounded pure-Qt fallback explicitly, so the
+// contract they defend is mostly "always returns something usable":
 // a non-null pixmap for non-empty input, a baseline that inline layout can
 // align to, and no crash/hang on malformed or exotic source.
 #include "TestMain.hpp"
@@ -21,6 +21,7 @@ MathRenderStyle Style() {
     style.font_px = 18;
     style.color = QColor(20, 22, 26);
     style.device_pixel_ratio = 2.0;
+    style.backend = MathRenderBackend::ApproximateOnly;
     return style;
 }
 
