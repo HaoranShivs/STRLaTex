@@ -1784,6 +1784,12 @@ void BlockEditor::SetAssetPathResolver(
 }
 
 bool BlockEditor::HasUncommittedFocus() const {
+    // A modal formula editor temporarily owns focus, but its row still
+    // contains the pending edit and must survive document notifications.
+    for (const auto& block : blocks_) {
+        if (block.inline_editor && block.inline_editor->IsMathEditorOpen())
+            return true;
+    }
     // Text rows (InlineEditor) carry uncommitted input just like the plain
     // rows; a rebuild while either is dirty would destroy what is being
     // typed - and, for a rich row, the format state too.

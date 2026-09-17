@@ -11,6 +11,7 @@
 #include <QTextFragment>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QTimer>
 
 #include "app/InlineMathObjectRenderer.h"
 #include "app/MathEditorDialog.h"
@@ -258,7 +259,8 @@ void InlineEditor::InsertToken(QTextCursor& cursor, TokenKind kind,
 }
 
 void InlineEditor::InsertMathObject(QTextCursor& cursor, const QString& latex) {
-    const QFont text_font = font();
+    ensurePolished();
+    const QFont text_font = document()->defaultFont();
     const QFontMetricsF text_metrics(text_font);
 
     MathRenderStyle style;
@@ -286,7 +288,10 @@ void InlineEditor::InsertMathObject(QTextCursor& cursor, const QString& latex) {
 
     QTextCharFormat format;
     format.setObjectType(inline_math_format::kObjectType);
-    format.setVerticalAlignment(QTextCharFormat::AlignBaseline);
+    format.setFont(text_font);
+    // AlignNormal gives the object zero layout descent; intrinsicSize()
+    // reports only the TeX ascent. AlignBaseline subtracts a font descent.
+    format.setVerticalAlignment(QTextCharFormat::AlignNormal);
     format.setProperty(inline_math_format::kPixmapProperty,
                        QVariant::fromValue(rendered.pixmap));
     format.setProperty(inline_math_format::kWidthProperty,
@@ -298,6 +303,8 @@ void InlineEditor::InsertMathObject(QTextCursor& cursor, const QString& latex) {
     format.setProperty(kTokenKindProperty, static_cast<int>(TokenKind::Math));
     format.setProperty(kTokenPayloadProperty, latex);
     cursor.insertText(QString(kObjectChar), format);
+    // New typing must never inherit the semantic object properties.
+    cursor.setCharFormat(QTextCharFormat());
 }
 
 std::optional<InlineEditor::TokenHit> InlineEditor::TokenAt(int position) const {
@@ -385,29 +392,47 @@ void InlineEditor::InsertInlineMath(const QString& latex) {
 }
 
 void InlineEditor::BeginInlineMath() {
-    MathEditorDialog dialog(QString(), this);
-    if (dialog.exec() != QDialog::Accepted) return;
-    const QString latex = dialog.latex();
-    if (latex.trimmed().isEmpty()) return;
-    InsertInlineMath(latex);
+    OpenMathEditor(std::nullopt);
 }
 
 void InlineEditor::EditMathAt(int position) {
     const auto hit = TokenAt(position);
     if (!hit || hit->kind != TokenKind::Math) return;
-    MathEditorDialog dialog(hit->payload, this);
-    if (dialog.exec() != QDialog::Accepted) return;
-    const QString latex = dialog.latex();
-    if (latex.trimmed().isEmpty()) return;
+    OpenMathEditor(hit);
+}
 
-    QTextCursor cursor(document());
-    cursor.setPosition(hit->position);
-    cursor.setPosition(hit->position + 1, QTextCursor::KeepAnchor);
-    cursor.removeSelectedText();
-    InsertMathObject(cursor, latex);
-    setTextCursor(cursor);
-    dirty_ = true;
-    ResizeToContent();
+void InlineEditor::OpenMathEditor(const std::optional<TokenHit>& hit) {
+    if (math_editor_open_) return;
+    math_editor_open_ = true;
+    QTextCursor target = textCursor();
+    if (hit) {
+        target.setPosition(hit->position);
+        target.setPosition(hit->position + 1, QTextCursor::KeepAnchor);
+    }
+    // Heap ownership plus open() avoids a nested event loop and prevents a
+    // row rebuild from deleting a stack-allocated child dialog.
+    auto* dialog = new MathEditorDialog(hit ? hit->payload : QString(), this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dialog, &QDialog::finished, this,
+            [this, dialog, target](int result) mutable {
+        const QString latex = dialog->latex();
+        if (result == QDialog::Accepted && !latex.trimmed().isEmpty()) {
+            target.beginEditBlock();
+            InsertMathObject(target, latex);
+            target.endEditBlock();
+            setTextCursor(target);
+            dirty_ = true;
+            ResizeToContent();
+        }
+        math_editor_open_ = false;
+        // Finish the dialog's signal delivery before committing can rebuild
+        // its parent row. Context binding cancels this if the row is removed.
+        QTimer::singleShot(0, this, [this]() {
+            setFocus(Qt::OtherFocusReason);
+            emit Committed();
+        });
+    });
+    dialog->open();
 }
 
 // ---------------- Events ----------------
@@ -596,7 +621,7 @@ void InlineEditor::ResizeToWidth(int width) {
 
 void InlineEditor::focusOutEvent(QFocusEvent* event) {
     QTextEdit::focusOutEvent(event);
-    emit Committed();
+    if (!math_editor_open_) emit Committed();
 }
 
 }  // namespace pf::gui
