@@ -52,6 +52,7 @@ public:
     QString PlainText() const;
 
     bool IsDirty() const { return dirty_; }
+    bool IsMathEditorOpen() const { return math_editor_open_; }
     void MarkClean() { dirty_ = false; }
     // Load without touching the dirty flag (used by a programmatic restyle).
     void SetContentClean(const InlineContent& content);
@@ -150,6 +151,7 @@ private:
         int position;  // position of the token character
     };
     std::optional<TokenHit> TokenAt(int position) const;
+    void OpenMathEditor(const std::optional<TokenHit>& hit);
     // Remove the whole token starting at `position`.
     void RemoveTokenAt(int position);
     // The editor text may not contain stray token characters that lost their
@@ -160,6 +162,7 @@ private:
     std::vector<ReferenceItem> reference_items_;
     bool dirty_ = false;
     bool loading_ = false;
+    bool math_editor_open_ = false;
     std::unique_ptr<InlineMathObjectRenderer> math_object_renderer_;
 };
 

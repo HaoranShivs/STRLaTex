@@ -15,6 +15,11 @@
 #include <QLineEdit>
 #include <QMimeData>
 #include <QPlainTextEdit>
+#include <QPointer>
+#include <QTextBlock>
+#include <QTextLayout>
+#include <QFontMetricsF>
+#include "app/InlineMathObjectRenderer.h"
 #include <QTimer>
 #include <QThread>
 #include <QToolButton>
@@ -236,8 +241,8 @@ PF_TEST(InlineMathObjectIsEditedThroughTheSourceDialog) {
     InlineEditor editor;
     editor.InsertInlineMath(QStringLiteral("\\alpha"));
 
-    // EditMathAt opens the source editor; drive it from inside its own event
-    // loop the way a user would (type a new body, then accept).
+    // EditMathAt opens the source editor asynchronously; drive the normal
+    // application event loop as a user would (type a new body, then accept).
     auto* driver = new QTimer(&editor);
     driver->setInterval(40);
     QObject::connect(driver, &QTimer::timeout, &editor, [driver]() {
@@ -251,6 +256,7 @@ PF_TEST(InlineMathObjectIsEditedThroughTheSourceDialog) {
     });
     driver->start();
     editor.EditMathAt(0);
+    Spin(200);
 
     const InlineContent content = editor.Content();
     PF_CHECK(content.size() == 1);
@@ -371,4 +377,104 @@ PF_TEST(EquationRowExposesPreviewNumberedAndLabel) {
         PF_CHECK(found->numbered);
         PF_CHECK(found->label == "eq:energy");
     }
+}
+
+PF_TEST(InlineMathTypingDoesNotInheritObjectPayload) {
+    InlineEditor editor;
+    editor.InsertInlineMath(QStringLiteral("x"));
+    QKeyEvent key(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier,
+                  QStringLiteral("a"));
+    QApplication::sendEvent(&editor, &key);
+    const auto content = editor.Content();
+    PF_CHECK(content.size() == 2);
+    if (content.size() != 2) return;
+    PF_CHECK(std::holds_alternative<InlineMath>(content[0]));
+    const auto* text = std::get_if<TextRun>(&content[1]);
+    PF_CHECK(text != nullptr);
+    if (text) PF_CHECK(text->text == "a");
+}
+
+PF_TEST(InlineMathUsesTextBaselineInPolishedWidget) {
+    QWidget host;
+    host.setStyleSheet(QStringLiteral("QWidget { font-size: 10pt; }"));
+    InlineEditor editor(&host);
+    editor.resize(640, 80);
+    editor.ensurePolished();
+    editor.SetContent(InlineFromText("before after"));
+    editor.ResizeToContent();
+    const auto plain = editor.document()->begin().layout()->lineAt(0);
+    const qreal ascent = plain.ascent();
+    const qreal descent = plain.descent();
+    editor.InsertInlineMath(QStringLiteral("\\frac{a}{b}"));
+    editor.ResizeToContent();
+    const auto line = editor.document()->begin().layout()->lineAt(0);
+    PF_CHECK(qAbs(line.ascent() - ascent) < 1.0);
+    PF_CHECK(qAbs(line.descent() - descent) < 1.0);
+    QTextCursor cursor(editor.document());
+    cursor.movePosition(QTextCursor::End);
+    cursor.movePosition(QTextCursor::PreviousCharacter, QTextCursor::KeepAnchor);
+    const auto format = cursor.charFormat();
+    PF_CHECK(format.verticalAlignment() == QTextCharFormat::AlignNormal);
+    const QFontMetricsF metrics(editor.document()->defaultFont());
+    const qreal baseline = format.property(
+        inline_math_format::kBaselineProperty).toDouble();
+    const qreal height = format.property(
+        inline_math_format::kHeightProperty).toDouble();
+    PF_CHECK(baseline <= metrics.ascent());
+    PF_CHECK(height - baseline <= metrics.descent());
+}
+
+PF_TEST(InlineMathRepeatedEditingSurvivesMainWindowRefresh) {
+    Fixture fixture("pf-inline-math-repeated-edit");
+    auto* editor = FindRich(fixture.window, fixture.node_id);
+    PF_CHECK(editor != nullptr);
+    if (!editor) return;
+    editor->SetContentClean({});
+    editor->setFocus();
+    editor->InsertInlineMath(QStringLiteral("x"));
+    for (int i = 0; i < 3; ++i) {
+        editor = FindRich(fixture.window, fixture.node_id);
+        PF_CHECK(editor != nullptr);
+        if (!editor) return;
+        QPointer<InlineEditor> guarded(editor);
+        editor->EditMathAt(0);
+        Spin(80);
+        PF_CHECK(!guarded.isNull());
+        if (!guarded) return;
+        auto* dialog = editor->findChild<MathEditorDialog*>();
+        PF_CHECK(dialog != nullptr);
+        if (!dialog) return;
+        // A document notification while focus is in the dialog must defer
+        // rebuilding the row, even when that row was previously clean.
+        fixture.window.controller()->InsertSection(QStringLiteral("Later"));
+        Spin(80);
+        PF_CHECK(!guarded.isNull());
+        if (!guarded) return;
+        dialog->SetSourceForTest(QStringLiteral("x + %1").arg(i));
+        dialog->accept();
+        Spin(200);
+        const Paragraph* stored = StoredParagraph(fixture.window);
+        PF_CHECK(stored != nullptr);
+        editor = FindRich(fixture.window, fixture.node_id);
+        PF_CHECK(editor != nullptr);
+        if (!editor) return;
+        const auto content = editor->Content();
+        PF_CHECK(content.size() == 1);
+        if (content.size() != 1) return;
+        const auto* math = std::get_if<InlineMath>(&content.front());
+        PF_CHECK(math != nullptr);
+        if (math) PF_CHECK(math->expression.latex ==
+            QStringLiteral("x + %1").arg(i).toStdString());
+    }
+}
+
+PF_TEST(InlineMathDialogIsDestroyedWithItsEditor) {
+    auto* editor = new InlineEditor;
+    editor->InsertInlineMath(QStringLiteral("x"));
+    editor->EditMathAt(0);
+    QPointer<MathEditorDialog> dialog = editor->findChild<MathEditorDialog*>();
+    PF_CHECK(!dialog.isNull());
+    delete editor;
+    Spin(50);
+    PF_CHECK(dialog.isNull());
 }
