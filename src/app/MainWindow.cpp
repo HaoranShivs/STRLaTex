@@ -284,6 +284,8 @@ void MainWindow::BuildMenus() {
                        QKeySequence::Open);
   file_menu->addAction("&Save", this, &MainWindow::OnSave, QKeySequence::Save);
   file_menu->addSeparator();
+  file_menu->addAction("&Close Project", this, &MainWindow::OnCloseProject);
+  file_menu->addSeparator();
   file_menu->addAction("&Import Bibliography (.bib)…", this,
                        &MainWindow::OnImportBibliography);
   file_menu->addSeparator();
@@ -609,6 +611,23 @@ void MainWindow::OnNewProject() {
   ShowWorkspace(true);
   RenderProjectState();  // P0-06: a new project is Dirty from the start.
   statusBar()->showMessage("Created project: " + dir);
+}
+
+void MainWindow::OnCloseProject() {
+  // P0-01: same guard as every other destructive navigation. Only when the
+  // user's work is safe (Clean, explicitly discarded, or saved) does the
+  // project actually close.
+  if (!controller_->has_project())
+    return;
+  if (MaybeSaveBeforeDestructiveNavigation() ==
+      DestructiveNavigationDecision::Cancel) {
+    return;
+  }
+  controller_->StopAutosave();
+  controller_->CloseProject();
+  ShowWorkspace(false);
+  RenderProjectState();
+  statusBar()->showMessage("Project closed");
 }
 
 void MainWindow::OnOpenProject() {

@@ -63,6 +63,9 @@ protected:
 private slots:
     void OnNewProject();
     void OnOpenProject();
+    // P0-01: closing the current project (back to the Welcome page) is a
+    // destructive navigation and shares the same unsaved-changes guard.
+    void OnCloseProject();
     void OnSave();
     void OnUndo();
     void OnRedo();

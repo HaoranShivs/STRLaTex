@@ -8,6 +8,9 @@
 # ---------------------------------------------------------------------------
 
 # ---- Build output ---------------------------------------------------------
+
+# CTest scratch when run from the source root
+Testing/
 /build/
 /build-*/
 /generated/
