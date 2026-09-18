@@ -12,6 +12,29 @@ const char* ToString(SaveKind kind) {
     return "?";
 }
 
+SaveOutcome OutcomeFromResult(const SaveResult& result, bool superseded) {
+    if (superseded) return SaveOutcome::Superseded;
+    switch (result.status) {
+        case SaveResult::Status::Ok: return SaveOutcome::Saved;
+        case SaveResult::Status::Queued: return SaveOutcome::IoError;
+        case SaveResult::Status::IoError: return SaveOutcome::IoError;
+        case SaveResult::Status::SerializeError:
+            return SaveOutcome::SerializeError;
+    }
+    return SaveOutcome::IoError;
+}
+
+const char* ToString(SaveOutcome outcome) {
+    switch (outcome) {
+        case SaveOutcome::Saved: return "Saved";
+        case SaveOutcome::Superseded: return "Superseded";
+        case SaveOutcome::IoError: return "IoError";
+        case SaveOutcome::SerializeError: return "SerializeError";
+        case SaveOutcome::Stopping: return "Stopping";
+    }
+    return "?";
+}
+
 SaveCoordinator::SaveCoordinator(
     std::function<void(const SaveCompletion&)> on_completed)
     : on_completed_(std::move(on_completed)) {
@@ -22,9 +45,9 @@ SaveCoordinator::SaveCoordinator(
 
 SaveCoordinator::~SaveCoordinator() { Shutdown(); }
 
-SaveId SaveCoordinator::Enqueue(SerializedProject snapshot,
-                                const std::filesystem::path& destination,
-                                SaveKind kind) {
+std::optional<SaveId> SaveCoordinator::Enqueue(
+    SerializedProject snapshot, const std::filesystem::path& destination,
+    SaveKind kind) {
     SaveTask task;
     task.kind = kind;
     task.project_id = ProjectId(snapshot.project_id);
@@ -37,13 +60,17 @@ SaveId SaveCoordinator::Enqueue(SerializedProject snapshot,
     const std::string id = (kind == SaveKind::Autosave ? "auto" : "") +
                            IdGenerator::NewSaveId();
     task.save_id = SaveId(id);
-    const SaveId save_id = task.save_id;
     {
         std::lock_guard lock(mutex_);
-        if (!stopping_) queue_.push_back(std::move(task));
+        // P0-03: while stopping (or stopped) there is no worker to drain the
+        // task; reporting a fake "Queued" here would make the UI claim a
+        // save that never reaches the disk.
+        if (stopping_ || stopped_) return std::nullopt;
+        const SaveId save_id = task.save_id;
+        queue_.push_back(std::move(task));
+        condition_.notify_all();
+        return save_id;
     }
-    condition_.notify_all();
-    return save_id;
 }
 
 void SaveCoordinator::Flush() {
@@ -83,12 +110,31 @@ void SaveCoordinator::WorkerLoop() {
             ++in_flight_;
         }
 
-        SaveResult result = RunTask(task);
+        // A user save that a newer user save already passed is superseded -
+        // reported as such, never as a disk error (P0-03).
+        bool superseded = false;
+        if (task.kind == SaveKind::User && last_user_saved_revision_ &&
+            task.revision < *last_user_saved_revision_) {
+            superseded = true;
+        }
+        SaveResult result;
+        if (!superseded) {
+            result = RunTask(task);
+        } else {
+            result.save_id = task.save_id.value();
+            result.saved_revision = task.revision;
+            result.detail = "superseded by a newer save (revision " +
+                            std::to_string(task.revision.value) + " < saved " +
+                            std::to_string(last_user_saved_revision_->value) +
+                            ")";
+        }
         SaveCompletion completion;
         completion.save_id = task.save_id;
         completion.project_id = task.project_id;
         completion.revision = task.revision;
         completion.kind = task.kind;
+        completion.superseded = superseded;
+        completion.outcome = OutcomeFromResult(result, superseded);
         completion.result = result;
         if (on_completed_) on_completed_(completion);
 
@@ -101,22 +147,6 @@ void SaveCoordinator::WorkerLoop() {
 }
 
 SaveResult SaveCoordinator::RunTask(const SaveTask& task) {
-    if (task.kind == SaveKind::User) {
-        // Older snapshot must not overwrite a newer save (rule 5).
-        if (last_user_saved_revision_ &&
-            task.revision < *last_user_saved_revision_) {
-            SaveResult result;
-            result.status = SaveResult::Status::IoError;
-            result.save_id = task.save_id.value();
-            result.saved_revision = task.revision;
-            result.detail = "stale save rejected (revision " +
-                            std::to_string(task.revision.value) + " < saved " +
-                            std::to_string(last_user_saved_revision_->value) +
-                            ")";
-            return result;
-        }
-    }
-
     SaveRequest request;
     request.save_id = task.save_id.value();
     request.project_id = task.project_id;

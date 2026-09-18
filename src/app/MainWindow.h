@@ -51,7 +51,14 @@ private slots:
     void RefreshSidePanels();
     // Typed preview event: carries project/build/revision identity of the PDF.
     void OnPreviewUpdated(const pf::PreviewUpdate& update);
+    // P0-06: reports the raw write result; the state label is NOT set here
+    // (it renders from the authoritative session state instead).
     void OnSaveFinished(bool success, const QString& detail);
+    // P0-06: single renderer for the save/preview state label. Connected to
+    // ProjectController::stateChanged and invoked from every state-affecting
+    // path; reads ProjectSession::persistence_state() /
+    // preview_state() / current_revision() only. No GUI dirty flag exists.
+    void RenderProjectState();
     // Structured diagnostics of the accepted build (Build Diagnostics plan
     // §36-§37): MainWindow only wires panels to data; no log parsing here.
     void OnBuildCompleted(const pf::BuildResult& result);

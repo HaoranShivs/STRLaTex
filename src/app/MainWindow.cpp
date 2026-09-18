@@ -70,6 +70,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
           &MainWindow::OnPreviewUpdated);
   connect(controller_, &ProjectController::saveFinished, this,
           &MainWindow::OnSaveFinished);
+  // P0-06: the authoritative persistence/preview/revision projection drives
+  // the state label; nothing in the UI keeps a second dirty flag.
+  connect(controller_, &ProjectController::stateChanged, this,
+          &MainWindow::RenderProjectState);
   // Problems and Build Log consume the structured pipeline directly
   // (Build Diagnostics plan §37): MainWindow wires the components, it never
   // parses logs, computes source mappings or creates Diagnostics.
@@ -291,107 +295,88 @@ void MainWindow::BuildMenus() {
 }
 
 void MainWindow::WireEditor() {
-  auto mark_unsaved = [this]() {
-    save_state_label_->setText("● Unsaved changes");
-    save_state_label_->setStyleSheet("");
-  };
   connect(editor_, &BlockEditor::TitleEdited, this,
-          [this, mark_unsaved](QString t) {
+          [this](QString t) {
             controller_->SetTitle(std::move(t));
-            mark_unsaved();
           });
   connect(editor_, &BlockEditor::AuthorsEdited, this,
-          [this, mark_unsaved](QString t) {
+          [this](QString t) {
             controller_->SetAuthorsText(std::move(t));
-            mark_unsaved();
           });
   connect(editor_, &BlockEditor::AffiliationsEdited, this,
-          [this, mark_unsaved](QString t) {
+          [this](QString t) {
             controller_->SetAffiliationsText(std::move(t));
-            mark_unsaved();
           });
   connect(editor_, &BlockEditor::AbstractEdited, this,
-          [this, mark_unsaved](QString t) {
+          [this](QString t) {
             controller_->SetAbstract(std::move(t));
-            mark_unsaved();
           });
   connect(editor_, &BlockEditor::KeywordsEdited, this,
-          [this, mark_unsaved](QString t) {
+          [this](QString t) {
             controller_->SetKeywordsText(std::move(t));
-            mark_unsaved();
           });
   // Rich commit from an InlineEditor row: marks, citations, cross
   // references and inline equations arrive as InlineContent (plan §4.1).
   // Body text has exactly one path into the document - the old
   // ParagraphEdited / "[cite:key]" text encoding is gone (citation plan §5).
   connect(editor_, &BlockEditor::ParagraphContentEdited, this,
-          [this, mark_unsaved](QString node, const InlineContent &content) {
+          [this](QString node, const InlineContent &content) {
             if (shutting_down_)
               return;
             controller_->EditParagraphRich(NodeId(node.toStdString()), content);
-            mark_unsaved();
           });
   connect(editor_, &BlockEditor::EquationEdited, this,
-          [this, mark_unsaved](QString node, QString math, bool numbered,
+          [this](QString node, QString math, bool numbered,
                                QString label) {
             controller_->EditEquation(NodeId(node.toStdString()),
                                       std::move(math), numbered,
                                       std::move(label));
-            mark_unsaved();
           });
   connect(editor_, &BlockEditor::SectionRenamed, this,
-          [this, mark_unsaved](QString node, QString text) {
+          [this](QString node, QString text) {
             controller_->RenameSection(NodeId(node.toStdString()),
                                        std::move(text));
-            mark_unsaved();
           });
   connect(editor_, &BlockEditor::SubsectionRenamed, this,
-          [this, mark_unsaved](QString node, QString text) {
+          [this](QString node, QString text) {
             controller_->RenameSubsection(NodeId(node.toStdString()),
                                           std::move(text));
-            mark_unsaved();
           });
   connect(editor_, &BlockEditor::SubsubsectionRenamed, this,
-          [this, mark_unsaved](QString node, QString text) {
+          [this](QString node, QString text) {
             controller_->RenameSubsubsection(NodeId(node.toStdString()),
                                              std::move(text));
-            mark_unsaved();
           });
   connect(
       editor_, &BlockEditor::AuthorAffiliationToggled, this,
-      [this, mark_unsaved](int author_index, QString affiliation, bool linked) {
+      [this](int author_index, QString affiliation, bool linked) {
         if (shutting_down_)
           return;
         const auto result = controller_->SetAuthorAffiliation(
             static_cast<size_t>(author_index),
             AffiliationId(affiliation.toStdString()), linked);
-        if (result.status == EditStatus::Applied) {
-          mark_unsaved();
-        } else {
+        if (result.status != pf::EditStatus::Applied) {
           statusBar()->showMessage(ToQ(result.detail), 3000);
         }
       });
   connect(editor_, &BlockEditor::MoveBlockToRequested, this,
-          [this, mark_unsaved](QString node, QString anchor) {
+          [this](QString node, QString anchor) {
             if (shutting_down_)
               return;
             const auto result = controller_->MoveNodeAfter(
                 NodeId(node.toStdString()), NodeId(anchor.toStdString()));
-            if (result.status == EditStatus::Applied) {
-              mark_unsaved();
-            } else {
+            if (result.status != pf::EditStatus::Applied) {
               statusBar()->showMessage(ToQ(result.detail), 3000);
             }
           });
   connect(
       editor_, &BlockEditor::InsertBlockRequested, this,
-      [this, mark_unsaved](QString type, QString after) {
+      [this](QString type, QString after) {
         if (after.isEmpty()) {
           // No anchor: the body has no blocks yet, so the only
           // meaningful insert is the first section.
           if (type == "section") {
             const EditResult created = controller_->InsertSection(QString());
-            mark_unsaved();
             if (created.status == EditStatus::Applied &&
                 !created.created_node.empty()) {
               editor_->RevealNode(
@@ -425,49 +410,38 @@ void MainWindow::WireEditor() {
         } else {
           return;
         }
-        if (result.status == EditStatus::Applied) {
-          mark_unsaved();
-        } else {
+        if (result.status != pf::EditStatus::Applied) {
           statusBar()->showMessage(
               "Could not insert block: " + ToQ(result.detail), 5000);
         }
       });
   connect(editor_, &BlockEditor::CaptionEdited, this,
-          [this, mark_unsaved](QString node, QString caption) {
-            auto result =
-                controller_->EditCaption(NodeId(node.toStdString()), caption);
-            if (result.status == EditStatus::Applied)
-              mark_unsaved();
+          [this](QString node, QString caption) {
+            controller_->EditCaption(NodeId(node.toStdString()), caption);
           });
   connect(editor_, &BlockEditor::FigureSpanChanged, this,
-          [this, mark_unsaved](QString node, bool double_column) {
+          [this](QString node, bool double_column) {
             if (shutting_down_)
               return;
             const auto result = controller_->EditFigureSpan(
                 NodeId(node.toStdString()), double_column);
-            if (result.status == EditStatus::Applied) {
-              mark_unsaved();
-            } else {
+            if (result.status != pf::EditStatus::Applied) {
               statusBar()->showMessage(ToQ(result.detail), 3000);
             }
           });
   connect(editor_, &BlockEditor::DeleteBlockRequested, this,
-          [this, mark_unsaved](QString node) {
+          [this](QString node) {
             auto result = controller_->DeleteNode(NodeId(node.toStdString()));
-            if (result.status == EditStatus::Applied) {
-              mark_unsaved();
-            } else {
+            if (result.status != pf::EditStatus::Applied) {
               statusBar()->showMessage(
                   "Could not delete block: " + ToQ(result.detail), 5000);
             }
           });
   connect(editor_, &BlockEditor::MoveBlockRequested, this,
-          [this, mark_unsaved](QString node, int direction) {
+          [this](QString node, int direction) {
             auto result =
                 controller_->MoveNode(NodeId(node.toStdString()), direction);
-            if (result.status == EditStatus::Applied) {
-              mark_unsaved();
-            } else {
+            if (result.status != pf::EditStatus::Applied) {
               statusBar()->showMessage(ToQ(result.detail), 3000);
             }
           });
@@ -481,7 +455,7 @@ void MainWindow::WireEditor() {
   connect(editor_, &BlockEditor::FocusOutlineChanged, outline_,
           &OutlinePanel::SelectNode);
   connect(outline_, &OutlinePanel::CitationChosen, this,
-          [this, mark_unsaved](QString key) {
+          [this](QString key) {
             auto focused = editor_->FocusedNodeId();
             if (!focused) {
               statusBar()->showMessage(
@@ -491,7 +465,6 @@ void MainWindow::WireEditor() {
             // Same rich path as the toolbar picker: insert the Citation object
             // at the row's caret and commit immediately.
             if (editor_->InsertCitationIntoParagraph(*focused, key)) {
-              mark_unsaved();
             } else {
               statusBar()->showMessage(
                   "The focused block is not a text row - citations attach to "
@@ -622,6 +595,7 @@ void MainWindow::OnNewProject() {
   }
   controller_->StartAutosave();
   ShowWorkspace(true);
+  RenderProjectState();  // P0-06: a new project is Dirty from the start.
   statusBar()->showMessage("Created project: " + dir);
 }
 
@@ -652,6 +626,7 @@ bool MainWindow::OpenProjectDir(const QString &dir) {
         "Recovered unsaved changes from the autosave snapshot.");
   }
   ShowWorkspace(true);
+  RenderProjectState();  // P0-06: render the actual state of the loaded project.
   statusBar()->showMessage("Opened project: " + dir);
   return true;
 }
@@ -662,25 +637,58 @@ void MainWindow::OnSave() {
   // Citation plan §6: anything that reads the Document must first flush the
   // focused row, or the snapshot silently misses what the GUI already shows.
   editor_->CommitFocused();
-  save_state_label_->setText("Saving…");
   // Save is asynchronous: the snapshot is captured now and written by the
-  // save worker; OnSaveFinished reports the outcome on the app thread.
+  // save worker. P0-06: the label follows the authoritative state - the
+  // session flips to Saving on a successful enqueue and the completion
+  // handler renders the outcome; a rejected enqueue shows the failure.
   auto result = controller_->session().Save();
   if (result.status != SaveResult::Status::Queued) {
     save_state_label_->setText("! Save failed — " + ToQ(result.detail));
     save_state_label_->setStyleSheet(QString("color: %1;").arg(theme::kError));
+  } else {
+    RenderProjectState();
   }
 }
 
 void MainWindow::OnSaveFinished(bool success, const QString &detail) {
   if (shutting_down_)
     return;
-  if (success) {
+  // P0-06: the completion itself is informational; the label re-derives
+  // from the session state (RenderProjectState is invoked by the
+  // stateChanged emission that follows every completion).
+  if (!success && !detail.isEmpty())
+    statusBar()->showMessage("Save: " + detail, 5000);
+  RenderProjectState();
+}
+
+void MainWindow::RenderProjectState() {
+  if (shutting_down_)
+    return;
+  // P0-06: single source of truth. The label is a pure projection of
+  // ProjectSession's persistence/preview state and current revision.
+  if (!controller_->has_project()) {
+    save_state_label_->setText("");
+    save_state_label_->setStyleSheet("");
+    return;
+  }
+  const auto persistence = controller_->persistence_state();
+  switch (persistence) {
+  case PersistenceState::Clean:
     save_state_label_->setText("✓ Saved");
     save_state_label_->setStyleSheet("");
-  } else {
-    save_state_label_->setText("! Save failed — " + detail);
+    break;
+  case PersistenceState::Dirty:
+    save_state_label_->setText("● Unsaved changes");
+    save_state_label_->setStyleSheet("");
+    break;
+  case PersistenceState::Saving:
+    save_state_label_->setText("Saving…");
+    save_state_label_->setStyleSheet("");
+    break;
+  case PersistenceState::SaveFailed:
+    save_state_label_->setText("! Save failed — retry (Ctrl+S)");
     save_state_label_->setStyleSheet(QString("color: %1;").arg(theme::kError));
+    break;
   }
 }
 

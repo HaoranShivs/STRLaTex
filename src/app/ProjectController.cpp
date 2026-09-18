@@ -95,11 +95,14 @@ ProjectController::ProjectController(QObject *parent) : QObject(parent) {
   session_->SetPreviewUpdateHandler(
       [this](const PreviewUpdate &update) { emit previewUpdated(update); });
   session_->SetSaveResultHandler([this](const SaveResult &result, SaveKind) {
-    emit saveFinished(result.status == SaveResult::Status::Ok,
-                      ToQ(result.detail));
-    emit stateChanged(ToString(session_->persistence_state()),
-                      ToString(session_->preview_state()),
-                      QString::number(session_->current_revision().value));
+    // P0-06: the bool says whether the write landed (Saved) or was replaced
+    // by a newer save (Superseded) - a superseded save is not an error the
+    // user must worry about.
+    const bool landed = result.status == SaveResult::Status::Ok;
+    emit saveFinished(landed, ToQ(result.detail));
+    // The state label always re-derives from the session's authoritative
+    // state; a superseded revision never shows "Saved".
+    EmitProjectStateChanged();
   });
 
   // Backstop: the wake handler already delivers events promptly, so this is
@@ -241,6 +244,11 @@ void ProjectController::StopAutosave() { session_->StopAutosaveTimer(); }
 
 void ProjectController::EmitDocumentChanged() {
   emit documentChanged();
+  EmitProjectStateChanged();
+}
+
+void ProjectController::EmitProjectStateChanged() {
+  // P0-06: the only source of the UI's save/preview/revision state.
   emit stateChanged(ToString(session_->persistence_state()),
                     ToString(session_->preview_state()),
                     QString::number(session_->current_revision().value));

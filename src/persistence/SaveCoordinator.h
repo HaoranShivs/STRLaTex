@@ -33,6 +33,20 @@ enum class SaveKind : std::uint8_t {
 
 const char* ToString(SaveKind kind);
 
+// P0-03: the outcome of one save task. Superseded is distinct from IoError -
+// an old snapshot replaced by a newer save is normal latest-wins behaviour,
+// not a disk failure, and the UI must not show a scary error for it.
+enum class SaveOutcome : std::uint8_t {
+    Saved,
+    Superseded,
+    IoError,
+    SerializeError,
+    Stopping,
+};
+
+SaveOutcome OutcomeFromResult(const SaveResult& result, bool superseded);
+const char* ToString(SaveOutcome outcome);
+
 // An immutable, self-contained save job. Owned by the worker once enqueued.
 struct SaveTask {
     SaveId save_id;
@@ -43,13 +57,17 @@ struct SaveTask {
     SerializedProject snapshot;
 };
 
-// Result of one save task, delivered on the worker thread.
+// Result of one save task, delivered on the worker thread. `outcome` is the
+// structured verdict; `result` carries the legacy status + detail for
+// diagnostics. `error` is set only when outcome == IoError.
 struct SaveCompletion {
     SaveId save_id;
     ProjectId project_id;
     ProjectRevision revision;
     SaveKind kind = SaveKind::User;
+    SaveOutcome outcome = SaveOutcome::Saved;
     SaveResult result;
+    bool superseded = false;
 };
 
 class SaveCoordinator {
@@ -64,8 +82,12 @@ public:
     SaveCoordinator& operator=(const SaveCoordinator&) = delete;
 
     // Application thread: hand the worker an immutable snapshot. Non-blocking.
-    SaveId Enqueue(SerializedProject snapshot,
-                   const std::filesystem::path& destination, SaveKind kind);
+    // Returns nullopt when the coordinator is stopping (or stopped): the
+    // caller must not report a save as queued when it never entered the
+    // queue (P0-03: no fake "Queued" during shutdown).
+    std::optional<SaveId> Enqueue(SerializedProject snapshot,
+                                  const std::filesystem::path& destination,
+                                  SaveKind kind);
 
     // Application thread: block until every enqueued task has been written.
     // Used at shutdown and by CLI/test drivers.

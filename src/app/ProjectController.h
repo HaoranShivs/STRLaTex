@@ -135,7 +135,14 @@ signals:
   void buildCompleted(const pf::BuildResult &result);
   // One build-log event of the current build, streamed while it runs (§4).
   void buildEvent(const pf::BuildEvent &event);
+  // P0-06: structured save outcome - revision that was written, whether it
+  // actually landed (Saved), was replaced by a newer save (Superseded) or
+  // failed. The view renders state from persistence_state(), never from this
+  // signal's bool.
   void saveFinished(bool success, QString detail);
+  // P0-06: authoritative state projection - emitted after every domain
+  // transition that can change persistence/preview/revision. The view
+  // renders exactly these values.
   void stateChanged(QString persistence, QString preview, QString revision);
   void templateChanged(QString template_id);
 
@@ -146,6 +153,10 @@ private:
   };
 
   void EmitDocumentChanged();
+  // P0-06: single funnel that emits stateChanged from the authoritative
+  // session state. Every save-completion / edit / lifecycle change goes
+  // through here; no listener maintains a second dirty flag.
+  void EmitProjectStateChanged();
   // Application-thread drain of ProjectSession's event queue.
   void PumpEvents();
   EditCommand MakeCmd(FullEditPayload payload) const;

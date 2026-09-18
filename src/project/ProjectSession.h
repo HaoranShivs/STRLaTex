@@ -174,6 +174,10 @@ public:
     // completion is applied. Returns the last user-save result.
     SaveResult FlushSaves();
     size_t pending_saves() const { return save_coordinator_.pending(); }
+    // Test-only seam (P0-03): drive the save coordinator into its stopping
+    // state so the "no fake Queued during shutdown" rule is executable.
+    // Production code reaches the same state through ~ProjectSession.
+    void ShutdownSaveCoordinatorForTest() { save_coordinator_.Shutdown(); }
 
     // ---- Template ----
     void ChangeTemplate(const std::string& template_id);
@@ -278,6 +282,10 @@ private:
     BibliographyDatabase bibliography_db_;
     std::string bibliography_bibtex_;
     std::uint64_t bibliography_revision_ = 0;
+    // P0-03: set when the atomic references.bib write failed on Save(). A
+    // completion for that revision must not report the project Clean even
+    // though project.paper itself landed.
+    bool bibliography_write_failed_ = false;
     SnapshotFactory snapshot_factory_;
     EditingSystem editing_;
     std::unique_ptr<ICompiler> compiler_;

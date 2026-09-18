@@ -554,22 +554,35 @@ SaveResult ProjectSession::Save() {
     return queued;
   }
   auto snapshot = CaptureSaveSnapshot();
-  queued.status = SaveResult::Status::Queued;
   queued.saved_revision = snapshot.revision;
-  queued.save_id = save_coordinator_
-                       .Enqueue(std::move(snapshot.serialized),
-                                paths_.project_file, SaveKind::User)
-                       .value();
+  // P0-03: the save counts as queued only when the coordinator actually
+  // accepted the task; during shutdown Enqueue returns nullopt and the
+  // caller must not believe a write is in flight.
+  auto save_id = save_coordinator_.Enqueue(std::move(snapshot.serialized),
+                                           paths_.project_file, SaveKind::User);
+  if (!save_id) {
+    queued.status = SaveResult::Status::IoError;
+    queued.detail = "save queue is shutting down; the project was not saved";
+    return queued;
+  }
+  queued.status = SaveResult::Status::Queued;
+  queued.save_id = save_id->value();
   persistence_state_ = PersistenceState::Saving;
   // Bibliography side-car: one small file, written on the owner thread.
   // Atomic (temp + rename) so a crash can never leave a truncated
   // references.bib behind, and at the *configured* project-relative path so
   // OpenProject reads back exactly what Save wrote (citation plan §7).
+  // P0-03: a failed write is remembered - the completion handler refuses to
+  // report Clean when the side-car could not be persisted.
   if (!bibliography_bibtex_.empty()) {
     const std::string rel = state_.settings().bibliography_path.empty()
                                 ? std::string("references.bib")
                                 : state_.settings().bibliography_path;
-    WriteFileAtomically(paths_.project_dir / rel, bibliography_bibtex_);
+    if (!WriteFileAtomically(paths_.project_dir / rel, bibliography_bibtex_)) {
+      bibliography_write_failed_ = true;
+    } else {
+      bibliography_write_failed_ = false;
+    }
   }
   return queued;
 }
@@ -583,13 +596,19 @@ SaveResult ProjectSession::Autosave() {
     return queued;
   }
   auto snapshot = CaptureSaveSnapshot();
-  queued.status = SaveResult::Status::Queued;
   queued.saved_revision = snapshot.revision;
-  queued.save_id =
-      save_coordinator_
-          .Enqueue(std::move(snapshot.serialized),
-                   paths_.autosave_dir / "autosave.paper", SaveKind::Autosave)
-          .value();
+  auto save_id =
+      save_coordinator_.Enqueue(std::move(snapshot.serialized),
+                                paths_.autosave_dir / "autosave.paper",
+                                SaveKind::Autosave);
+  if (!save_id) {
+    // P0-03: shutdown in progress - do not pretend an autosave is queued.
+    queued.status = SaveResult::Status::IoError;
+    queued.detail = "save queue is shutting down; autosave skipped";
+    return queued;
+  }
+  queued.status = SaveResult::Status::Queued;
+  queued.save_id = save_id->value();
   // Autosave does not change Clean/Dirty state (architecture section 32).
   return queued;
 }
@@ -614,12 +633,21 @@ void ProjectSession::ApplySaveCompletion(const SaveCompletion &completion) {
   }
   if (completion.kind == SaveKind::User) {
     last_user_save_result_ = completion.result;
-    if (completion.result.status == SaveResult::Status::Ok) {
+    const bool actually_saved =
+        completion.outcome == SaveOutcome::Saved &&
+        !bibliography_write_failed_;
+    if (actually_saved) {
       // Only Clean when nothing changed while the snapshot was being
       // written: save rev20 -> edit rev21 -> save20 finishes must leave
       // the project Dirty.
       if (completion.revision == state_.revision()) {
         persistence_state_ = PersistenceState::Clean;
+      }
+    } else if (completion.outcome == SaveOutcome::Superseded) {
+      // P0-03: a superseded save is not a failure. The newer save decides
+      // the outcome; do not degrade the state to SaveFailed for it.
+      if (persistence_state_ == PersistenceState::Saving) {
+        // Still waiting on the newer save - keep Saving.
       }
     } else if (completion.revision == state_.revision()) {
       persistence_state_ = PersistenceState::SaveFailed;
@@ -709,23 +737,38 @@ ProjectSession::InsertFigureFromSource(const std::filesystem::path &source,
 
 BibliographyImportResult
 ProjectSession::ImportBibliography(const std::string &bibtex_text) {
-  BibliographyService service(bibliography_db_);
-  auto result = service.ImportText(bibtex_text);
-  if (result.status == BibliographyImportResult::Status::Ok) {
-    bibliography_bibtex_ = bibtex_text;
-    bibliography_revision_ = result.bibliography_revision;
-    // Citation plan §7: a successful import makes the .bib a persisted
-    // project resource immediately - the raw source is written atomically to
-    // <project>/references.bib and the (relative) path is recorded in the
-    // project settings, which SaveSnapshot carries. A failed import never
-    // reaches this point, so it can never clobber the previous file.
-    state_.mutable_settings().bibliography_path = "references.bib";
-    WriteFileAtomically(paths_.project_dir / "references.bib", bibtex_text);
-    // Bibliography change: ProjectRevision +1 (architecture section 40).
-    state_.BumpRevision();
-    MarkDirty();
-    RequestBuild(false);
+  // P0-03: the import is a small transaction. Parse and stage the file
+  // FIRST; only after the bytes are durably on disk does the in-memory
+  // database commit. Any failure before the replace leaves the previous
+  // database, the previous references.bib, the revision and the dirty state
+  // untouched.
+  BibliographyDatabase staged_db;
+  BibliographyService staged_service(staged_db);
+  auto result = staged_service.ImportText(bibtex_text);
+  if (result.status != BibliographyImportResult::Status::Ok) {
+    return result;
   }
+
+  const std::filesystem::path bib_file = paths_.project_dir / "references.bib";
+  if (!WriteFileAtomically(bib_file, bibtex_text)) {
+    BibliographyImportResult io_fail;
+    io_fail.status = BibliographyImportResult::Status::ParseError;
+    // Distinguish an I/O failure from a parse failure by detail; the status
+    // enum has no IoError slot (kept for Qt signal compatibility).
+    io_fail.detail = "cannot write references.bib; bibliography unchanged";
+    return io_fail;
+  }
+
+  // Commit: database, cached source, settings, revision, dirty, rebuild.
+  bibliography_db_ = std::move(staged_db);
+  bibliography_bibtex_ = bibtex_text;
+  bibliography_revision_ = result.bibliography_revision;
+  state_.mutable_settings().bibliography_path = "references.bib";
+  bibliography_write_failed_ = false;
+  // Bibliography change: ProjectRevision +1 (architecture section 40).
+  state_.BumpRevision();
+  MarkDirty();
+  RequestBuild(false);
   return result;
 }
 
