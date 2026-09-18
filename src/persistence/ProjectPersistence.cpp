@@ -1,9 +1,11 @@
 #include "persistence/ProjectPersistence.h"
 
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <set>
 #include <sstream>
+#include <system_error>
 
 #include "core/IdGenerator.h"
 #include "document/DocumentEditor.h"
@@ -12,6 +14,209 @@
 #include "persistence/ProjectMigrator.h"
 
 namespace pf {
+
+namespace {
+
+// P0-02: hard invariants enforced on every deserialized project. A .paper
+// file is untrusted input; anything beyond these bounds is rejected with a
+// structured error instead of being loaded (or crashing later).
+constexpr std::size_t kMaxStringFieldBytes = 64 * 1024;   // single text field
+constexpr std::size_t kMaxTableRows = 100;
+constexpr std::size_t kMaxTableColumns = 50;
+constexpr std::size_t kMaxNodes = 200000;
+
+bool CheckStringField(const std::string& value) {
+  return value.size() <= kMaxStringFieldBytes;
+}
+
+std::string DescribeTableProblem(const Table &table) {
+  if (table.columns.empty())
+    return "table has no columns";
+  if (table.columns.size() > kMaxTableColumns)
+    return "table exceeds column limit (max 50)";
+  if (table.RowCount() > kMaxTableRows)
+    return "table exceeds row limit (max 100)";
+  if (!table.IsRectangular())
+    return "table cells do not match declared column count";
+  return {};
+}
+
+// Schema check for the whole deserialized project. Returns an empty string
+// when the project is valid, and a human-readable reason otherwise. Covers:
+// ids (non-empty + unique), section hierarchy shape, table invariants,
+// string lengths, reference targets and revision sanity.
+std::string ValidateSerializedProject(const SerializedProject &project) {
+  // Revision overflow guard: revisions are generated sequentially.
+  if (project.revision.value > std::uint64_t{1} << 48)
+    return "revision out of range";
+
+  std::set<std::string> seen_ids;
+  std::set<std::string> reference_targets;  // ids that can be cross-referenced
+  std::size_t node_count = 0;
+  auto count_id = [&](const NodeId &id, const char *what) -> std::string {
+    if (++node_count > kMaxNodes)
+      return "document exceeds node limit";
+    if (!id.empty() && !seen_ids.insert(id.value()).second)
+      return "duplicate " + std::string(what) + " id: " + id.value();
+    return {};
+  };
+
+  const FrontMatter &fm = project.document.front_matter();
+  if (!CheckStringField(project.project_id))
+    return "projectId too long";
+  if (!CheckStringField(project.template_id))
+    return "template id too long";
+  if (!CheckStringField(InlineToPlainText(fm.title)))
+    return "title too long";
+  if (fm.keywords.size() > 100)
+    return "too many keywords";
+  for (const auto &kw : fm.keywords) {
+    if (!CheckStringField(kw))
+      return "keyword too long";
+  }
+
+  for (const auto &section : project.document.body().sections) {
+    if (auto err = count_id(section.id, "section"); !err.empty())
+      return err;
+    if (!CheckStringField(InlineToPlainText(section.title)))
+      return "section title too long";
+    for (const auto &block : section.blocks) {
+      if (const auto *table = std::get_if<Table>(&block)) {
+        if (auto err = count_id(table->id, "table"); !err.empty())
+          return err;
+        if (auto problem = DescribeTableProblem(*table); !problem.empty())
+          return problem;
+        reference_targets.insert(table->id.value());
+      } else if (const auto *figure = std::get_if<Figure>(&block)) {
+        if (auto err = count_id(figure->id, "figure"); !err.empty())
+          return err;
+        if (!CheckStringField(figure->alt_text))
+          return "figure alt text too long";
+        reference_targets.insert(figure->id.value());
+      } else if (const auto *equation = std::get_if<EquationBlock>(&block)) {
+        if (auto err = count_id(equation->id, "equation"); !err.empty())
+          return err;
+        if (!CheckStringField(equation->expression.latex))
+          return "equation latex too long";
+        reference_targets.insert(equation->id.value());
+      } else if (const auto *paragraph = std::get_if<Paragraph>(&block)) {
+        if (auto err = count_id(paragraph->id, "paragraph"); !err.empty())
+          return err;
+      }
+    }
+    for (const auto &sub : section.subsections) {
+      if (auto err = count_id(sub.id, "subsection"); !err.empty())
+        return err;
+      if (!CheckStringField(InlineToPlainText(sub.title)))
+        return "subsection title too long";
+      for (const auto &block : sub.blocks) {
+        if (const auto *table = std::get_if<Table>(&block)) {
+          if (auto err = count_id(table->id, "table"); !err.empty())
+            return err;
+          if (auto problem = DescribeTableProblem(*table); !problem.empty())
+            return problem;
+          reference_targets.insert(table->id.value());
+        } else if (const auto *figure = std::get_if<Figure>(&block)) {
+          if (auto err = count_id(figure->id, "figure"); !err.empty())
+            return err;
+          reference_targets.insert(figure->id.value());
+        } else if (const auto *equation = std::get_if<EquationBlock>(&block)) {
+          if (auto err = count_id(equation->id, "equation"); !err.empty())
+            return err;
+          reference_targets.insert(equation->id.value());
+        } else if (const auto *paragraph = std::get_if<Paragraph>(&block)) {
+          if (auto err = count_id(paragraph->id, "paragraph"); !err.empty())
+            return err;
+        }
+      }
+      for (const auto &subsub : sub.subsubsections) {
+        if (auto err = count_id(subsub.id, "subsubsection"); !err.empty())
+          return err;
+        for (const auto &block : subsub.blocks) {
+          if (const auto *table = std::get_if<Table>(&block)) {
+            if (auto err = count_id(table->id, "table"); !err.empty())
+              return err;
+            if (auto problem = DescribeTableProblem(*table); !problem.empty())
+              return problem;
+            reference_targets.insert(table->id.value());
+          } else if (const auto *figure = std::get_if<Figure>(&block)) {
+            if (auto err = count_id(figure->id, "figure"); !err.empty())
+              return err;
+            reference_targets.insert(figure->id.value());
+          } else if (const auto *equation = std::get_if<EquationBlock>(&block)) {
+            if (auto err = count_id(equation->id, "equation"); !err.empty())
+              return err;
+            reference_targets.insert(equation->id.value());
+          } else if (const auto *paragraph = std::get_if<Paragraph>(&block)) {
+            if (auto err = count_id(paragraph->id, "paragraph"); !err.empty())
+              return err;
+          }
+        }
+      }
+    }
+  }
+
+  // Cross-references must point at a node that exists and is referenceable.
+  for (const auto &section : project.document.body().sections) {
+    auto check_ref = [&](const CrossReference &ref) -> std::string {
+      if (ref.target.empty())
+        return {};
+      if (reference_targets.count(ref.target.value()) == 0)
+        return "cross-reference target does not exist: " + ref.target.value();
+      return {};
+    };
+    auto walk_inline = [&](const InlineContent &content) -> std::string {
+      for (const auto &node : content) {
+        if (const auto *ref = std::get_if<CrossReference>(&node)) {
+          if (auto err = check_ref(*ref); !err.empty())
+            return err;
+        }
+      }
+      return {};
+    };
+    if (auto err = walk_inline(section.title); !err.empty())
+      return err;
+    for (const auto &block : section.blocks) {
+      if (const auto *para = std::get_if<Paragraph>(&block)) {
+        if (auto err = walk_inline(para->content); !err.empty())
+          return err;
+      } else if (const auto *table = std::get_if<Table>(&block)) {
+        if (auto err = walk_inline(table->caption); !err.empty())
+          return err;
+        for (const auto &row : table->cells)
+          for (const auto &cell : row) {
+            if (auto err = walk_inline(cell.content); !err.empty())
+              return err;
+          }
+      } else if (const auto *figure = std::get_if<Figure>(&block)) {
+        if (auto err = walk_inline(figure->caption); !err.empty())
+          return err;
+      }
+    }
+  }
+
+  // Asset table: ids unique, declared paths relative and inside the project.
+  std::set<std::string> asset_ids;
+  for (const auto &asset : project.assets) {
+    if (!asset_ids.insert(asset.id.value()).second)
+      return "duplicate asset id: " + asset.id.value();
+    if (!CheckStringField(asset.relative_path))
+      return "asset path too long";
+    auto parsed = ProjectRelativePath::Parse(asset.relative_path);
+    if (!parsed.ok())
+      return "asset path is not a safe project-relative path: " +
+             PathErrorMessage(parsed.error());
+  }
+
+  auto bib = ProjectRelativePath::Parse(project.bibliography_path);
+  if (!bib.ok())
+    return "bibliography path is not a safe project-relative path: " +
+           PathErrorMessage(bib.error());
+
+  return {};
+}
+
+} // namespace
 
 // ---------------- Serialize ----------------
 
@@ -289,6 +494,27 @@ bool BlocksFromJson(const JsonValue *value, std::vector<Block> *out) {
   return true;
 }
 
+// Descriptive wrapper: names the offending block type so a load error says
+// what was wrong instead of a bare "bad block".
+std::optional<std::string> BlocksFromJsonDetailed(const JsonValue *value,
+                                                  std::vector<Block> *out) {
+  if (!value || !value->is_array())
+    return std::string("blocks field is not an array");
+  for (const auto &item : value->as_array()) {
+    auto block = BlockFromJson(&item);
+    if (!block) {
+      std::string kind = "unknown";
+      if (const auto *type = item.find("type"))
+        kind = type->as_string();
+      if (kind.empty())
+        kind = "unknown";
+      return std::string("invalid ") + kind + " block";
+    }
+    out->push_back(std::move(*block));
+  }
+  return std::nullopt;
+}
+
 } // namespace
 
 std::string ProjectSerializer::Serialize(const SerializedProject &project) {
@@ -443,12 +669,34 @@ void ObserveIdsFromProject(const SerializedProject &project) {
 
 Result<SerializedProject, std::string>
 ProjectSerializer::Deserialize(const std::string &json_text) {
+  // Exception barrier (P0-02): a corrupt or hostile payload must surface as
+  // a structured error string - never as an uncaught exception.
   std::string error;
-  auto root = JsonParse(json_text, &error);
+  std::unique_ptr<JsonValue> root;
+  try {
+    root = JsonParse(json_text, &error);
+  } catch (const std::exception &e) {
+    return Unexpected(std::string("JSON parse failure: ") + e.what());
+  } catch (...) {
+    return Unexpected(std::string("JSON parse failure: unknown error"));
+  }
   if (!root)
     return Unexpected("JSON parse error: " + error);
   if (!root->is_object())
     return Unexpected("root is not an object");
+
+  // Schema gate (P0-02): a file written by a NEWER schema version must hard
+  // fail - loading it would silently drop fields the app does not know and
+  // the next save would destroy data. Older versions load and migrate.
+  {
+    std::string file_version;
+    if (const auto *v = root->find("schemaVersion"))
+      file_version = v->as_string();
+    if (!file_version.empty() && !ProjectMigrator::IsKnownVersion(file_version)) {
+      return Unexpected("unsupported schemaVersion " + file_version +
+                        " (this app supports up to " + kSchemaVersion + ")");
+    }
+  }
 
   SerializedProject project;
   if (const auto *v = root->find("schemaVersion")) {
@@ -458,7 +706,13 @@ ProjectSerializer::Deserialize(const std::string &json_text) {
     project.project_id = v->as_string();
   }
   if (const auto *v = root->find("revision")) {
-    project.revision = ProjectRevision{static_cast<std::uint64_t>(v->as_int())};
+    // A double larger than 2^53 loses integer precision; clamp instead of
+    // letting the static_cast be undefined behaviour (UBSan finding).
+    const double raw = v->as_double();
+    if (raw < 0.0 || !std::isfinite(raw) || raw >= 9007199254740992.0) {
+      return Unexpected("revision out of representable range");
+    }
+    project.revision = ProjectRevision{static_cast<std::uint64_t>(raw)};
   }
   if (const auto *v = root->find("template")) {
     project.template_id = v->as_string();
@@ -525,8 +779,8 @@ ProjectSerializer::Deserialize(const std::string &json_text) {
           section.title = InlineFromJson(t).value_or(InlineContent{});
         }
         if (const auto *blocks = s_item.find("blocks")) {
-          if (!BlocksFromJson(blocks, &section.blocks)) {
-            return Unexpected("bad block in section " + section.id.value());
+          if (auto problem = BlocksFromJsonDetailed(blocks, &section.blocks)) {
+            return Unexpected("section " + section.id.value() + ": " + *problem);
           }
         }
         if (const auto *subs = s_item.find("subsections")) {
@@ -538,8 +792,9 @@ ProjectSerializer::Deserialize(const std::string &json_text) {
               sub.title = InlineFromJson(t).value_or(InlineContent{});
             }
             if (const auto *blocks = sub_item.find("blocks")) {
-              if (!BlocksFromJson(blocks, &sub.blocks)) {
-                return Unexpected("bad block in subsection " + sub.id.value());
+              if (auto problem = BlocksFromJsonDetailed(blocks, &sub.blocks)) {
+                return Unexpected("subsection " + sub.id.value() + ": " +
+                                  *problem);
               }
             }
             if (const auto *subsubs = sub_item.find("subsubsections")) {
@@ -551,9 +806,10 @@ ProjectSerializer::Deserialize(const std::string &json_text) {
                   subsub.title = InlineFromJson(t).value_or(InlineContent{});
                 }
                 if (const auto *blocks = subsub_item.find("blocks")) {
-                  if (!BlocksFromJson(blocks, &subsub.blocks)) {
-                    return Unexpected("bad block in subsubsection " +
-                                      subsub.id.value());
+                  if (auto problem =
+                          BlocksFromJsonDetailed(blocks, &subsub.blocks)) {
+                    return Unexpected("subsubsection " + subsub.id.value() +
+                                      ": " + *problem);
                   }
                 }
                 sub.subsubsections.push_back(std::move(subsub));
@@ -579,14 +835,30 @@ ProjectSerializer::Deserialize(const std::string &json_text) {
         meta.media_type = m->as_string();
       if (const auto *o = item.find("originalName"))
         meta.original_name = o->as_string();
-      if (const auto *s = item.find("fileSize"))
-        meta.file_size = static_cast<std::uint64_t>(s->as_int());
+      if (const auto *s = item.find("fileSize")) {
+        const double raw = s->as_double();
+        // Clamp instead of UB on out-of-range doubles (UBSan finding).
+        meta.file_size = (raw >= 0.0 && std::isfinite(raw) &&
+                          raw < 9007199254740992.0)
+                             ? static_cast<std::uint64_t>(raw)
+                             : 0;
+      }
       if (const auto *h = item.find("hash"))
         meta.content_hash = h->as_string();
-      if (const auto *w = item.find("width"))
-        meta.width = static_cast<std::uint64_t>(w->as_int());
-      if (const auto *hh = item.find("height"))
-        meta.height = static_cast<std::uint64_t>(hh->as_int());
+      if (const auto *w = item.find("width")) {
+        const double raw = w->as_double();
+        meta.width = (raw >= 0.0 && std::isfinite(raw) &&
+                      raw < 9007199254740992.0)
+                         ? static_cast<std::uint64_t>(raw)
+                         : 0;
+      }
+      if (const auto *hh = item.find("height")) {
+        const double raw = hh->as_double();
+        meta.height = (raw >= 0.0 && std::isfinite(raw) &&
+                       raw < 9007199254740992.0)
+                          ? static_cast<std::uint64_t>(raw)
+                          : 0;
+      }
       project.assets.push_back(std::move(meta));
     }
   }
@@ -596,6 +868,14 @@ ProjectSerializer::Deserialize(const std::string &json_text) {
   // behind. Both must happen before the document is handed to the session.
   ObserveIdsFromProject(project);
   HealDuplicateNodeIds(project.document);
+
+  // Schema validation (P0-02): shape, bounds, id uniqueness, table geometry,
+  // path safety and reference integrity. Duplicates healed above are allowed
+  // to remain; everything else is a load error.
+  if (std::string problem = ValidateSerializedProject(project);
+      !problem.empty()) {
+    return Unexpected("project validation failed: " + problem);
+  }
 
   project.document.set_version(DocumentVersion{project.revision.value});
   return project;
@@ -669,6 +949,26 @@ SaveResult ProjectPersistence::Save(const SaveRequest &request) {
 
 LoadResult ProjectPersistence::Load(const LoadRequest &request) {
   LoadResult result;
+  // P0-02: size gate BEFORE reading. A corrupted or hostile file cannot make
+  // the loader allocate unbounded memory.
+  std::error_code ec;
+  const auto file_size = std::filesystem::file_size(request.project_file, ec);
+  if (ec) {
+    // Distinguish a missing file from an unreadable one.
+    result.status = std::filesystem::exists(request.project_file, ec)
+                        ? LoadResult::Status::IoError
+                        : LoadResult::Status::FileMissing;
+    result.detail = "cannot stat " + request.project_file.string();
+    return result;
+  }
+  if (file_size > kMaxProjectFileBytes) {
+    result.status = LoadResult::Status::TooLarge;
+    result.detail = "project file too large (" +
+                    std::to_string(file_size) +
+                    " bytes, limit " + std::to_string(kMaxProjectFileBytes) + ")";
+    return result;
+  }
+
   std::ifstream in(request.project_file, std::ios::binary);
   if (!in) {
     result.status = LoadResult::Status::FileMissing;
@@ -677,6 +977,11 @@ LoadResult ProjectPersistence::Load(const LoadRequest &request) {
   }
   std::ostringstream ss;
   ss << in.rdbuf();
+  if (!in.good() && !in.eof()) {
+    result.status = LoadResult::Status::IoError;
+    result.detail = "read failed: " + request.project_file.string();
+    return result;
+  }
   auto project = ProjectSerializer::Deserialize(ss.str());
   if (!project) {
     result.status = LoadResult::Status::ParseError;

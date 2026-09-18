@@ -4,6 +4,7 @@ add_executable(pf_tests
     TestEditing.cpp
     TestRenderer.cpp
     TestPersistence.cpp
+    TestDeserializationSafety.cpp
     TestBibliography.cpp
     TestBuild.cpp
     TestEndToEnd.cpp

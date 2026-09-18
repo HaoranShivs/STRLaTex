@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <new>
+#include <stdexcept>
 
 namespace pf {
 
@@ -106,11 +108,16 @@ class Parser {
 public:
     struct ParseAbort {};
 
-    explicit Parser(const std::string& text, std::string* error)
-        : text_(text), error_(error) {}
+    explicit Parser(const std::string& text, std::string* error,
+                    const JsonParseLimits& limits)
+        : text_(text), error_(error), limits_(limits) {}
 
     std::unique_ptr<JsonValue> Parse() {
         try {
+            if (text_.size() > limits_.max_input_bytes) {
+                Fail("input exceeds maximum size (" +
+                     std::to_string(limits_.max_input_bytes) + " bytes)");
+            }
             SkipWs();
             auto value = ParseValue();
             if (!value) return nullptr;
@@ -120,6 +127,11 @@ public:
             }
             return value;
         } catch (const ParseAbort&) {
+            return nullptr;
+        } catch (const std::bad_alloc&) {
+            // A limit race (e.g. string growth between checks) must degrade to
+            // a clean parse failure, never an abort.
+            if (error_) *error_ = "out of memory while parsing";
             return nullptr;
         }
     }
@@ -161,16 +173,11 @@ private:
         }
     }
 
-    std::unique_ptr<JsonValue> ParseValue() {
-        char c = Peek();
-        switch (c) {
-            case '{': return ParseObject();
-            case '[': return ParseArray();
-            case '"': return std::make_unique<JsonValue>(ParseString());
-            case 't': ExpectLiteral("true"); return std::make_unique<JsonValue>(true);
-            case 'f': ExpectLiteral("false"); return std::make_unique<JsonValue>(false);
-            case 'n': ExpectLiteral("null"); return std::make_unique<JsonValue>();
-            default: return ParseNumber();
+    void NoteNode() {
+        ++node_count_;
+        if (node_count_ > limits_.max_nodes) {
+            Fail("node count exceeds limit (" +
+                 std::to_string(limits_.max_nodes) + ")");
         }
     }
 
@@ -180,9 +187,44 @@ private:
         }
     }
 
+    std::unique_ptr<JsonValue> ParseValue() {
+        char c = Peek();
+        switch (c) {
+            case '{': return ParseObject();
+            case '[': return ParseArray();
+            case '"': return std::make_unique<JsonValue>(ParseString());
+            case 't': ExpectLiteral("true"); NoteNode(); return std::make_unique<JsonValue>(true);
+            case 'f': ExpectLiteral("false"); NoteNode(); return std::make_unique<JsonValue>(false);
+            case 'n': ExpectLiteral("null"); NoteNode(); return std::make_unique<JsonValue>();
+            default: return ParseNumber();
+        }
+    }
+
+    // Scoped depth guard: nesting beyond the limit is a parse error, not a
+    // stack overflow.
+    class DepthGuard {
+    public:
+        DepthGuard(Parser& parser, std::size_t& depth) : parser_(parser), depth_(depth) {
+            ++depth_;
+            if (depth_ > parser_.limits_.max_depth) {
+                parser_.Fail("nesting depth exceeds limit (" +
+                             std::to_string(parser_.limits_.max_depth) + ")");
+            }
+        }
+        ~DepthGuard() { --depth_; }
+        DepthGuard(const DepthGuard&) = delete;
+        DepthGuard& operator=(const DepthGuard&) = delete;
+
+    private:
+        Parser& parser_;
+        std::size_t& depth_;
+    };
+
     std::unique_ptr<JsonValue> ParseObject() {
+        DepthGuard guard(*this, depth_);
         Expect('{');
         auto obj = std::make_unique<JsonValue>(JsonObject{});
+        NoteNode();
         SkipWs();
         if (Peek() == '}') { Next(); return obj; }
         while (true) {
@@ -202,8 +244,10 @@ private:
     }
 
     std::unique_ptr<JsonValue> ParseArray() {
+        DepthGuard guard(*this, depth_);
         Expect('[');
         auto arr = std::make_unique<JsonValue>(JsonArray{});
+        NoteNode();
         SkipWs();
         if (Peek() == ']') { Next(); return arr; }
         while (true) {
@@ -240,6 +284,12 @@ private:
                 }
             } else {
                 out += c;
+            }
+            // Bound the accumulated string, not just the raw input, so a
+            // small document of \u escapes cannot expand unboundedly.
+            if (out.size() > limits_.max_string_bytes) {
+                Fail("string exceeds maximum length (" +
+                     std::to_string(limits_.max_string_bytes) + " bytes)");
             }
         }
         return out;
@@ -294,6 +344,7 @@ private:
     }
 
     std::unique_ptr<JsonValue> ParseNumber() {
+        NoteNode();
         size_t start = pos_;
         if (Peek() == '-') Next();
         if (Peek() == '0') {
@@ -301,40 +352,88 @@ private:
         } else {
             char c = Peek();
             if (c < '1' || c > '9') Fail("invalid number");
-            while (pos_ < text_.size() && isdigit(text_[pos_])) Next();
+            while (pos_ < text_.size() && isdigit(static_cast<unsigned char>(text_[pos_]))) Next();
         }
         bool is_float = false;
         if (pos_ < text_.size() && text_[pos_] == '.') {
             is_float = true;
             Next();
-            while (pos_ < text_.size() && isdigit(text_[pos_])) Next();
+            while (pos_ < text_.size() && isdigit(static_cast<unsigned char>(text_[pos_]))) Next();
         }
         if (pos_ < text_.size() && (text_[pos_] == 'e' || text_[pos_] == 'E')) {
             is_float = true;
             Next();
             if (pos_ < text_.size() && (text_[pos_] == '+' || text_[pos_] == '-')) Next();
-            while (pos_ < text_.size() && isdigit(text_[pos_])) Next();
+            while (pos_ < text_.size() && isdigit(static_cast<unsigned char>(text_[pos_]))) Next();
         }
         std::string num = text_.substr(start, pos_ - start);
+
+        // Structured number conversion: every failure is a parse error. No
+        // bare std::stod / std::stoll here - their exceptions used to escape
+        // the parser and crash the process on inputs like "1e999".
         if (is_float) {
-            return std::make_unique<JsonValue>(std::stod(num));
+            try {
+                double v = std::stod(num);
+                if (!std::isfinite(v)) {
+                    // "1e999" parses but overflows to +inf: reject it. NaN
+                    // cannot be spelled in JSON, so this is only overflow.
+                    Fail("number overflow out of representable range: " + num);
+                }
+                return std::make_unique<JsonValue>(v);
+            } catch (const std::invalid_argument&) {
+                Fail("invalid number: " + num);
+            } catch (const std::out_of_range&) {
+                Fail("number overflow out of representable range: " + num);
+            }
+        }
+        // Integer fast path with full-consumption and overflow checks; a
+        // value that does not fit std::int64_t falls back to the (guarded)
+        // double conversion below.
+        std::int64_t parsed = 0;
+        bool fits = false;
+        try {
+            size_t consumed = 0;
+            parsed = std::stoll(num, &consumed);
+            fits = consumed == num.size();
+        } catch (const std::out_of_range&) {
+            fits = false;
+        } catch (const std::invalid_argument&) {
+            fits = false;
+        }
+        if (fits) {
+            return std::make_unique<JsonValue>(parsed);
         }
         try {
-            return std::make_unique<JsonValue>(static_cast<std::int64_t>(std::stoll(num)));
-        } catch (...) {
-            return std::make_unique<JsonValue>(std::stod(num));
+            double v = std::stod(num);
+            if (!std::isfinite(v)) {
+                Fail("number overflow out of representable range: " + num);
+            }
+            return std::make_unique<JsonValue>(v);
+        } catch (const std::invalid_argument&) {
+            Fail("invalid number: " + num);
+        } catch (const std::out_of_range&) {
+            Fail("number overflow out of representable range: " + num);
         }
     }
 
     const std::string& text_;
     std::string* error_;
+    JsonParseLimits limits_;
     size_t pos_ = 0;
+    std::size_t depth_ = 0;
+    std::size_t node_count_ = 0;
 };
 
 }  // namespace
 
 std::unique_ptr<JsonValue> JsonParse(const std::string& text, std::string* error) {
-    Parser p(text, error);
+    JsonParseLimits defaults;
+    return JsonParse(text, error, defaults);
+}
+
+std::unique_ptr<JsonValue> JsonParse(const std::string& text, std::string* error,
+                                     const JsonParseLimits& limits) {
+    Parser p(text, error, limits);
     return p.Parse();
 }
 

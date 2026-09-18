@@ -97,8 +97,24 @@ private:
     std::variant<std::monostate, bool, double, std::string, JsonArray, JsonObject> data_;
 };
 
-// Parse a JSON document. On failure returns nullptr.
+// Parse a JSON document. On failure returns nullptr and (when requested)
+// writes a human-readable reason into *error.
+//
+// Resource bounds (P0-02): parsing is bounded by JsonParseLimits - input
+// size, nesting depth, total node count and total string bytes. Any input
+// that exceeds a bound is rejected with a structured error message; the
+// parser never aborts the process and never lets an exception escape
+// (stack-overflow and numeric-conversion crashes closed here).
+struct JsonParseLimits {
+    std::size_t max_input_bytes = 8 * 1024 * 1024;
+    std::size_t max_depth = 128;
+    std::size_t max_nodes = 200000;
+    std::size_t max_string_bytes = 2 * 1024 * 1024;
+};
+
 std::unique_ptr<JsonValue> JsonParse(const std::string& text, std::string* error = nullptr);
+std::unique_ptr<JsonValue> JsonParse(const std::string& text, std::string* error,
+                                     const JsonParseLimits& limits);
 std::string JsonEscape(const std::string& s);
 
 }  // namespace pf

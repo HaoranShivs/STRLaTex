@@ -2,6 +2,7 @@
 // Project serialization: project.paper (JSON) read/write (architecture
 // sections 15, 16, 43, 44).
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -10,10 +11,10 @@
 #include "asset/AssetManager.h"
 #include "core/Diagnostic.h"
 #include "core/Json.h"
+#include "core/ProjectPath.h"
 #include "core/Result.h"
 #include "document/Document.h"
 #include "persistence/SchemaVersions.h"
-
 namespace pf {
 
 struct SerializedProject {
@@ -32,6 +33,10 @@ public:
     static std::string Serialize(const SerializedProject& project);
 
     // Parse JSON text. Returns error string on failure.
+    // The input is fully validated (P0-02): parse limits, schema shape,
+    // id/table/path invariants. Any untrusted .paper payload either yields a
+    // valid project or a structured error string - never an exception, an
+    // abort or a crash.
     static Result<SerializedProject, std::string> Deserialize(const std::string& json_text);
 };
 
@@ -60,7 +65,7 @@ struct LoadRequest {
 };
 
 struct LoadResult {
-    enum class Status { Ok, FileMissing, ParseError, SchemaError };
+    enum class Status { Ok, FileMissing, ParseError, SchemaError, TooLarge, IoError };
     Status status = Status::Ok;
     std::string detail;
     std::optional<SerializedProject> project;
@@ -72,6 +77,10 @@ struct LoadResult {
 
 class ProjectPersistence {
 public:
+    // Files above this size are rejected before reading (P0-02): a corrupted
+    // or hostile .paper file cannot make the app allocate unbounded memory.
+    static constexpr std::uintmax_t kMaxProjectFileBytes = 32 * 1024 * 1024;
+
     // Atomic save: serialize -> temp file -> replace.
     static SaveResult Save(const SaveRequest& request);
     static LoadResult Load(const LoadRequest& request);

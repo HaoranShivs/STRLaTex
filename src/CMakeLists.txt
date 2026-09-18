@@ -3,6 +3,7 @@ add_library(pf_core STATIC
     core/Diagnostic.cpp
     core/IdGenerator.cpp
     core/Json.cpp
+    core/ProjectPath.cpp
 )
 
 target_include_directories(pf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
