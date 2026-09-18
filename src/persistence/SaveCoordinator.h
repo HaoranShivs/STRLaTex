@@ -89,9 +89,11 @@ public:
                                   const std::filesystem::path& destination,
                                   SaveKind kind);
 
-    // Application thread: block until every enqueued task has been written.
-    // Used at shutdown and by CLI/test drivers.
-    void Flush();
+    // Application thread: block until every enqueued task has been written,
+    // or the timeout expires (P0-03: production code must never wait
+    // unboundedly for a worker). Returns false on timeout.
+    bool Flush(std::chrono::milliseconds timeout =
+                   std::chrono::milliseconds{10000});
 
     // Application thread: stop accepting work, drain the queue, join.
     // Idempotent; called by the destructor.

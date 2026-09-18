@@ -73,9 +73,14 @@ std::optional<SaveId> SaveCoordinator::Enqueue(
     }
 }
 
-void SaveCoordinator::Flush() {
+bool SaveCoordinator::Flush(std::chrono::milliseconds timeout) {
     std::unique_lock lock(mutex_);
-    condition_.wait(lock, [this] { return queue_.empty() && in_flight_ == 0; });
+    // Bounded wait: a wedged worker (or a very slow disk) must not hang the
+    // application thread forever. The completion events keep flowing; the
+    // caller decides what a timeout means.
+    return condition_.wait_for(lock, timeout, [this] {
+        return queue_.empty() && in_flight_ == 0;
+    });
 }
 
 void SaveCoordinator::Shutdown() {

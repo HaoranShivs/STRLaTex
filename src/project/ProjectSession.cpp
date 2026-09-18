@@ -18,25 +18,44 @@ namespace {
 // Write a small whole-file resource atomically: temp file + rename. The
 // bibliography must never be observed (or survive a crash) half-written, and
 // a failed write must leave the previous file intact (citation plan §7).
-bool WriteFileAtomically(const std::filesystem::path& path,
-                         const std::string& contents) {
+// P0-03: structured result instead of bool - the caller can tell a denied
+// permission from a full disk from a failed replace, and the UI can show a
+// specific message instead of "save failed".
+[[nodiscard]] Result<void, IoError>
+WriteFileAtomically(const std::filesystem::path& path,
+                    const std::string& contents) {
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
+    if (ec) {
+        return Unexpected2<IoError>(MakeIoError(
+            ec, IoErrorCode::DirectoryCreateFailed,
+            "cannot create the file's directory", path.parent_path()));
+    }
     const auto temp = path.string() + ".tmp";
     std::filesystem::remove(temp, ec);
     {
         std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-        if (!out) return false;
+        if (!out) {
+            return Unexpected2<IoError>(MakeIoError(
+                ec, IoErrorCode::OpenFailed, "cannot open the temporary file",
+                path));
+        }
         out << contents;
         out.flush();
-        if (!out.good()) return false;
+        if (!out.good()) {
+            return Unexpected2<IoError>(
+                MakeIoError(ec, IoErrorCode::WriteFailed,
+                            "writing the temporary file failed", path));
+        }
     }
     std::filesystem::rename(temp, path, ec);
     if (ec) {
         std::filesystem::remove(temp, ec);
-        return false;
+        return Unexpected2<IoError>(MakeIoError(ec, IoErrorCode::ReplaceFailed,
+                                                "cannot replace the file",
+                                                path));
     }
-    return true;
+    return {};
 }
 }  // namespace
 
