@@ -226,3 +226,36 @@ PF_TEST(MathResultConvertsToPixmapOnGuiThread) {
     PF_CHECK_EQ(pixmap.width(), 4);
     PF_CHECK(pixmap.devicePixelRatio() == 2.0);
 }
+// P0-08 regression: the service connection outlives the function that created
+// it, so any per-card state captured by reference is a stack-use-after-return.
+// This drives the same shape - a card whose reply arrives long after the
+// creating scope has exited - and would be caught by ASan.
+PF_TEST(MathRenderLateReplyAfterCreatingScopeExited) {
+    EnsureApp();
+    MathRenderService service;
+    RecordingClient client(QStringLiteral("editor-late"));
+    service.RegisterClient(client.id(), &client);
+    QObject::connect(&service, &MathRenderService::mathRendered, &client,
+                     [&client](const MathRenderResponse& response) {
+                         if (response.editor_id == client.id())
+                             client.Record(response);
+                     });
+
+    // Simulate the BlockEditor pattern: the generation lives on the heap, so
+    // the connection below stays valid after this scope ends.
+    auto generation = std::make_shared<std::uint64_t>(0);
+    {
+        MathRenderStyle style;
+        style.backend = MathRenderBackend::ApproximateOnly;
+        style.font_px = 16;
+        *generation = service.Request(client.id(), QStringLiteral("card"),
+                                      QStringLiteral("x^2"), style);
+    }
+    // The creating scope is gone; the reply must still be applied safely.
+    QElapsedTimer timer;
+    timer.start();
+    while (client.received.load() == 0 && timer.elapsed() < 5000)
+        Spin(10);
+    PF_CHECK(client.received.load() == 1);
+    PF_CHECK(client.last_generation == *generation);
+}

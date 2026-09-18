@@ -1134,10 +1134,13 @@ QWidget *BlockEditor::MakeEquationCard(const QString &node_id,
   // registered with the service; the generation guards against a reply that
   // arrives after a newer request for the same card.
   const QString card_id = QStringLiteral("equation-card-") + node_id;
-  std::uint64_t preview_generation = 0;
+  // The generation lives on the heap: the service connection below outlives
+  // this function, so capturing a reference to a stack local would leave the
+  // lambda reading freed memory (ASan: stack-use-after-return).
+  auto preview_generation = std::make_shared<std::uint64_t>(0);
 
   // Source changed -> validation -> request render -> preview (design §7).
-  auto refresh = [preview, status, card_id, &preview_generation](
+  auto refresh = [preview, status, card_id, preview_generation](
                      const QString &latex) {
     const pf::MathValidation validation =
         pf::ValidateMath(latex.toStdString(), pf::MathFlavor::Display);
@@ -1159,9 +1162,8 @@ QWidget *BlockEditor::MakeEquationCard(const QString &node_id,
     // an older body is discarded by the service's generation check.
     preview->setText(QStringLiteral("…"));
     preview->setPixmap(QPixmap());
-    const std::uint64_t generation = MathRenderService::Shared()->Request(
+    *preview_generation = MathRenderService::Shared()->Request(
         card_id, QStringLiteral("display"), latex, style);
-    preview_generation = generation;
   };
   // P0-07: apply the asynchronous result to this card only. The service
   // already dropped replies from a superseded generation; the id + generation
@@ -1169,11 +1171,11 @@ QWidget *BlockEditor::MakeEquationCard(const QString &node_id,
   MathRenderService* math_service = MathRenderService::Shared();
   math_service->RegisterClient(card_id, preview);
   connect(math_service, &MathRenderService::mathRendered, preview,
-          [preview, card_id, &preview_generation](
+          [preview, card_id, preview_generation](
               const MathRenderResponse& response) {
             if (response.editor_id != card_id)
               return;
-            if (response.generation != preview_generation)
+            if (response.generation != *preview_generation)
               return;
             const QPixmap pixmap = PixmapFromMathResult(response.result);
             if (pixmap.isNull()) {

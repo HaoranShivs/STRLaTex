@@ -26,3 +26,6 @@ target_compile_definitions(pf_tests PRIVATE PF_TECTONIC_BIN="${TECTONIC_BIN}"
 
 enable_testing()
 add_test(NAME pf_tests COMMAND pf_tests)
+# E-06: CTest classification so CI can select a subset (unit/integration/
+# gui/runtime/sanitizer/...).
+set_tests_properties(pf_tests PROPERTIES LABELS "unit;integration;runtime")

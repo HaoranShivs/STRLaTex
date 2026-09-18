@@ -130,7 +130,8 @@ target_compile_definitions(paperforge-inline-editor-test
 add_test(NAME inline_editor
          COMMAND paperforge-inline-editor-test)
 set_tests_properties(inline_editor PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    LABELS "gui;sanitizer")
 target_include_directories(paperforge-gui-persistence-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(paperforge-gui-persistence-test PRIVATE
@@ -140,7 +141,8 @@ target_compile_definitions(paperforge-gui-persistence-test
 add_test(NAME gui_input_persistence
          COMMAND paperforge-gui-persistence-test)
 set_tests_properties(gui_input_persistence PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    LABELS "gui;integration")
 
 # P0-05 regression: every block kind must have a GUI projection at every
 # heading level (figures/tables below a Section used to render nowhere).
@@ -172,4 +174,18 @@ target_compile_definitions(paperforge-block-projection-test
 add_test(NAME block_projection
          COMMAND paperforge-block-projection-test)
 set_tests_properties(block_projection PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    LABELS "gui")
+
+# E-05: paperforge-gui-smoke existed but was registered with CTest nowhere, so
+# its checks never ran in CI. It is a real test, not a tool.
+add_test(NAME gui_smoke COMMAND paperforge-gui-smoke)
+set_tests_properties(gui_smoke PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    LABELS "gui")
+
+# E-05: paperforge-ui-verify is a screenshot tool, not a test. It is marked as
+# such instead of silently sitting in "built but never executed" limbo.
+set_property(TARGET paperforge-ui-verify PROPERTY EXCLUDE_FROM_ALL FALSE)
+set_target_properties(paperforge-ui-verify PROPERTIES
+    PROJECT_LABEL "tool: screenshot verification")
