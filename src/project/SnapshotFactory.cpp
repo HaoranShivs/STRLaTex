@@ -1,6 +1,7 @@
 #include "project/SnapshotFactory.h"
 
 #include "core/IdGenerator.h"
+#include "core/ProjectPath.h"
 #include "persistence/ProjectPersistence.h"
 
 namespace pf {
@@ -21,10 +22,20 @@ BuildSnapshot SnapshotFactory::CreateBuildSnapshot(
   // and extension under the package's assets/ directory, which is exactly
   // what the renderer emits in \includegraphics and what pdfLaTeX needs to
   // recognise the graphics format.
+  //
+  // P0-04 (second check): every stored relative path is re-validated here,
+  // immediately before it is turned into a filesystem source. An asset whose
+  // path escapes the project (malformed or hand-edited project.paper, or a
+  // registry entry mutated in memory) is skipped - the renderer then reports
+  // the missing-asset state instead of copying an arbitrary file into the
+  // build workspace.
   for (const auto &[id, meta] : assets_->registry().All()) {
+    auto safe = ResolveUntrustedProjectPath(assets_->assets_dir(),
+                                            meta.relative_path);
+    if (!safe.ok())
+      continue;
     snapshot.asset_files[id.value()] = meta.relative_path;
-    snapshot.asset_sources["assets/" + meta.relative_path] =
-        assets_->assets_dir() / meta.relative_path;
+    snapshot.asset_sources["assets/" + meta.relative_path] = safe.value();
   }
   return snapshot;
 }

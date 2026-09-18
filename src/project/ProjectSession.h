@@ -178,6 +178,12 @@ public:
     // state so the "no fake Queued during shutdown" rule is executable.
     // Production code reaches the same state through ~ProjectSession.
     void ShutdownSaveCoordinatorForTest() { save_coordinator_.Shutdown(); }
+    // Test-only seam (P0-04): install bibliography source bytes without going
+    // through the file-writing import path, so the save-time path boundary
+    // can be exercised in isolation.
+    void ForceBibliographyForTest(std::string bibtex) {
+      bibliography_bibtex_ = std::move(bibtex);
+    }
 
     // ---- Template ----
     void ChangeTemplate(const std::string& template_id);

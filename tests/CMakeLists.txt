@@ -6,6 +6,7 @@ add_executable(pf_tests
     TestPersistence.cpp
     TestDeserializationSafety.cpp
     TestSaveTransaction.cpp
+    TestProjectPathBoundary.cpp
     TestBibliography.cpp
     TestBuild.cpp
     TestEndToEnd.cpp

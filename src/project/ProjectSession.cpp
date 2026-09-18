@@ -9,6 +9,7 @@
 #include "build/CompilerFactory.h"
 #include "build/RuntimeManager.h"
 #include "core/IdGenerator.h"
+#include "core/ProjectPath.h"
 #include "document/InlineText.h"
 
 namespace pf {
@@ -347,13 +348,17 @@ bool ProjectSession::OpenProject(const std::filesystem::path &project_dir,
   for (const auto &meta : sp.assets) {
     assets_->registry().Register(meta);
   }
-  // Load bibliography file if present.
-  auto bib_path = paths_.project_dir / sp.bibliography_path;
-  if (std::filesystem::exists(bib_path)) {
+  // Load bibliography file if present. P0-04 (second check): the path came
+  // out of an untrusted file - resolve it through the trust boundary right
+  // before the read so a hand-edited project.paper can never make this open
+  // a file outside the project directory.
+  auto bib_path =
+      ResolveUntrustedProjectPath(paths_.project_dir, sp.bibliography_path);
+  if (bib_path.ok() && std::filesystem::exists(bib_path.value())) {
     BibliographyService service(bibliography_db_);
-    auto import = service.ImportFile(bib_path.string());
+    auto import = service.ImportFile(bib_path.value().string());
     if (import.status == BibliographyImportResult::Status::Ok) {
-      std::ifstream in(bib_path, std::ios::binary);
+      std::ifstream in(bib_path.value(), std::ios::binary);
       std::ostringstream ss;
       ss << in.rdbuf();
       bibliography_bibtex_ = ss.str();
@@ -578,7 +583,12 @@ SaveResult ProjectSession::Save() {
     const std::string rel = state_.settings().bibliography_path.empty()
                                 ? std::string("references.bib")
                                 : state_.settings().bibliography_path;
-    if (!WriteFileAtomically(paths_.project_dir / rel, bibliography_bibtex_)) {
+    // P0-04 (second check): writing is the most dangerous operation - a
+    // traversal in the stored path could overwrite a file outside the
+    // project. Resolve through the boundary; refuse to write when it fails.
+    auto target = ResolveUntrustedProjectPath(paths_.project_dir, rel);
+    if (!target.ok() ||
+        !WriteFileAtomically(target.value(), bibliography_bibtex_)) {
       bibliography_write_failed_ = true;
     } else {
       bibliography_write_failed_ = false;

@@ -6,6 +6,7 @@
 #include <functional>
 
 #include "core/IdGenerator.h"
+#include "core/ProjectPath.h"
 
 namespace pf {
 
@@ -200,6 +201,15 @@ AssetImportResult AssetManager::Stage(const AssetImportRequest &request) {
   AssetMetadata meta;
   meta.id = IdGenerator::NewAsset();
   meta.relative_path = dest.filename().string();
+  // P0-04: the stored path is a trust-boundary value. SafeAssetFilename()
+  // only emits [A-Za-z0-9_-], so this parse cannot fail today; asserting it
+  // here keeps the invariant local to the place that mints the value.
+  if (!ProjectRelativePath::Parse(meta.relative_path).ok()) {
+    result.status = AssetImportResult::Status::IoError;
+    result.detail = "refusing to register an unsafe asset name";
+    std::filesystem::remove(dest, ec);
+    return result;
+  }
   meta.media_type = media;
   meta.original_name = filename.string();
   meta.file_size = std::filesystem::file_size(dest, ec);

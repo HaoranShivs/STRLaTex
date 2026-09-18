@@ -141,9 +141,14 @@ void MainWindow::BuildUi() {
     const auto *metadata = controller_->session().assets().registry().Find(id);
     if (!metadata)
       return QString();
-    return ToQ(
-        (controller_->session().paths().assets_dir / metadata->relative_path)
-            .string());
+    // P0-04 (second check): the preview reads this path - resolve it through
+    // the project trust boundary so a malformed asset path cannot make the
+    // GUI open a file outside the project.
+    auto resolved = pf::ResolveUntrustedProjectPath(
+        controller_->session().paths().assets_dir, metadata->relative_path);
+    if (!resolved.ok())
+      return QString();
+    return ToQ(resolved.value().string());
   });
   if (!qEnvironmentVariable("PF_TRACE").isEmpty())
     fprintf(stderr, "TRACE: editor created\n");
