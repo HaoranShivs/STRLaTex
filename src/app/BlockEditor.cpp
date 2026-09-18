@@ -1217,6 +1217,170 @@ QWidget *BlockEditor::MakeEquationCard(const QString &node_id,
 
   return card;
 }
+
+// ---------------- P0-05: shared block-card factory ----------------
+//
+// Before this split the Section loop knew all four block kinds while the
+// Subsection and Subsubsection loops only handled Paragraph and Equation, so
+// a Figure or Table nested below a Section rendered nowhere: the document
+// held it, the outline listed it, but the editor showed nothing. One factory
+// plus one append path now serves every heading level.
+
+QWidget *BlockEditor::MakeFigureCard(const pf::Figure &figure,
+                                     const QString &outline_key) {
+  const QString node_id = ToQ(figure.id.value());
+  QWidget *card = MakeCard(node_id, "Figure", "caption", true);
+  auto *card_layout = qobject_cast<QVBoxLayout *>(card->layout());
+  auto *image = new FigureImageLabel(card);
+  image->setStyleSheet(
+      QString("background: %1; border: 1px solid %2; border-radius: 6px;"
+              "color: %3;")
+          .arg(theme::kSidePanel, theme::kDivider, theme::kSecondaryText));
+  const QString path =
+      asset_path_resolver_ ? asset_path_resolver_(figure.asset_id) : QString();
+  // Scale to the editor column width, not a fixed box: the label keeps the
+  // full image visible and re-fits it whenever the pane resizes.
+  image->SetSourcePixmap(path.isEmpty() ? QPixmap() : QPixmap(path));
+  card_layout->addWidget(image);
+  auto *caption = NewEditor(card,
+                            ToQ(pf::ReflowHardWrappedText(
+                                pf::InlineToPlainText(figure.caption))),
+                            1, theme::BlockVisualRole::Caption);
+  if (auto *caption_edit = qobject_cast<BlockEdit *>(caption)) {
+    caption_edit->setReflowOnPaste(true);
+  }
+  caption->setPlaceholderText("Figure caption");
+  caption->setProperty("row_node", node_id);
+  caption->setProperty("row_focus_key", node_id);
+  caption->setProperty("row_outline_key", outline_key);
+  caption->setProperty("commands_enabled", true);
+  // Single- vs double-column figure. Recorded on the document whatever the
+  // template is; only a two-column template exports a difference (see
+  // LatexRenderer: DoubleColumn emits the starred float).
+  auto *span_box = new QCheckBox(
+      QStringLiteral("Span both columns (double-column figure)"), card);
+  span_box->setChecked(figure.span == pf::FigureSpan::DoubleColumn);
+  span_box->setToolTip(QStringLiteral(
+      "Double-column figure. Has no visible effect until the paper template "
+      "uses two columns."));
+  span_box->setProperty("row_node", node_id);
+  span_box->setProperty("row_focus_key", node_id);
+  span_box->setProperty("row_outline_key", outline_key);
+  card_layout->addWidget(span_box);
+  connect(span_box, &QCheckBox::toggled, this,
+          [this, node = node_id](bool double_column) {
+            emit FigureSpanChanged(node, double_column);
+          });
+  Block gui_block;
+  gui_block.node_id = node_id;
+  gui_block.kind = QStringLiteral("Figure");
+  gui_block.card = card;
+  gui_block.editor = caption;
+  gui_block.commit_role = QStringLiteral("caption");
+  gui_block.committed_text = ToQ(pf::InlineToPlainText(figure.caption));
+  gui_block.outline_key = outline_key;
+  auto *block_edit = qobject_cast<BlockEdit *>(caption);
+  connect(block_edit, &BlockEdit::CommitRequested, this,
+          [this, caption]() {
+            for (auto &candidate : blocks_) {
+              if (candidate.editor == caption) {
+                CommitBlock(candidate);
+                break;
+              }
+            }
+          });
+  blocks_.push_back(std::move(gui_block));
+  return card;
+}
+
+QWidget *BlockEditor::MakeTableCard(const pf::Table &table,
+                                    const QString &outline_key) {
+  const QString node_id = ToQ(table.id.value());
+  QWidget *card = MakeCard(node_id, "Table", "caption", true);
+  auto *grid = new QTableWidget(static_cast<int>(table.RowCount()),
+                                static_cast<int>(table.ColumnCount()), card);
+  grid->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  grid->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+  grid->verticalHeader()->setVisible(false);
+  grid->setMaximumHeight(qMin(260, 34 + 32 * grid->rowCount()));
+  for (int row = 0; row < grid->rowCount(); ++row) {
+    for (int column = 0; column < grid->columnCount(); ++column) {
+      grid->setItem(row, column,
+                    new QTableWidgetItem(ToQ(pf::InlineToPlainText(
+                        table.cells[row][column].content))));
+    }
+  }
+  qobject_cast<QVBoxLayout *>(card->layout())->addWidget(grid);
+  auto *caption = NewEditor(card,
+                            ToQ(pf::ReflowHardWrappedText(
+                                pf::InlineToPlainText(table.caption))),
+                            1, theme::BlockVisualRole::Caption);
+  if (auto *caption_edit = qobject_cast<BlockEdit *>(caption)) {
+    caption_edit->setReflowOnPaste(true);
+  }
+  caption->setPlaceholderText("Table caption");
+  caption->setProperty("row_node", node_id);
+  caption->setProperty("row_focus_key", node_id);
+  caption->setProperty("row_outline_key", outline_key);
+  caption->setProperty("commands_enabled", true);
+  Block gui_block;
+  gui_block.node_id = node_id;
+  gui_block.kind = QStringLiteral("Table");
+  gui_block.card = card;
+  gui_block.editor = caption;
+  gui_block.commit_role = QStringLiteral("caption");
+  gui_block.committed_text = ToQ(pf::InlineToPlainText(table.caption));
+  gui_block.outline_key = outline_key;
+  auto *block_edit = qobject_cast<BlockEdit *>(caption);
+  connect(block_edit, &BlockEdit::CommitRequested, this,
+          [this, caption]() {
+            for (auto &candidate : blocks_) {
+              if (candidate.editor == caption) {
+                CommitBlock(candidate);
+                break;
+              }
+            }
+          });
+  blocks_.push_back(std::move(gui_block));
+  return card;
+}
+
+QWidget *BlockEditor::CreateBlockCard(const pf::Block &block,
+                                      const QString &outline_key) {
+  if (const auto *para = std::get_if<pf::Paragraph>(&block)) {
+    return MakeTextCard(ToQ(para->id.value()), para->content, outline_key);
+  }
+  if (const auto *eq = std::get_if<pf::EquationBlock>(&block)) {
+    return MakeEquationCard(ToQ(eq->id.value()), *eq, outline_key);
+  }
+  if (const auto *figure = std::get_if<pf::Figure>(&block)) {
+    return MakeFigureCard(*figure, outline_key);
+  }
+  if (const auto *table = std::get_if<pf::Table>(&block)) {
+    return MakeTableCard(*table, outline_key);
+  }
+  return nullptr;
+}
+
+void BlockEditor::AppendBlocks(const std::vector<pf::Block> &blocks,
+                               const QString &outline_key) {
+  auto *host_layout = qobject_cast<QVBoxLayout *>(host_->layout());
+  if (host_layout == nullptr)
+    return;
+  for (const auto &block : blocks) {
+    QWidget *card = CreateBlockCard(block, outline_key);
+    if (card == nullptr)
+      continue;
+    host_layout->insertWidget(host_layout->count() - 1, card);
+    // A gap follows every body block (including the last), so the pointer
+    // never has to travel to a toolbar to add the next one.
+    const QString anchor = std::visit(
+        [](const auto &typed) { return QString::fromStdString(typed.id.value()); },
+        block);
+    host_layout->insertWidget(host_layout->count() - 1, MakeGap(anchor));
+  }
+}
+
 QWidget *BlockEditor::MakeCard(const QString &node_id, const QString &kind,
                                const QString &commit_role, bool header_inline) {
   auto *card = new QFrame(host_);
@@ -1999,172 +2163,19 @@ void BlockEditor::RebuildFromDocument(const Document &doc) {
     const QString section_key = ToQ(section.id.value());
     add(section_key, "Section Title", "section",
         ToQ(pf::InlineToPlainText(section.title)), section_key, true, 1, true);
-    for (const auto &block : section.blocks) {
-      if (const auto *para = std::get_if<pf::Paragraph>(&block)) {
-        QWidget *text_card =
-            MakeTextCard(ToQ(para->id.value()), para->content, section_key);
-        host_layout->insertWidget(host_layout->count() - 1, text_card);
-        append_gap(ToQ(para->id.value()));
-      } else if (const auto *eq = std::get_if<pf::EquationBlock>(&block)) {
-        QWidget *equation_card =
-            MakeEquationCard(ToQ(eq->id.value()), *eq, section_key);
-        host_layout->insertWidget(host_layout->count() - 1, equation_card);
-        append_gap(ToQ(eq->id.value()));
-      } else if (const auto *figure = std::get_if<pf::Figure>(&block)) {
-        QWidget *card =
-            MakeCard(ToQ(figure->id.value()), "Figure", "caption", true);
-        auto *card_layout = qobject_cast<QVBoxLayout *>(card->layout());
-        auto *image = new FigureImageLabel(card);
-        image->setStyleSheet(
-            QString("background: %1; border: 1px solid %2; border-radius: 6px;"
-                    "color: %3;")
-                .arg(theme::kSidePanel, theme::kDivider,
-                     theme::kSecondaryText));
-        QString path = asset_path_resolver_
-                           ? asset_path_resolver_(figure->asset_id)
-                           : QString();
-        // Scale to the editor column width, not a fixed box: the label keeps
-        // the full image visible and re-fits it whenever the pane resizes.
-        image->SetSourcePixmap(path.isEmpty() ? QPixmap() : QPixmap(path));
-        card_layout->addWidget(image);
-        auto *caption = NewEditor(card,
-                                  ToQ(pf::ReflowHardWrappedText(
-                                      pf::InlineToPlainText(figure->caption))),
-                                  1, theme::BlockVisualRole::Caption);
-        if (auto *caption_edit = qobject_cast<BlockEdit *>(caption)) {
-          caption_edit->setReflowOnPaste(true);
-        }
-        caption->setPlaceholderText("Figure caption");
-        caption->setProperty("row_node", ToQ(figure->id.value()));
-        caption->setProperty("row_focus_key", ToQ(figure->id.value()));
-        caption->setProperty("row_outline_key", section_key);
-        caption->setProperty("commands_enabled", true);
-        // Single- vs double-column figure. Recorded on the document whatever
-        // the template is; only a two-column template exports a difference
-        // (see LatexRenderer: DoubleColumn emits the starred float).
-        auto *span_box = new QCheckBox(
-            QStringLiteral("Span both columns (double-column figure)"), card);
-        span_box->setChecked(figure->span == pf::FigureSpan::DoubleColumn);
-        span_box->setToolTip(QStringLiteral(
-            "Double-column figure. Has no visible effect until the paper "
-            "template uses two columns."));
-        span_box->setProperty("row_node", ToQ(figure->id.value()));
-        span_box->setProperty("row_focus_key", ToQ(figure->id.value()));
-        span_box->setProperty("row_outline_key", section_key);
-        card_layout->addWidget(span_box);
-        connect(span_box, &QCheckBox::toggled, this,
-                [this, node = ToQ(figure->id.value())](bool double_column) {
-                  emit FigureSpanChanged(node, double_column);
-                });
-        Block gui_block;
-        gui_block.node_id = ToQ(figure->id.value());
-        gui_block.kind = QStringLiteral("Figure");
-        gui_block.card = card;
-        gui_block.editor = caption;
-        gui_block.commit_role = QStringLiteral("caption");
-        gui_block.committed_text = ToQ(pf::InlineToPlainText(figure->caption));
-        gui_block.outline_key = section_key;
-        auto *block_edit = qobject_cast<BlockEdit *>(caption);
-        connect(block_edit, &BlockEdit::CommitRequested, this,
-                [this, caption]() {
-                  for (auto &candidate : blocks_) {
-                    if (candidate.editor == caption) {
-                      CommitBlock(candidate);
-                      break;
-                    }
-                  }
-                });
-        host_layout->insertWidget(host_layout->count() - 1, card);
-        append_gap(ToQ(figure->id.value()));
-        blocks_.push_back(std::move(gui_block));
-      } else if (const auto *table = std::get_if<pf::Table>(&block)) {
-        QWidget *card =
-            MakeCard(ToQ(table->id.value()), "Table", "caption", true);
-        auto *grid =
-            new QTableWidget(static_cast<int>(table->RowCount()),
-                             static_cast<int>(table->ColumnCount()), card);
-        grid->setEditTriggers(QAbstractItemView::NoEditTriggers);
-        grid->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-        grid->verticalHeader()->setVisible(false);
-        grid->setMaximumHeight(qMin(260, 34 + 32 * grid->rowCount()));
-        for (int row = 0; row < grid->rowCount(); ++row) {
-          for (int column = 0; column < grid->columnCount(); ++column) {
-            grid->setItem(row, column,
-                          new QTableWidgetItem(ToQ(pf::InlineToPlainText(
-                              table->cells[row][column].content))));
-          }
-        }
-        qobject_cast<QVBoxLayout *>(card->layout())->addWidget(grid);
-        auto *caption = NewEditor(card,
-                                  ToQ(pf::ReflowHardWrappedText(
-                                      pf::InlineToPlainText(table->caption))),
-                                  1, theme::BlockVisualRole::Caption);
-        if (auto *caption_edit = qobject_cast<BlockEdit *>(caption)) {
-          caption_edit->setReflowOnPaste(true);
-        }
-        caption->setPlaceholderText("Table caption");
-        caption->setProperty("row_node", ToQ(table->id.value()));
-        caption->setProperty("row_focus_key", ToQ(table->id.value()));
-        caption->setProperty("row_outline_key", section_key);
-        caption->setProperty("commands_enabled", true);
-        Block gui_block;
-        gui_block.node_id = ToQ(table->id.value());
-        gui_block.kind = QStringLiteral("Table");
-        gui_block.card = card;
-        gui_block.editor = caption;
-        gui_block.commit_role = QStringLiteral("caption");
-        gui_block.committed_text = ToQ(pf::InlineToPlainText(table->caption));
-        gui_block.outline_key = section_key;
-        auto *block_edit = qobject_cast<BlockEdit *>(caption);
-        connect(block_edit, &BlockEdit::CommitRequested, this,
-                [this, caption]() {
-                  for (auto &candidate : blocks_) {
-                    if (candidate.editor == caption) {
-                      CommitBlock(candidate);
-                      break;
-                    }
-                  }
-                });
-        host_layout->insertWidget(host_layout->count() - 1, card);
-        append_gap(ToQ(table->id.value()));
-        blocks_.push_back(std::move(gui_block));
-      }
-    }
+    // P0-05: one append path for every block kind at every heading level.
+    AppendBlocks(section.blocks, section_key);
     for (const auto &sub : section.subsections) {
       const QString sub_key = ToQ(sub.id.value());
       add(sub_key, "Subsection Title", "subsection",
           ToQ(pf::InlineToPlainText(sub.title)), sub_key, true, 1, true);
-      for (const auto &block : sub.blocks) {
-        if (const auto *para = std::get_if<pf::Paragraph>(&block)) {
-          QWidget *text_card =
-              MakeTextCard(ToQ(para->id.value()), para->content, sub_key);
-          host_layout->insertWidget(host_layout->count() - 1, text_card);
-          append_gap(ToQ(para->id.value()));
-        } else if (const auto *eq = std::get_if<pf::EquationBlock>(&block)) {
-          QWidget *equation_card =
-              MakeEquationCard(ToQ(eq->id.value()), *eq, sub_key);
-          host_layout->insertWidget(host_layout->count() - 1, equation_card);
-          append_gap(ToQ(eq->id.value()));
-        }
-      }
+      AppendBlocks(sub.blocks, sub_key);
       for (const auto &subsub : sub.subsubsections) {
         const QString subsub_key = ToQ(subsub.id.value());
         add(subsub_key, "Subsubsection Title", "subsubsection",
             ToQ(pf::InlineToPlainText(subsub.title)), subsub_key, true, 1,
             true);
-        for (const auto &block : subsub.blocks) {
-          if (const auto *para = std::get_if<pf::Paragraph>(&block)) {
-            QWidget *text_card =
-                MakeTextCard(ToQ(para->id.value()), para->content, subsub_key);
-            host_layout->insertWidget(host_layout->count() - 1, text_card);
-            append_gap(ToQ(para->id.value()));
-          } else if (const auto *eq = std::get_if<pf::EquationBlock>(&block)) {
-            QWidget *equation_card =
-                MakeEquationCard(ToQ(eq->id.value()), *eq, subsub_key);
-            host_layout->insertWidget(host_layout->count() - 1, equation_card);
-            append_gap(ToQ(eq->id.value()));
-          }
-        }
+        AppendBlocks(subsub.blocks, subsub_key);
       }
     }
   }

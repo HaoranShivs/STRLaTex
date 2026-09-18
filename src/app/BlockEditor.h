@@ -175,6 +175,18 @@ private:
   QWidget *MakeEquationCard(const QString &node_id,
                             const pf::EquationBlock &equation,
                             const QString &outline_key);
+  // A Figure row: caption editor, image preview and span toggle (P0-05).
+  QWidget *MakeFigureCard(const pf::Figure &figure,
+                          const QString &outline_key);
+  // A Table row: grid preview plus caption editor (P0-05).
+  QWidget *MakeTableCard(const pf::Table &table, const QString &outline_key);
+  // P0-05: one block-card factory + one append path for every heading level.
+  // Previously the Section loop knew all four block kinds while the
+  // Subsection/Subsubsection loops only handled Paragraph and Equation, so a
+  // Figure or Table nested below a Section rendered nowhere.
+  QWidget *CreateBlockCard(const pf::Block &block, const QString &outline_key);
+  void AppendBlocks(const std::vector<pf::Block> &blocks,
+                    const QString &outline_key);
   // The [B] [I] [Inline Math] [Citation] [Reference] strip shown while a
   // text row is focused (plan §4.4).
   QWidget *BuildFormatToolbar(InlineEditor *editor);
