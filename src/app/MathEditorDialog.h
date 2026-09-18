@@ -9,6 +9,9 @@
 //     and shows its error (design §7/§8).
 
 #include <QDialog>
+#include <QImage>
+
+#include <cstdint>
 #include <QString>
 
 class QLabel;
@@ -34,11 +37,19 @@ public:
 
 private:
     void RefreshPreview();
+    // P0-07: apply an asynchronously rendered preview (GUI thread).
+    void ApplyRenderedPreview(const QString& latex, const QImage& image,
+                              int width, int height, int baseline,
+                              qreal device_pixel_ratio, const QString& note,
+                              bool exact);
 
     QPlainTextEdit* source_ = nullptr;
     QLabel* preview_ = nullptr;
     QLabel* status_ = nullptr;
     QTimer* debounce_ = nullptr;
+    // P0-07: the dialog renders through the shared worker; only the debounce
+    // stays on the GUI thread, and it merely reduces request volume.
+    std::uint64_t preview_generation_ = 0;
 };
 
 }  // namespace pf::gui

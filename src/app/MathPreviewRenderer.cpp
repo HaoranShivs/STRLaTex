@@ -1453,9 +1453,11 @@ MathRenderResult FinishImage(const BoxPtr& content, const MathRenderStyle& style
         p.end();
     }
 
-    QPixmap pm = QPixmap::fromImage(img);
-    pm.setDevicePixelRatio(dprWanted > 0 ? dprWanted : 1.0);
-    res.pixmap = pm;
+    // P0-07: the pixels stay a QImage here; the QPixmap is created by the
+    // GUI-thread entry point. QPixmap construction is GUI-thread-only, and
+    // this function runs on the math worker thread.
+    res.image = img;
+    res.device_pixel_ratio = dprWanted > 0 ? dprWanted : 1.0;
     res.width = logicalW;
     res.height = logicalH;
     res.baseline = baseline;
@@ -1719,8 +1721,9 @@ MathRenderResult RenderWithTex(const QString& latex,
         }
     }
 
-    result.pixmap = QPixmap::fromImage(image);
-    result.pixmap.setDevicePixelRatio(dpr);
+    // P0-07: image only - see FinishImage.
+    result.image = image;
+    result.device_pixel_ratio = dpr;
     result.width = qMax(1, qRound(image.width() / dpr));
     result.height = qMax(1, qRound(image.height() / dpr));
     const qreal total_pt = ascent_pt + descent_pt + 2.0 * kPagePaddingPt;
@@ -1755,7 +1758,10 @@ QMutex& RenderCacheMutex() {
 
 }  // namespace
 
-MathRenderResult RenderMathPreview(const QString& latex, const MathRenderStyle& style) {
+// P0-07: the shared cache stores IMAGE-ONLY results so it is safe to touch
+// from the math worker thread (a QPixmap must never cross that boundary).
+MathRenderResult RenderMathPreviewImage(const QString& latex,
+                                        const MathRenderStyle& style) {
     MathRenderResult empty;
     if (latex.trimmed().isEmpty()) return empty;
     if (!QGuiApplication::instance()) {
@@ -1799,6 +1805,20 @@ MathRenderResult RenderMathPreview(const QString& latex, const MathRenderStyle& 
         QMutexLocker lock(&RenderCacheMutex());
         if (RenderCache().size() >= kMaxCacheEntries) RenderCache().clear();
         RenderCache().insert(cache_key, rendered);
+    }
+    return rendered;
+}
+
+MathRenderResult RenderMathPreview(const QString& latex,
+                                   const MathRenderStyle& style) {
+    // GUI-thread entry point: render (or reuse) the image, then materialise
+    // the QPixmap here, where QPixmap construction is legal.
+    MathRenderResult rendered = RenderMathPreviewImage(latex, style);
+    if (!rendered.image.isNull() && rendered.pixmap.isNull()) {
+        rendered.pixmap = QPixmap::fromImage(rendered.image);
+        rendered.pixmap.setDevicePixelRatio(
+            rendered.device_pixel_ratio > 0 ? rendered.device_pixel_ratio
+                                            : 1.0);
     }
     return rendered;
 }

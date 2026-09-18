@@ -74,6 +74,14 @@ public:
     // Load without touching the dirty flag (used by a programmatic restyle).
     void SetContentClean(const InlineContent& content);
 
+    // P0-07: apply an asynchronously rendered formula. Called by the math
+    // render service on the GUI thread. The object is located by its formula
+    // id inside the payload; when it no longer exists (deleted, undone,
+    // reloaded) the reply is dropped.
+    void ApplyMathRender(const QString& formula_id, const QString& latex,
+                         const QImage& image, int width, int height,
+                         int baseline, qreal device_pixel_ratio);
+
     // Re-fit the widget to its content; call after the width changes.
     void ResizeToContent();
     // Re-fit using a width that has not been applied to the widget yet.
@@ -176,6 +184,9 @@ private:
         inline_object_format::kKindProperty;
     static constexpr int kTokenPayloadProperty =
         inline_object_format::kPayloadProperty;
+    // P0-07: identifies one rendered formula object inside this row, so an
+    // asynchronous reply can find (or safely miss) its target.
+    static constexpr int kMathFormulaIdProperty = QTextFormat::UserProperty + 20;
     // Clipboard type that preserves math objects, marks and semantic tokens.
     static const char* InlineMimeType();
 
@@ -216,6 +227,12 @@ private:
     bool refreshing_displays_ = false;
     bool math_editor_open_ = false;
     int protected_inserts_ = 0;
+    // P0-07: every formula this row has rendered gets a stable id, and each
+    // render request bumps the row's generation so a late reply for an old
+    // formula is discarded. The editor id is the objectName assigned when the
+    // row is created.
+    std::uint64_t math_generation_ = 0;
+    std::uint64_t next_formula_id_ = 0;
     // Body typography (UI plan §5): proportional line height re-applied on
     // every reload so 150% survives SetContent/clear.
     int line_height_percent_ = 0;

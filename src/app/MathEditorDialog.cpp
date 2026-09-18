@@ -1,5 +1,7 @@
 #include "app/MathEditorDialog.h"
 
+#include <atomic>
+
 #include <QDialogButtonBox>
 #include <QFontDatabase>
 #include <QLabel>
@@ -10,6 +12,7 @@
 
 #include "app/MathPreviewRenderer.h"
 #include "app/Theme.h"
+#include "app/math/MathRenderService.h"
 #include "math/MathValidator.h"
 
 namespace pf::gui {
@@ -73,6 +76,27 @@ MathEditorDialog::MathEditorDialog(const QString& latex, QWidget* parent)
     debounce_->setInterval(kDebounceMs);
     connect(debounce_, &QTimer::timeout, this,
             [this]() { RefreshPreview(); });
+    // P0-07: the preview renders on the shared worker thread. Closing the
+    // dialog destroys this object, and the service's QPointer guard then
+    // discards any reply that was still in flight.
+    static std::atomic<std::uint64_t> next_dialog_id{0};
+    const QString dialog_id =
+        QStringLiteral("math-dialog-%1").arg(next_dialog_id.fetch_add(1));
+    setObjectName(dialog_id);
+    MathRenderService* service = MathRenderService::Shared();
+    service->RegisterClient(dialog_id, this);
+    connect(service, &MathRenderService::mathRendered, this,
+            [this](const MathRenderResponse& response) {
+                if (response.editor_id != objectName())
+                    return;
+                // The dialog re-validates on its own; only apply the pixels.
+                ApplyRenderedPreview(
+                    response.latex, response.result.image,
+                    response.result.width, response.result.height,
+                    response.result.baseline,
+                    response.result.device_pixel_ratio, response.result.note,
+                    response.result.exact);
+            });
     // Live (debounced) preview: source changed -> validation -> render.
     connect(source_, &QPlainTextEdit::textChanged, this,
             [this]() { debounce_->start(); });
@@ -126,18 +150,42 @@ void MathEditorDialog::RefreshPreview() {
     if (!validation.valid()) {
         style.backend = MathRenderBackend::ApproximateOnly;
     }
-    const MathRenderResult rendered = RenderMathPreview(body, style);
-    if (rendered.pixmap.isNull()) {
-        preview_->setPixmap(QPixmap());
-        preview_->setText(validation.pending() ? QStringLiteral("—")
-                                               : QStringLiteral("?"));
+    // P0-07: enqueue instead of blocking the GUI thread on TeX. The debounce
+    // above only limits how many requests are issued; it no longer runs TeX.
+    preview_->setText(QStringLiteral("…"));
+    preview_->setPixmap(QPixmap());
+    ++preview_generation_;
+    MathRenderService::Shared()->Request(objectName(),
+                                         QStringLiteral("preview"), body,
+                                         style);
+}
+
+void MathEditorDialog::ApplyRenderedPreview(const QString& latex,
+                                            const QImage& image, int width,
+                                            int height, int baseline,
+                                            qreal device_pixel_ratio,
+                                            const QString& note, bool exact) {
+    if (!preview_ || !status_ || image.isNull())
+        return;
+    // The dialog scales the pixmap through the label, so the logical metrics
+    // are only needed to reject an empty render.
+    if (width <= 0 || height <= 0 || baseline < 0)
+        return;
+    // A reply for a stale body must not replace the current one.
+    if (source_ && latex != source_->toPlainText())
+        return;
+    MathRenderResult partial;
+    partial.image = image;
+    partial.device_pixel_ratio = device_pixel_ratio;
+    const QPixmap pixmap = PixmapFromMathResult(partial);
+    if (pixmap.isNull()) {
+        preview_->setText(QStringLiteral("?"));
         return;
     }
     preview_->setText(QString());
-    preview_->setPixmap(rendered.pixmap);
-    if (!rendered.exact && !rendered.note.isEmpty()) {
-        status_->setText(status_->text() +
-                         QStringLiteral("  (%1)").arg(rendered.note));
+    preview_->setPixmap(pixmap);
+    if (!exact && !note.isEmpty()) {
+        status_->setText(status_->text() + QStringLiteral("  (%1)").arg(note));
     }
 }
 

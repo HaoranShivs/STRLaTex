@@ -38,6 +38,7 @@
 #include <initializer_list>
 
 #include "app/MathPreviewRenderer.h"
+#include "app/math/MathRenderService.h"
 #include "app/Theme.h"
 #include "document/InlineText.h"
 #include "math/MathValidator.h"
@@ -1129,8 +1130,15 @@ QWidget *BlockEditor::MakeEquationCard(const QString &node_id,
   controls_layout->addWidget(label_edit, 1);
   card_layout->addWidget(controls);
 
-  // Source changed -> validation -> render -> preview (design §7).
-  auto refresh = [preview, status](const QString &latex) {
+  // P0-07: per-card async render state. `card_id` is unique per card and
+  // registered with the service; the generation guards against a reply that
+  // arrives after a newer request for the same card.
+  const QString card_id = QStringLiteral("equation-card-") + node_id;
+  std::uint64_t preview_generation = 0;
+
+  // Source changed -> validation -> request render -> preview (design §7).
+  auto refresh = [preview, status, card_id, &preview_generation](
+                     const QString &latex) {
     const pf::MathValidation validation =
         pf::ValidateMath(latex.toStdString(), pf::MathFlavor::Display);
     if (validation.invalid()) {
@@ -1146,15 +1154,36 @@ QWidget *BlockEditor::MakeEquationCard(const QString &node_id,
     }
     MathRenderStyle style;
     style.font_px = 22;
-    const MathRenderResult rendered = RenderMathPreview(latex, style);
-    if (rendered.pixmap.isNull()) {
-      preview->setPixmap(QPixmap());
-      preview->setText(QStringLiteral("—"));
-    } else {
-      preview->setText(QString());
-      preview->setPixmap(rendered.pixmap);
-    }
+    // P0-07: render on the shared worker thread. The card registers its own
+    // client so the reply is routed back to this label and a late reply for
+    // an older body is discarded by the service's generation check.
+    preview->setText(QStringLiteral("…"));
+    preview->setPixmap(QPixmap());
+    const std::uint64_t generation = MathRenderService::Shared()->Request(
+        card_id, QStringLiteral("display"), latex, style);
+    preview_generation = generation;
   };
+  // P0-07: apply the asynchronous result to this card only. The service
+  // already dropped replies from a superseded generation; the id + generation
+  // check here keeps a recycled card from showing a foreign formula.
+  MathRenderService* math_service = MathRenderService::Shared();
+  math_service->RegisterClient(card_id, preview);
+  connect(math_service, &MathRenderService::mathRendered, preview,
+          [preview, card_id, &preview_generation](
+              const MathRenderResponse& response) {
+            if (response.editor_id != card_id)
+              return;
+            if (response.generation != preview_generation)
+              return;
+            const QPixmap pixmap = PixmapFromMathResult(response.result);
+            if (pixmap.isNull()) {
+              preview->setPixmap(QPixmap());
+              preview->setText(QStringLiteral("—"));
+              return;
+            }
+            preview->setText(QString());
+            preview->setPixmap(pixmap);
+          });
   refresh(ToQ(equation.expression.latex));
 
   auto *timer = new QTimer(card);

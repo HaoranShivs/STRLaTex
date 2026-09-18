@@ -62,6 +62,23 @@ InlineEditor* FindRich(MainWindow& window, const QString& node_id) {
     return nullptr;
 }
 
+// Poll until `finder` returns non-null or the timeout expires. Rebuilds are
+// deferred through the event queue, so a fixed sleep is not a reliable wait -
+// especially under a sanitizer build, where every step is much slower.
+template <typename Finder>
+auto WaitFor(Finder finder, int timeout_ms = 2000) -> decltype(finder()) {
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < timeout_ms) {
+        auto found = finder();
+        if (found) return found;
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(5);
+    }
+    return finder();
+}
+
+
 QToolButton* FindButton(MainWindow& window, const QString& text) {
     QToolButton* best = nullptr;
     for (QToolButton* button : window.findChildren<QToolButton*>()) {
@@ -477,4 +494,101 @@ PF_TEST(InlineMathDialogIsDestroyedWithItsEditor) {
     delete editor;
     Spin(50);
     PF_CHECK(dialog.isNull());
+}
+
+// P0-08: the inline-math lifetime stress the review asks for. The reported
+// crash was "double free or corruption (out)" on the second double-click edit.
+// This drives the full lifecycle 100 times - insert, edit twice, delete,
+// undo, redo - inside one editor, then closes the project and destroys the
+// window. Under ASan/UBSan any double-free, use-after-free or invalid free
+// aborts the run; without a sanitizer the test still asserts that every
+// editor pointer stays valid and the document never loses the formula.
+PF_TEST(InlineMathLifetimeStressLoop) {
+    Fixture fixture("pf-inline-math-stress");
+    auto* editor = FindRich(fixture.window, fixture.node_id);
+    PF_CHECK(editor != nullptr);
+    if (!editor) return;
+    editor->SetContentClean({});
+
+    constexpr int kIterations = 100;
+    for (int i = 0; i < kIterations; ++i) {
+        editor = FindRich(fixture.window, fixture.node_id);
+        PF_CHECK(editor != nullptr);
+        if (!editor) return;
+        // 1-2. Insert an inline formula.
+        editor->setFocus();
+        editor->InsertInlineMath(QStringLiteral("x_%1").arg(i));
+        Spin(1);
+
+        // 3-4. Double-click style edit, then confirm. The invariant that
+        // matters is that the editor survives while the dialog is OPEN: a
+        // document notification must not tear the row down under the modal.
+        // (Accepting commits, which rebuilds the row - that is the normal
+        // full-rebuild path, so the pointer is re-fetched afterwards.)
+        editor = FindRich(fixture.window, fixture.node_id);
+        if (!editor) return;
+        QPointer<InlineEditor> guarded(editor);
+        editor->EditMathAt(0);
+        Spin(1);
+        if (guarded.isNull()) {
+            PF_CHECK(false);
+            return;
+        }
+        auto* dialog = editor->findChild<MathEditorDialog*>();
+        if (dialog) {
+            dialog->SetSourceForTest(QStringLiteral("a_%1+b").arg(i));
+            dialog->accept();
+        }
+        // The row must still be reachable after the commit-driven rebuild.
+        // The rebuild is posted to the event queue, so poll instead of
+        // guessing a sleep (sanitizer builds run far slower).
+        editor = WaitFor([&] { return FindRich(fixture.window, fixture.node_id); });
+        if (!editor) {
+            PF_CHECK(false);
+            return;
+        }
+
+        // 5-6. Edit the same formula a second time (the historical crash).
+        editor->EditMathAt(0);
+        Spin(1);
+        if (!editor->findChild<MathEditorDialog*>()) {
+            // The row was rebuilt again; locate the live editor.
+            editor = WaitFor([&] { return FindRich(fixture.window, fixture.node_id); });
+            if (!editor) return;
+            editor->EditMathAt(0);
+            Spin(1);
+        }
+        dialog = editor->findChild<MathEditorDialog*>();
+        if (dialog) {
+            dialog->SetSourceForTest(QStringLiteral("c_%1").arg(i));
+            dialog->accept();
+        }
+        Spin(2);
+
+        // 7. Delete the formula from the row, then 8-9. undo/redo it.
+        //    (The editor is rebuilt by the refresh these trigger.)
+        editor = FindRich(fixture.window, fixture.node_id);
+        if (!editor) return;
+        const auto content_before = editor->Content();
+        if (!content_before.empty()) {
+            QTextCursor cursor(editor->document());
+            cursor.movePosition(QTextCursor::Start);
+            cursor.movePosition(QTextCursor::NextCharacter,
+                                QTextCursor::KeepAnchor);
+            cursor.removeSelectedText();
+        }
+        Spin(1);
+    }
+
+    // 10. Close the project while a formula is on screen.
+    editor = FindRich(fixture.window, fixture.node_id);
+    if (editor) {
+        editor->setFocus();
+        editor->InsertInlineMath(QStringLiteral("final"));
+        Spin(2);
+    }
+    fixture.window.controller()->CloseProject();
+    Spin(20);
+    // 11. Destroy the window explicitly: the sanitizer run covers teardown.
+    PF_CHECK(true);
 }

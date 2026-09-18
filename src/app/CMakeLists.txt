@@ -14,6 +14,7 @@ add_executable(paperforge-gui
     ProblemsPanel.cpp
     WelcomePage.cpp
     MathPreviewRenderer.cpp
+    math/MathRenderService.cpp
     InlineMathObjectRenderer.cpp
     CitationObjectRenderer.cpp
     MathEditorDialog.cpp
@@ -36,6 +37,7 @@ add_executable(paperforge-gui-smoke
     GuiSmokeTest.cpp
     ProjectController.cpp
     MathPreviewRenderer.cpp
+    math/MathRenderService.cpp
     InlineMathObjectRenderer.cpp
     CitationObjectRenderer.cpp
     MathEditorDialog.cpp
@@ -58,6 +60,7 @@ add_executable(paperforge-ui-verify
     ProblemsPanel.cpp
     WelcomePage.cpp
     MathPreviewRenderer.cpp
+    math/MathRenderService.cpp
     InlineMathObjectRenderer.cpp
     CitationObjectRenderer.cpp
     MathEditorDialog.cpp
@@ -83,6 +86,7 @@ add_executable(paperforge-gui-persistence-test
     ProblemsPanel.cpp
     WelcomePage.cpp
     MathPreviewRenderer.cpp
+    math/MathRenderService.cpp
     InlineMathObjectRenderer.cpp
     CitationObjectRenderer.cpp
     MathEditorDialog.cpp
@@ -99,6 +103,7 @@ add_executable(paperforge-inline-editor-test
     ${CMAKE_SOURCE_DIR}/tests/TestInlineMathGui.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestCitationGui.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestProblemsPanel.cpp
+    ${CMAKE_SOURCE_DIR}/tests/TestMathRenderService.cpp
     EditorItemKind.cpp
     InlineEditor.cpp
     MainWindow.cpp
@@ -110,6 +115,7 @@ add_executable(paperforge-inline-editor-test
     ProblemsPanel.cpp
     WelcomePage.cpp
     MathPreviewRenderer.cpp
+    math/MathRenderService.cpp
     InlineMathObjectRenderer.cpp
     CitationObjectRenderer.cpp
     MathEditorDialog.cpp
@@ -150,6 +156,7 @@ add_executable(paperforge-block-projection-test
     ProblemsPanel.cpp
     WelcomePage.cpp
     MathPreviewRenderer.cpp
+    math/MathRenderService.cpp
     InlineMathObjectRenderer.cpp
     CitationObjectRenderer.cpp
     MathEditorDialog.cpp

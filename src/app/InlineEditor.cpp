@@ -1,5 +1,7 @@
 #include "app/InlineEditor.h"
 
+#include <atomic>
+
 #include <QApplication>
 #include <QKeyEvent>
 #include <QResizeEvent>
@@ -16,6 +18,7 @@
 #include "app/InlineMathObjectRenderer.h"
 #include "app/MathEditorDialog.h"
 #include "app/MathPreviewRenderer.h"
+#include "app/math/MathRenderService.h"
 #include "app/Theme.h"
 #include "document/InlineText.h"
 
@@ -33,6 +36,26 @@ InlineEditor::InlineEditor(QWidget* parent)
     : QTextEdit(parent),
       math_object_renderer_(std::make_unique<InlineMathObjectRenderer>()),
       citation_object_renderer_(std::make_unique<CitationObjectRenderer>()) {
+    // P0-07: connect to the shared math render service. Every row gets a
+    // unique id; the service replies through the queued signal, so a reply
+    // for a destroyed row is dropped by the QPointer guard inside the service.
+    static std::atomic<std::uint64_t> next_editor_id{0};
+    const QString editor_id =
+        QStringLiteral("inline-editor-%1")
+            .arg(next_editor_id.fetch_add(1));
+    setObjectName(editor_id);
+    MathRenderService* service = MathRenderService::Shared();
+    service->RegisterClient(editor_id, this);
+    connect(service, &MathRenderService::mathRendered, this,
+            [this](const MathRenderResponse& response) {
+                if (response.editor_id != objectName())
+                    return;
+                ApplyMathRender(response.formula_id, response.latex,
+                                response.result.image, response.result.width,
+                                response.result.height,
+                                response.result.baseline,
+                                response.result.device_pixel_ratio);
+            });
     setAcceptRichText(false);
     setWordWrapMode(QTextOption::WordWrap);
     setFrameShape(QFrame::NoFrame);
@@ -375,48 +398,110 @@ void InlineEditor::InsertMathObject(QTextCursor& cursor, const QString& latex) {
     const QFont text_font = document()->defaultFont();
     const QFontMetricsF text_metrics(text_font);
 
+    // P0-07: insert a lightweight placeholder and enqueue the render. The
+    // GUI thread never runs TeX: a 20+ second compile no longer freezes the
+    // window, and the result arrives through the service's queued signal.
+    const QString formula_id =
+        QStringLiteral("f%1").arg(++next_formula_id_);
+
+    QTextCharFormat format;
+    format.setObjectType(inline_math_format::kObjectType);
+    format.setFont(text_font);
+    format.setVerticalAlignment(QTextCharFormat::AlignNormal);
+    // Placeholder metrics: a small, correctly baselined box so the line
+    // height does not jump when the real pixmap arrives.
+    format.setProperty(inline_math_format::kWidthProperty, 24.0);
+    format.setProperty(inline_math_format::kHeightProperty,
+                       text_metrics.height());
+    format.setProperty(inline_math_format::kBaselineProperty,
+                       text_metrics.ascent());
+    format.setProperty(kTokenKindProperty, static_cast<int>(TokenKind::Math));
+    // The payload stays the LaTeX body; the formula id travels in the kind
+    // byte's companion property so a reply can find its object.
+    format.setProperty(kTokenPayloadProperty, latex);
+    format.setProperty(kMathFormulaIdProperty, formula_id);
+    cursor.insertText(QString(kObjectChar), format);
+    // New typing must never inherit the semantic object properties.
+    cursor.setCharFormat(QTextCharFormat());
+
     MathRenderStyle style;
     style.font_px = qMax(4, qRound(text_metrics.height()));
     style.color = QColor(theme::kPrimaryText);
     style.font_family = text_font.family();
     style.template_id = property("template_id").toString();
-    MathRenderResult rendered = RenderMathPreview(latex, style);
-    if (rendered.pixmap.isNull()) return;
+    ++math_generation_;
+    MathRenderService::Shared()->Request(objectName(), formula_id, latex, style);
+}
 
-    // Fit both sides of the TeX baseline into the current text line. The
-    // object renderer paints the descent below the baseline, so this does not
-    // enlarge the QTextLayout line box or the surrounding TextBlock.
-    const qreal math_ascent = qMax<qreal>(1.0, rendered.baseline);
-    const qreal math_descent =
-        qMax<qreal>(1.0, rendered.height - rendered.baseline);
+void InlineEditor::ApplyMathRender(const QString& formula_id,
+                                   const QString& latex, const QImage& image,
+                                   int width, int height, int baseline,
+                                   qreal device_pixel_ratio) {
+    if (image.isNull())
+        return;
+    ensurePolished();
+    const QFont text_font = document()->defaultFont();
+    const QFontMetricsF text_metrics(text_font);
+
+    // Locate the formula object by its id. The document may have been
+    // reloaded, undone or the object deleted while the render was in flight;
+    // in every such case the reply is simply dropped (never a crash).
+    QTextCursor found;
+    for (QTextBlock block = document()->begin(); block.isValid();
+         block = block.next()) {
+        for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
+            const QTextFragment fragment = it.fragment();
+            if (!fragment.isValid())
+                continue;
+            const QTextCharFormat fmt = fragment.charFormat();
+            if (fmt.objectType() != inline_math_format::kObjectType)
+                continue;
+            if (fmt.property(kMathFormulaIdProperty).toString() != formula_id)
+                continue;
+            found = QTextCursor(document());
+            found.setPosition(fragment.position());
+            found.setPosition(fragment.position() + fragment.length(),
+                              QTextCursor::KeepAnchor);
+            break;
+        }
+        if (!found.isNull())
+            break;
+    }
+    if (found.isNull())
+        return;
+
+    // Fit both sides of the TeX baseline into the current text line.
+    const qreal math_ascent = qMax<qreal>(1.0, baseline);
+    const qreal math_descent = qMax<qreal>(1.0, height - baseline);
     qreal scale = qMin(text_metrics.ascent() / math_ascent,
                        text_metrics.descent() / math_descent);
     const qreal maximum_width =
         qMax<qreal>(48.0, viewport()->width() * kMaximumWidthFraction);
-    if (rendered.width > 0) {
-        scale = qMin(scale, maximum_width / rendered.width);
-    }
+    if (width > 0)
+        scale = qMin(scale, maximum_width / width);
     scale = qBound<qreal>(0.01, scale, 1.0);
 
-    QTextCharFormat format;
-    format.setObjectType(inline_math_format::kObjectType);
-    format.setFont(text_font);
-    // AlignNormal gives the object zero layout descent; intrinsicSize()
-    // reports only the TeX ascent. AlignBaseline subtracts a font descent.
-    format.setVerticalAlignment(QTextCharFormat::AlignNormal);
-    format.setProperty(inline_math_format::kPixmapProperty,
-                       QVariant::fromValue(rendered.pixmap));
-    format.setProperty(inline_math_format::kWidthProperty,
-                       rendered.width * scale);
-    format.setProperty(inline_math_format::kHeightProperty,
-                       rendered.height * scale);
-    format.setProperty(inline_math_format::kBaselineProperty,
-                       rendered.baseline * scale);
-    format.setProperty(kTokenKindProperty, static_cast<int>(TokenKind::Math));
-    format.setProperty(kTokenPayloadProperty, latex);
-    cursor.insertText(QString(kObjectChar), format);
-    // New typing must never inherit the semantic object properties.
-    cursor.setCharFormat(QTextCharFormat());
+    const QPixmap pixmap = PixmapFromMathResult([&] {
+        MathRenderResult partial;
+        partial.image = image;
+        partial.device_pixel_ratio = device_pixel_ratio;
+        return partial;
+    }());
+
+    QTextCharFormat update;
+    update.setProperty(inline_math_format::kPixmapProperty,
+                       QVariant::fromValue(pixmap));
+    update.setProperty(inline_math_format::kWidthProperty, width * scale);
+    update.setProperty(inline_math_format::kHeightProperty, height * scale);
+    update.setProperty(inline_math_format::kBaselineProperty, baseline * scale);
+    update.setProperty(kTokenKindProperty, static_cast<int>(TokenKind::Math));
+    update.setProperty(kTokenPayloadProperty, latex);
+    update.setProperty(kMathFormulaIdProperty, formula_id);
+    // Only the object's format changes - the QTextDocument is never rebuilt
+    // or re-created here, so the caret and the surrounding text are intact.
+    found.mergeCharFormat(update);
+    if (viewport())
+        viewport()->update();
 }
 
 std::optional<InlineEditor::TokenHit> InlineEditor::TokenAt(int position) const {
