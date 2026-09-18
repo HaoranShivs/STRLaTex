@@ -38,7 +38,7 @@ public:
   }
 
   // Lifecycle actions (async work stays inside the session).
-  bool NewProject(const QString &dir);
+  bool NewProject(const QString &dir, std::string *error = nullptr);
   bool OpenProject(const QString &dir);
   bool OpenProjectWithRecovery(const QString &dir, bool *recovered);
   void CloseProject();

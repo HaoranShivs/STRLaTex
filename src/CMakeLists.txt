@@ -2,6 +2,7 @@
 add_library(pf_core STATIC
     core/Diagnostic.cpp
     core/IdGenerator.cpp
+    core/IoError.cpp
     core/Json.cpp
     core/ProjectPath.cpp
 )

@@ -37,6 +37,29 @@ public:
     void ZoomPreviewForTest(double zoom, double scroll_x = 0.0,
                             double scroll_y = 0.0);
 
+    // P0-01: the single unsaved-changes guard. Every destructive navigation
+    // (close, new, open, recent-project, project switch) goes through it and
+    // no call site implements its own dirty check.
+    enum class DestructiveNavigationDecision : std::uint8_t {
+        Proceed,
+        Cancel,
+    };
+    // Fixed order: commit the focused row, pump completed async events, read
+    // the authoritative persistence state, then ask the user
+    // (Save / Discard / Cancel or Wait / Discard / Cancel or
+    // Retry Save / Discard / Cancel). Only proceeds when the target revision
+    // is actually Clean or the user explicitly chose to discard.
+    DestructiveNavigationDecision MaybeSaveBeforeDestructiveNavigation();
+    // Blocks until an in-flight save for the current revision has landed,
+    // pumping events so its completion is applied. False on timeout.
+    bool WaitForUserSaveCompletion(int timeout_ms = 10000);
+
+protected:
+    // P0-01: closing the window is a destructive navigation too; it must go
+    // through the same guard instead of relying on a destructor-time
+    // best-effort CommitFocused().
+    void closeEvent(QCloseEvent* event) override;
+
 private slots:
     void OnNewProject();
     void OnOpenProject();

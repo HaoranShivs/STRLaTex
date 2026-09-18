@@ -203,8 +203,11 @@ int SuperscriptOrdinal(QChar ch) {
 
 } // namespace
 
-bool ProjectController::NewProject(const QString &dir) {
-  bool ok = session_->NewProject(ToStd(dir));
+bool ProjectController::NewProject(const QString &dir, std::string *error) {
+  std::string local_error;
+  bool ok = session_->NewProject(ToStd(dir), &local_error);
+  if (!ok && error)
+    *error = local_error;
   if (ok)
     emit documentChanged();
   return ok;

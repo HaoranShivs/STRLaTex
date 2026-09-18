@@ -1,8 +1,10 @@
 #include "app/MainWindow.h"
 
 #include <QApplication>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QFile>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QLabel>
@@ -108,12 +110,9 @@ void MainWindow::BuildUi() {
   connect(welcome_, &WelcomePage::OpenProjectRequested, this,
           &MainWindow::OnOpenProject);
   connect(welcome_, &WelcomePage::RecentActivated, this, [this](QString path) {
-    bool recovered = false;
-    if (controller_->OpenProjectWithRecovery(path, &recovered)) {
-      controller_->StartAutosave();
-      ShowWorkspace(true);
-      statusBar()->showMessage("Opened project: " + path);
-    }
+    // P0-01: the recent-project entry point is a destructive navigation too;
+    // it must go through the same guard, never switch the project directly.
+    OpenProjectDir(path);
   });
   for (const QString &path : recent_projects_) {
     welcome_->AddRecent(QFileInfo(path).fileName(), path);
@@ -574,10 +573,9 @@ int MainWindow::CountWords() const {
 // ---------------- Actions ----------------
 
 void MainWindow::OnNewProject() {
-  // Flush the row the user is editing before the old document is replaced
-  // (citation plan §6); the autosave then captures the final state.
-  if (controller_->has_project())
-    editor_->CommitFocused();
+  // P0-01: the directory picker is shown first (so Cancel costs nothing),
+  // but the unsaved-changes guard runs before the current project is
+  // replaced. Every destructive navigation shares this one guard.
   QString dir =
       QFileDialog::getExistingDirectory(this, "New Project Directory");
   if (dir.isEmpty())
@@ -587,8 +585,17 @@ void MainWindow::OnNewProject() {
                          "Directory already contains a project.");
     return;
   }
-  if (!controller_->NewProject(dir)) {
-    QMessageBox::critical(this, "PaperForge", "Failed to create project.");
+  if (MaybeSaveBeforeDestructiveNavigation() ==
+      DestructiveNavigationDecision::Cancel) {
+    return;
+  }
+  std::string error;
+  if (!controller_->NewProject(dir, &error)) {
+    QMessageBox::critical(
+        this, "PaperForge",
+        "Failed to create project: " +
+            (error.empty() ? QString("unknown error")
+                           : QString::fromStdString(error)));
     return;
   }
   QSettings settings;
@@ -613,6 +620,13 @@ void MainWindow::OnOpenProject() {
 }
 
 bool MainWindow::OpenProjectDir(const QString &dir) {
+  // P0-01: opening switches projects, so the current one gets the guard
+  // first. A programmatic caller that must bypass it passes through
+  // MaybeSaveBeforeDestructiveNavigation directly.
+  if (MaybeSaveBeforeDestructiveNavigation() ==
+      DestructiveNavigationDecision::Cancel) {
+    return false;
+  }
   bool recovered = false;
   if (!controller_->OpenProjectWithRecovery(dir, &recovered)) {
     return false;
@@ -634,6 +648,149 @@ bool MainWindow::OpenProjectDir(const QString &dir) {
   RenderProjectState();  // P0-06: render the actual state of the loaded project.
   statusBar()->showMessage("Opened project: " + dir);
   return true;
+}
+
+// ---------------- P0-01: unsaved-changes guard ----------------
+
+bool MainWindow::WaitForUserSaveCompletion(int timeout_ms) {
+  if (!controller_->has_project())
+    return true;
+  auto& session = controller_->session();
+  QElapsedTimer timer;
+  timer.start();
+  // The save worker posts a completion event; pumping the application event
+  // queue applies it and updates the authoritative persistence state.
+  while (timer.elapsed() < timeout_ms) {
+    session.ProcessApplicationEvents();
+    if (session.persistence_state() != PersistenceState::Saving)
+      return true;
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+  }
+  return session.persistence_state() != PersistenceState::Saving;
+}
+
+MainWindow::DestructiveNavigationDecision
+MainWindow::MaybeSaveBeforeDestructiveNavigation() {
+  // Fixed order (rectification plan P0-01):
+  //   1. commit the row the user is editing, so the snapshot is complete;
+  //   2. pump already-completed async events;
+  //   3. read the authoritative persistence state and ask accordingly.
+  if (editor_)
+    editor_->CommitFocused();
+  if (!controller_->has_project())
+    return DestructiveNavigationDecision::Proceed;
+  auto& session = controller_->session();
+  session.ProcessApplicationEvents();
+
+  const auto ask = [this](const QString& text, const QString& informative,
+                          const QString& save_label,
+                          const QString& discard_label,
+                          const QString& cancel_label) {
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle("PaperForge");
+    box.setText(text);
+    box.setInformativeText(informative);
+    QPushButton* primary = box.addButton(save_label, QMessageBox::AcceptRole);
+    QPushButton* discard =
+        box.addButton(discard_label, QMessageBox::DestructiveRole);
+    box.addButton(cancel_label, QMessageBox::RejectRole);
+    box.setDefaultButton(primary);
+    box.exec();
+    if (box.clickedButton() == primary)
+      return 0;
+    if (box.clickedButton() == discard)
+      return 1;
+    return 2;  // cancel
+  };
+
+  switch (session.persistence_state()) {
+    case PersistenceState::Clean:
+      return DestructiveNavigationDecision::Proceed;
+
+    case PersistenceState::Dirty: {
+      const int choice = ask("This project has unsaved changes.",
+                             "Save them before continuing?", "Save",
+                             "Discard", "Cancel");
+      if (choice == 2)
+        return DestructiveNavigationDecision::Cancel;
+      if (choice == 1)
+        return DestructiveNavigationDecision::Proceed;  // explicit discard
+      // Save: enqueue and wait for the matching revision to land.
+      auto result = session.Save();
+      if (result.status != SaveResult::Status::Queued) {
+        QMessageBox::critical(this, "PaperForge",
+                              "Could not save: " + ToQ(result.detail));
+        return DestructiveNavigationDecision::Cancel;
+      }
+      if (!WaitForUserSaveCompletion()) {
+        QMessageBox::warning(
+            this, "PaperForge",
+            "The save is still running. Cancel the navigation and try again.");
+        return DestructiveNavigationDecision::Cancel;
+      }
+      RenderProjectState();
+      // Only proceed when the project is genuinely clean now; a save that
+      // failed (or that a newer edit superseded) must keep the user here.
+      return session.persistence_state() == PersistenceState::Clean
+                 ? DestructiveNavigationDecision::Proceed
+                 : DestructiveNavigationDecision::Cancel;
+    }
+
+    case PersistenceState::Saving: {
+      const int choice = ask("A save is still running.",
+                             "Wait for it to finish before continuing?",
+                             "Wait", "Discard", "Cancel");
+      if (choice == 2)
+        return DestructiveNavigationDecision::Cancel;
+      if (choice == 1)
+        return DestructiveNavigationDecision::Proceed;
+      if (!WaitForUserSaveCompletion()) {
+        QMessageBox::warning(this, "PaperForge",
+                             "The save did not finish in time.");
+        return DestructiveNavigationDecision::Cancel;
+      }
+      RenderProjectState();
+      return DestructiveNavigationDecision::Proceed;
+    }
+
+    case PersistenceState::SaveFailed: {
+      const int choice = ask("The last save failed.",
+                             "Retry saving before continuing?", "Retry Save",
+                             "Discard", "Cancel");
+      if (choice == 2)
+        return DestructiveNavigationDecision::Cancel;
+      if (choice == 1)
+        return DestructiveNavigationDecision::Proceed;
+      auto result = session.Save();
+      if (result.status != SaveResult::Status::Queued) {
+        QMessageBox::critical(this, "PaperForge",
+                              "Could not save: " + ToQ(result.detail));
+        return DestructiveNavigationDecision::Cancel;
+      }
+      if (!WaitForUserSaveCompletion()) {
+        QMessageBox::warning(this, "PaperForge",
+                             "The retry did not finish in time.");
+        return DestructiveNavigationDecision::Cancel;
+      }
+      RenderProjectState();
+      return session.persistence_state() == PersistenceState::Clean
+                 ? DestructiveNavigationDecision::Proceed
+                 : DestructiveNavigationDecision::Cancel;
+    }
+  }
+  return DestructiveNavigationDecision::Cancel;
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+  // P0-01: closing the window is a destructive navigation. The destructor's
+  // best-effort CommitFocused() is no longer what protects the user's work.
+  if (MaybeSaveBeforeDestructiveNavigation() ==
+      DestructiveNavigationDecision::Cancel) {
+    event->ignore();
+    return;
+  }
+  event->accept();
 }
 
 void MainWindow::OnSave() {

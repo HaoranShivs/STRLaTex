@@ -288,25 +288,53 @@ bool ProjectSession::AcceptBuildResult(const BuildResult &result) {
 
 // ---------------- Lifecycle ----------------
 
-void ProjectSession::EnsureDirectories() {
-  std::error_code ec;
-  std::filesystem::create_directories(paths_.project_dir, ec);
-  std::filesystem::create_directories(paths_.assets_dir, ec);
-  std::filesystem::create_directories(paths_.build_dir, ec);
-  std::filesystem::create_directories(paths_.autosave_dir, ec);
+// P0-03: every directory is created through its own error_code and the first
+// failure aborts with a structured error carrying the exact path. A project
+// whose directories could not be created must never enter LifecycleState::Open
+// (the old code ignored every error_code and reported success regardless).
+Result<void, IoError> ProjectSession::EnsureDirectories() {
+  struct Target {
+    std::filesystem::path path;
+    const char *what;
+  };
+  const Target targets[] = {
+      {paths_.project_dir, "project directory"},
+      {paths_.assets_dir, "assets directory"},
+      {paths_.build_dir, "build directory"},
+      {paths_.autosave_dir, "autosave directory"},
+  };
+  for (const Target &target : targets) {
+    std::error_code ec;
+    std::filesystem::create_directories(target.path, ec);
+    // create_directories reports the pre-existing-directory case as success
+    // (no error_code); anything else means the project cannot be used.
+    if (ec) {
+      return Unexpected2<IoError>(MakeIoError(
+          ec, IoErrorCode::DirectoryCreateFailed,
+          std::string("cannot create the ") + target.what, target.path));
+    }
+  }
   // Re-point asset manager at this project's assets dir.
   assets_ = std::make_unique<AssetManager>(paths_.assets_dir);
   snapshot_factory_ = SnapshotFactory(assets_.get());
+  return {};
 }
 
-bool ProjectSession::NewProject(const std::filesystem::path &project_dir) {
+bool ProjectSession::NewProject(const std::filesystem::path &project_dir,
+                                std::string *error) {
   CloseProject();
   paths_.project_dir = project_dir;
   paths_.project_file = project_dir / "project.paper";
   paths_.assets_dir = project_dir / "assets";
   paths_.build_dir = project_dir / ".paperforge" / "build";
   paths_.autosave_dir = project_dir / ".paperforge" / "autosave";
-  EnsureDirectories();
+  // P0-03: only enter Open once every directory really exists.
+  if (auto created = EnsureDirectories(); !created.ok()) {
+    if (error)
+      *error = created.error().ToString();
+    lifecycle_state_ = LifecycleState::NoProject;
+    return false;
+  }
 
   state_.Reset();
   state_.SetId(ProjectId(IdGenerator::NewProjectId()));
@@ -325,7 +353,12 @@ bool ProjectSession::OpenProject(const std::filesystem::path &project_dir,
   paths_.assets_dir = project_dir / "assets";
   paths_.build_dir = project_dir / ".paperforge" / "build";
   paths_.autosave_dir = project_dir / ".paperforge" / "autosave";
-  EnsureDirectories();
+  if (auto created = EnsureDirectories(); !created.ok()) {
+    if (error)
+      *error = created.error().ToString();
+    lifecycle_state_ = LifecycleState::NoProject;
+    return false;
+  }
 
   LoadRequest request;
   request.project_file = paths_.project_file;
@@ -397,16 +430,81 @@ bool ProjectSession::OpenProjectWithRecovery(
     bool *recovered) {
   if (recovered)
     *recovered = false;
-  if (!OpenProject(project_dir, error))
+
+  // P0-01: three cases, matching the rectification plan §P0-01.
+  //
+  //   A. project.paper exists      -> open it, then recover from a newer
+  //                                   autosave if one exists.
+  //   B. only autosave.paper       -> a never-saved project. Load the
+  //                                   autosave directly: the old code
+  //                                   required project.paper to open first,
+  //                                   which made this recovery path
+  //                                   unreachable and lost the work.
+  //   C. neither                   -> NotFound.
+  const bool has_project_file = std::filesystem::exists(project_dir / "project.paper");
+  const bool has_autosave =
+      std::filesystem::exists(project_dir / ".paperforge" / "autosave" /
+                              "autosave.paper");
+
+  if (!has_project_file && !has_autosave) {
+    if (error)
+      *error = "no project.paper or autosave.paper in " + project_dir.string();
     return false;
-  if (HasRecoverySnapshot()) {
-    auto result = RecoverFromAutosave();
-    if (result.status == SaveResult::Status::Ok && recovered) {
-      *recovered = true;
-      // Recovered content is not yet user-saved.
-      persistence_state_ = PersistenceState::Dirty;
-    }
   }
+
+  if (has_project_file) {
+    // Case A.
+    if (!OpenProject(project_dir, error))
+      return false;
+    if (HasRecoverySnapshot()) {
+      auto result = RecoverFromAutosave();
+      if (result.status == SaveResult::Status::Ok && recovered) {
+        *recovered = true;
+        // Recovered content is not yet user-saved.
+        persistence_state_ = PersistenceState::Dirty;
+      }
+    }
+    return true;
+  }
+
+  // Case B: only the autosave survives. Initialise the paths and state as if
+  // a project were open, then load the autosave snapshot into it.
+  CloseProject();
+  paths_.project_dir = project_dir;
+  paths_.project_file = project_dir / "project.paper";
+  paths_.assets_dir = project_dir / "assets";
+  paths_.build_dir = project_dir / ".paperforge" / "build";
+  paths_.autosave_dir = project_dir / ".paperforge" / "autosave";
+  if (auto created = EnsureDirectories(); !created.ok()) {
+    if (error)
+      *error = created.error().ToString();
+    lifecycle_state_ = LifecycleState::NoProject;
+    return false;
+  }
+
+  state_.Reset();
+  state_.SetId(ProjectId(IdGenerator::NewProjectId()));
+  state_.mutable_settings().name = project_dir.filename().string();
+  lifecycle_state_ = LifecycleState::Open;
+  persistence_state_ = PersistenceState::Dirty;
+  preview_state_ = PreviewState::NoPreview;
+
+  auto result = RecoverFromAutosave();
+  if (result.status != SaveResult::Status::Ok) {
+    // The autosave exists but cannot be read: report it rather than leaving
+    // a half-open empty project pretending to be the recovered one.
+    if (error)
+      *error = result.detail.empty()
+                   ? std::string("autosave could not be recovered")
+                   : result.detail;
+    lifecycle_state_ = LifecycleState::NoProject;
+    state_.Reset();
+    return false;
+  }
+  if (recovered)
+    *recovered = true;
+  // Recovered content is not yet user-saved.
+  persistence_state_ = PersistenceState::Dirty;
   return true;
 }
 

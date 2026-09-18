@@ -33,6 +33,7 @@
 #include "bibliography/BibliographyService.h"
 #include "build/BuildCoordinator.h"
 #include "build/Toolchain.h"
+#include "core/IoError.h"
 #include "template/TemplateRegistry.h"
 #include "editing/EditingSystem.h"
 #include "persistence/SaveCoordinator.h"
@@ -98,10 +99,15 @@ public:
     ProjectSession& operator=(const ProjectSession&) = delete;
 
     // ---- Lifecycle ----
-    bool NewProject(const std::filesystem::path& project_dir);
+    // P0-03: NewProject reports why directory creation failed instead of
+    // silently pretending the project opened.
+    bool NewProject(const std::filesystem::path& project_dir,
+                    std::string* error = nullptr);
     bool OpenProject(const std::filesystem::path& project_dir, std::string* error);
     // Open, preferring a newer autosave/recovery snapshot if one exists.
     // Returns true when a recovery snapshot was applied (caller may inform).
+    // P0-01: also handles a project that was never saved - when only
+    // autosave.paper exists, that snapshot IS the project.
     bool OpenProjectWithRecovery(const std::filesystem::path& project_dir,
                                  std::string* error, bool* recovered = nullptr);
     void CloseProject();
@@ -263,7 +269,9 @@ public:
     }
 
 private:
-    void EnsureDirectories();
+    // P0-03: structured result; the caller only enters LifecycleState::Open
+  // when every directory was created.
+  Result<void, IoError> EnsureDirectories();
     void MarkDirty();
     // Smoke detector for the single-owner rule: bumps a counter when an
     // owner-only entry point is entered from a foreign thread.
