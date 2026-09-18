@@ -8,6 +8,7 @@
 //     disk, the revision and the dirty state untouched;
 //   * SaveResult carries enough structure for the UI to tell the cases apart.
 #include "TestMain.hpp"
+#include "ScopedTempDir.hpp"
 
 #include <atomic>
 #include <fstream>
@@ -50,9 +51,8 @@ ProjectSession::Config MakeConfig(ICompiler* compiler) {
         return std::make_unique<NullCompiler>();
     };
     config.debounce = std::chrono::milliseconds{0};
-    auto root = std::filesystem::temp_directory_path() / "pf-save-tx-workspaces";
-    std::filesystem::create_directories(root);
-    config.workspace_root = root;
+    static pf::test::ScopedTempDir workspace("pf-save-tx-workspaces");
+    config.workspace_root = workspace.path();
     return config;
 }
 

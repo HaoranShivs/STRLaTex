@@ -1,5 +1,6 @@
 // End-to-end tests: ProjectSession workflow + real tectonic build.
 #include "TestMain.hpp"
+#include "ScopedTempDir.hpp"
 
 #include "asset/AssetManager.h"
 #include "core/IdGenerator.h"
@@ -19,9 +20,10 @@ namespace {
 ProjectSession::Config TestConfig() {
   ProjectSession::Config config;
   config.tectonic_path = PF_TECTONIC_BIN;
-  auto root = std::filesystem::temp_directory_path() / "pf-e2e-workspaces";
-  std::filesystem::create_directories(root);
-  config.workspace_root = root;
+  // E-08: unique per process; this file and TestCitationNumbering.cpp used to
+  // share "pf-e2e-workspaces" and could delete each other's build directories.
+  static pf::test::ScopedTempDir workspace("pf-e2e-workspaces");
+  config.workspace_root = workspace.path();
   config.debounce = std::chrono::milliseconds{0};
   return config;
 }
@@ -53,8 +55,7 @@ SaveResult SaveAndFlush(ProjectSession &session) {
 } // namespace
 
 PF_TEST(SessionNewProjectWorkflow) {
-  auto dir = std::filesystem::temp_directory_path() / "pf-e2e-new";
-  std::filesystem::remove_all(dir);
+  pf::test::ScopedTempDir dir("pf-e2e-new");
 
   ProjectSession session(TestConfig());
   PF_CHECK(session.NewProject(dir));
@@ -85,12 +86,10 @@ PF_TEST(SessionNewProjectWorkflow) {
       InlineToPlainText(session2.state().document().front_matter().title) ==
       "Workflow Paper");
   PF_CHECK(session2.persistence_state() == PersistenceState::Clean);
-  std::filesystem::remove_all(dir);
 }
 
 PF_TEST(SessionUndoRedoAndRevisionMonotonicity) {
-  auto dir = std::filesystem::temp_directory_path() / "pf-e2e-undo";
-  std::filesystem::remove_all(dir);
+  pf::test::ScopedTempDir dir("pf-e2e-undo");
   ProjectSession session(TestConfig());
   session.NewProject(dir);
 
@@ -118,12 +117,10 @@ PF_TEST(SessionUndoRedoAndRevisionMonotonicity) {
   session.Redo();
   PF_CHECK(InlineToPlainText(session.state().document().front_matter().title) ==
            "B");
-  std::filesystem::remove_all(dir);
 }
 
 PF_TEST(SessionBibliographyImportAndSearch) {
-  auto dir = std::filesystem::temp_directory_path() / "pf-e2e-bib";
-  std::filesystem::remove_all(dir);
+  pf::test::ScopedTempDir dir("pf-e2e-bib");
   ProjectSession session(TestConfig());
   session.NewProject(dir);
 
@@ -145,12 +142,10 @@ PF_TEST(SessionBibliographyImportAndSearch) {
   auto save = SaveAndFlush(session);
   PF_CHECK(save.status == SaveResult::Status::Ok);
   PF_CHECK(std::filesystem::exists(dir / "references.bib"));
-  std::filesystem::remove_all(dir);
 }
 
 PF_TEST(SessionTemplateChangeUndoable) {
-  auto dir = std::filesystem::temp_directory_path() / "pf-e2e-tpl";
-  std::filesystem::remove_all(dir);
+  pf::test::ScopedTempDir dir("pf-e2e-tpl");
   ProjectSession session(TestConfig());
   session.NewProject(dir);
 
@@ -161,12 +156,10 @@ PF_TEST(SessionTemplateChangeUndoable) {
   PF_CHECK(session.state().template_selection() == "ieee-conference");
   PF_CHECK(session.state().document_version() == doc_version_before);
   PF_CHECK(session.current_revision().value == rev_before + 1);
-  std::filesystem::remove_all(dir);
 }
 
 PF_TEST(SessionAssetImportFigure) {
-  auto dir = std::filesystem::temp_directory_path() / "pf-e2e-asset";
-  std::filesystem::remove_all(dir);
+  pf::test::ScopedTempDir dir("pf-e2e-asset");
   ProjectSession session(TestConfig());
   session.NewProject(dir);
 
@@ -184,7 +177,8 @@ PF_TEST(SessionAssetImportFigure) {
   NodeId section_id = sec_result.created_node;
 
   // Make a tiny valid PNG (1x1 pixel).
-  auto png_path = std::filesystem::temp_directory_path() / "pf-test-image.png";
+  pf::test::ScopedTempDir png_dir("pf-test-image");
+  auto png_path = png_dir.path() / "image.png";
   {
     static const unsigned char png[] = {
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // signature
@@ -210,15 +204,12 @@ PF_TEST(SessionAssetImportFigure) {
   }
   // Asset file was copied into project assets dir.
   PF_CHECK(!session.assets().registry().All().empty());
-  std::filesystem::remove_all(dir);
-  std::filesystem::remove(png_path);
 }
 
 // Real tectonic build (network may be needed on first run for bundles).
 #ifndef PF_SKIP_TECTONIC_TESTS
 PF_TEST(EndToEndTectonicBuild) {
-  auto dir = std::filesystem::temp_directory_path() / "pf-e2e-tectonic";
-  std::filesystem::remove_all(dir);
+  pf::test::ScopedTempDir dir("pf-e2e-tectonic");
 
   ProjectSession session(TestConfig());
   session.NewProject(dir);
@@ -288,13 +279,11 @@ PF_TEST(EndToEndTectonicBuild) {
       std::cout << "    " << d.Summary() << "\n";
     }
   }
-  std::filesystem::remove_all(dir);
 }
 #endif
 
 PF_TEST(SessionAutosaveAndCrashRecovery) {
-  auto dir = std::filesystem::temp_directory_path() / "pf-e2e-recovery";
-  std::filesystem::remove_all(dir);
+  pf::test::ScopedTempDir dir("pf-e2e-recovery");
 
   std::optional<BuildResult> unused;
   {
@@ -352,12 +341,10 @@ PF_TEST(SessionAutosaveAndCrashRecovery) {
         InlineToPlainText(session.state().document().front_matter().title) ==
         "Saved Title");
   }
-  std::filesystem::remove_all(dir);
 }
 
 PF_TEST(SessionAutosaveTimer) {
-  auto dir = std::filesystem::temp_directory_path() / "pf-e2e-autotimer";
-  std::filesystem::remove_all(dir);
+  pf::test::ScopedTempDir dir("pf-e2e-autotimer");
   ProjectSession session(TestConfig());
   session.NewProject(dir);
 
@@ -385,7 +372,6 @@ PF_TEST(SessionAutosaveTimer) {
                                    "autosave.paper"));
   // Dirty state unchanged by autosave (architecture 32).
   PF_CHECK(session.persistence_state() == PersistenceState::Dirty);
-  std::filesystem::remove_all(dir);
 }
 
 // Regression: inserting several figures into a project that was loaded from
@@ -398,10 +384,7 @@ PF_TEST(SessionAutosaveTimer) {
 // a second image - and checks every inserted figure keeps its own node id,
 // its own staged asset file, and its own place in the document.
 PF_TEST(SessionInsertingMultipleFiguresKeepsIdsAssetsAndOrder) {
-  const auto dir =
-      std::filesystem::temp_directory_path() / "pf-e2e-multi-image";
-  std::filesystem::remove_all(dir);
-  std::filesystem::create_directories(dir);
+  pf::test::ScopedTempDir dir("pf-e2e-multi-image");
 
   // Ids far above anything this process allocates, so a collision can only
   // be avoided by the load-time observe/heal path.
@@ -459,7 +442,6 @@ PF_TEST(SessionInsertingMultipleFiguresKeepsIdsAssetsAndOrder) {
   PF_CHECK(second.status == EditStatus::Applied);
   if (first.status != EditStatus::Applied ||
       second.status != EditStatus::Applied) {
-    std::filesystem::remove_all(dir);
     return;
   }
 
@@ -485,7 +467,6 @@ PF_TEST(SessionInsertingMultipleFiguresKeepsIdsAssetsAndOrder) {
               });
   PF_CHECK_EQ(figure_nodes.size(), std::size_t{2});
   if (figure_nodes.size() != 2) {
-    std::filesystem::remove_all(dir);
     return;
   }
   PF_CHECK_EQ(figure_nodes[0], first.created_node.value());
@@ -521,6 +502,4 @@ PF_TEST(SessionInsertingMultipleFiguresKeepsIdsAssetsAndOrder) {
                   ++reopened_figures;
               });
   PF_CHECK_EQ(reopened_figures, std::size_t{2});
-
-  std::filesystem::remove_all(dir);
 }

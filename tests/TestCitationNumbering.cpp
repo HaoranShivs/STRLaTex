@@ -11,6 +11,7 @@
 //   * Bibliography: duplicate keys surfaced on import; references.bib is a
 //     project resource that survives save/reload with the citation keys.
 #include "TestMain.hpp"
+#include "ScopedTempDir.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -34,9 +35,9 @@ namespace {
 ProjectSession::Config TestConfig() {
     ProjectSession::Config config;
     config.tectonic_path = PF_TECTONIC_BIN;
-    auto root = std::filesystem::temp_directory_path() / "pf-e2e-workspaces";
-    std::filesystem::create_directories(root);
-    config.workspace_root = root;
+    // E-08: unique per process (see TestEndToEnd.cpp for the shared-path bug).
+    static pf::test::ScopedTempDir workspace("pf-cite-workspaces");
+    config.workspace_root = workspace.path();
     config.debounce = std::chrono::milliseconds{0};
     return config;
 }

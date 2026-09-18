@@ -8,6 +8,7 @@
 //   * recovery must prefer the newer of project.paper / autosave.paper;
 //   * EnsureDirectories failures must not let a project enter Open.
 #include "TestMain.hpp"
+#include "ScopedTempDir.hpp"
 
 #include <fstream>
 #include <memory>
@@ -45,9 +46,10 @@ ProjectSession::Config MakeConfig() {
         return std::make_unique<NullCompiler>();
     };
     config.debounce = std::chrono::milliseconds{0};
-    auto root = std::filesystem::temp_directory_path() / "pf-p01-workspaces";
-    std::filesystem::create_directories(root);
-    config.workspace_root = root;
+    // Unique per test process: `ctest -j` runs several binaries at once and a
+    // fixed workspace root made them clobber each other.
+    static pf::test::ScopedTempDir workspace("pf-p01-workspaces");
+    config.workspace_root = workspace.path();
     return config;
 }
 

@@ -17,6 +17,7 @@
 // Plus the pure preview-gate rules and the typed PreviewUpdate identity.
 
 #include "TestMain.hpp"
+#include "ScopedTempDir.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -146,9 +147,10 @@ struct SessionRig {
             return std::make_unique<BorrowedCompiler>(compiler);
         };
         config.debounce = std::chrono::milliseconds{0};
-        auto root = std::filesystem::temp_directory_path() / "pf-async-workspaces";
-        std::filesystem::create_directories(root);
-        config.workspace_root = root;
+        // E-08: a fixed path collided across the concurrently running GUI
+        // test binaries and leftovers could mask a failure.
+        static pf::test::ScopedTempDir workspace("pf-async-workspaces");
+        config.workspace_root = workspace.path();
         return config;
     }
 };

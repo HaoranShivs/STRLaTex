@@ -4,6 +4,7 @@
 // resolution immediately before a real filesystem access, including the
 // symlink-escape case the review called out.
 #include "TestMain.hpp"
+#include "ScopedTempDir.hpp"
 
 #include <fstream>
 #include <string>
@@ -104,9 +105,8 @@ PF_TEST(BuildSnapshotDropsAssetsThatEscapeTheProject) {
         return std::make_unique<NullCompiler>();
     };
     config.debounce = std::chrono::milliseconds{0};
-    config.workspace_root = std::filesystem::temp_directory_path() /
-                            "pf-boundary-workspaces";
-    std::filesystem::create_directories(config.workspace_root);
+    static pf::test::ScopedTempDir workspace("pf-boundary-workspaces");
+    config.workspace_root = workspace.path();
     ProjectSession session(config);
     PF_CHECK(session.NewProject(dir));
 
@@ -151,9 +151,8 @@ PF_TEST(SaveRefusesBibliographyPathEscape) {
         return std::make_unique<NullCompiler>();
     };
     config.debounce = std::chrono::milliseconds{0};
-    config.workspace_root = std::filesystem::temp_directory_path() /
-                            "pf-boundary-workspaces2";
-    std::filesystem::create_directories(config.workspace_root);
+    static pf::test::ScopedTempDir workspace("pf-boundary-workspaces2");
+    config.workspace_root = workspace.path();
     ProjectSession session(config);
     PF_CHECK(session.NewProject(dir));
 
