@@ -168,8 +168,7 @@ private:
                             const pf::EquationBlock &equation,
                             const QString &outline_key);
   // Figure 行：题注编辑器、图片预览和跨栏开关（P0-05）。
-  QWidget *MakeFigureCard(const pf::Figure &figure,
-                          const QString &outline_key);
+  QWidget *MakeFigureCard(const pf::Figure &figure, const QString &outline_key);
   // Table 行：网格预览加题注编辑器（P0-05）。
   QWidget *MakeTableCard(const pf::Table &table, const QString &outline_key);
   // P0-05：为每个标题层级提供唯一的 block 卡片工厂和唯一的追加路径。

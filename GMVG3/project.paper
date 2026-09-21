@@ -109,7 +109,12 @@
           {
             "content": [
               {
-                "text": "In recent years, infrared small target detection technologies have become increasingly significant in multiple fields, includ ing ecological environment monitoring",
+                "text": "I",
+                "type": "text"
+              },
+              {
+                "marks": 1,
+                "text": "n recent years, infrared small target detection technologies have become increasingly significant in multiple fields, includ ing ecological environment monitoring",
                 "type": "text"
               },
               {
@@ -120,7 +125,21 @@
                 "type": "citation"
               },
               {
-                "text": ", marine rescue, and military surveillance. This is because infrared light exhibits a longer working range and stronger penetration capability compared to visible light. In IRSTD tasks, targets are generally very small, weak, and are often embedded in complex backgrounds. ",
+                "marks": 1,
+                "text": ", marine rescue, and military surveillance. ",
+                "type": "text"
+              },
+              {
+                "text": "This is because infrared light exhibits a longer working range and stronger penetration capability compared to visible light. ",
+                "type": "text"
+              },
+              {
+                "marks": 2,
+                "text": "In IRSTD tasks, targets are generally very small, weak, and are often embedded in complex backgrounds.",
+                "type": "text"
+              },
+              {
+                "text": " ",
                 "type": "text"
               },
               {
@@ -131,7 +150,29 @@
                 "type": "citation"
               },
               {
-                "text": "In IRSTD tasks, targets typically include drones, aerostats, and ships, which commonly exhibit the following characteristics: (i) Low target energy: Due to severe signal attenuation over long-distance propagation, the received infrared signal is weak. This results in low contrast between the target and strong background clutter, making the target highly susceptible to being obscured by background noise. (ii) ",
+                "text": "In IRSTD tasks, targets typically include drones, aerostats, and ships, which commonly exhibit the following characteristics: (i) Low target energy: Due",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "Zhao2024MultiScaleDN"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": " to severe signal attenuation over long-distance propagation, the received infrared signal is weak. This results",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "10703135"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": " in low contrast between the target and strong background clutter, making the target highly susceptible to being obscured by background noise. (ii) ",
                 "type": "text"
               },
               {
@@ -248,7 +289,7 @@
     ]
   },
   "projectId": "p1",
-  "revision": 70,
+  "revision": 76,
   "schemaVersion": "3",
   "template": "ieee-conference"
 }

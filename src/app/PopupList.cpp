@@ -13,20 +13,18 @@ namespace pf::gui {
 namespace {
 constexpr int kPopupWidth = 340;
 constexpr int kPopupMaxHeight = 320;
-}  // namespace
+} // namespace
 
-PopupList::PopupList(QWidget* parent)
-    : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint) {
+PopupList::PopupList(QWidget* parent) : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint) {
     setAttribute(Qt::WA_DeleteOnClose);
     setFrameShape(QFrame::Box);
-    setStyleSheet(QString(
-        "QFrame { background: white; border: 1px solid %1; border-radius: 8px; }"
-        "QLineEdit { border: none; border-bottom: 1px solid %1; border-radius: 0;"
-        "            padding: 8px; font-size: 10pt; background: transparent; }"
-        "QTreeWidget { border: none; background: transparent; outline: 0; }"
-        "QTreeWidget::item { padding: 4px 6px; border-radius: 4px; }"
-        "QTreeWidget::item:selected { background: %2; color: %3; }")
-        .arg(theme::kDivider, theme::kAccentSoft, theme::kPrimaryText));
+    setStyleSheet(QString("QFrame { background: white; border: 1px solid %1; border-radius: 8px; }"
+                          "QLineEdit { border: none; border-bottom: 1px solid %1; border-radius: 0;"
+                          "            padding: 8px; font-size: 10pt; background: transparent; }"
+                          "QTreeWidget { border: none; background: transparent; outline: 0; }"
+                          "QTreeWidget::item { padding: 4px 6px; border-radius: 4px; }"
+                          "QTreeWidget::item:selected { background: %2; color: %3; }")
+                      .arg(theme::kDivider, theme::kAccentSoft, theme::kPrimaryText));
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(1, 1, 1, 1);
@@ -49,15 +47,11 @@ PopupList::PopupList(QWidget* parent)
     list_->installEventFilter(this);
     layout->addWidget(list_);
 
-    connect(search_box_, &QLineEdit::textChanged, this,
-            [this](const QString& text) { SetFilter(text); });
-    connect(list_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem*) {
-        ConfirmCurrent();
-    });
+    connect(search_box_, &QLineEdit::textChanged, this, [this](const QString& text) { SetFilter(text); });
+    connect(list_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem*) { ConfirmCurrent(); });
 }
 
-void PopupList::popup(const QPoint& global_pos, const std::vector<Item>& items,
-                      const QString& filter) {
+void PopupList::popup(const QPoint& global_pos, const std::vector<Item>& items, const QString& filter) {
     all_items_ = items;
     search_box_->blockSignals(true);
     search_box_->clear();
@@ -68,7 +62,7 @@ void PopupList::popup(const QPoint& global_pos, const std::vector<Item>& items,
     resize(kPopupWidth, qMin(kPopupMaxHeight, sizeHint().height()));
     show();
     raise();
-    search_box_->setFocus(Qt::PopupFocusReason);
+    // search_box_->setFocus(Qt::PopupFocusReason);
     if (!filter.isEmpty()) {
         search_box_->setText(filter);
     }
@@ -90,9 +84,9 @@ void PopupList::SetFilter(const QString& text) {
     QString last_group;
     int visible = 0;
     for (const auto& item : all_items_) {
-        QString hay = item.search.isEmpty() ? item.label.toLower()
-                                            : item.search.toLower();
-        if (!needle.isEmpty() && !hay.contains(needle)) continue;
+        QString hay = item.search.isEmpty() ? item.label.toLower() : item.search.toLower();
+        if (!needle.isEmpty() && !hay.contains(needle))
+            continue;
         if (!item.group.isEmpty() && item.group != last_group) {
             auto* header = new QTreeWidgetItem(list_);
             header->setText(0, item.group.toUpper());
@@ -133,39 +127,38 @@ bool PopupList::eventFilter(QObject* watched, QEvent* event) {
     if (event->type() == QEvent::KeyPress) {
         auto* key_event = static_cast<QKeyEvent*>(event);
         switch (key_event->key()) {
-            case Qt::Key_Down: {
-                auto* current = list_->currentItem();
-                int next = current ? list_->indexOfTopLevelItem(current) + 1 : 0;
-                for (int i = next; i < list_->topLevelItemCount(); ++i) {
-                    if (list_->topLevelItem(i)->flags() & Qt::ItemIsSelectable) {
-                        list_->setCurrentItem(list_->topLevelItem(i));
-                        break;
-                    }
+        case Qt::Key_Down: {
+            auto* current = list_->currentItem();
+            int next = current ? list_->indexOfTopLevelItem(current) + 1 : 0;
+            for (int i = next; i < list_->topLevelItemCount(); ++i) {
+                if (list_->topLevelItem(i)->flags() & Qt::ItemIsSelectable) {
+                    list_->setCurrentItem(list_->topLevelItem(i));
+                    break;
                 }
-                return true;
             }
-            case Qt::Key_Up: {
-                auto* current = list_->currentItem();
-                int prev = current ? list_->indexOfTopLevelItem(current) - 1
-                                   : list_->topLevelItemCount() - 1;
-                for (int i = prev; i >= 0; --i) {
-                    if (list_->topLevelItem(i)->flags() & Qt::ItemIsSelectable) {
-                        list_->setCurrentItem(list_->topLevelItem(i));
-                        break;
-                    }
+            return true;
+        }
+        case Qt::Key_Up: {
+            auto* current = list_->currentItem();
+            int prev = current ? list_->indexOfTopLevelItem(current) - 1 : list_->topLevelItemCount() - 1;
+            for (int i = prev; i >= 0; --i) {
+                if (list_->topLevelItem(i)->flags() & Qt::ItemIsSelectable) {
+                    list_->setCurrentItem(list_->topLevelItem(i));
+                    break;
                 }
-                return true;
             }
-            case Qt::Key_Return:
-            case Qt::Key_Enter:
-                ConfirmCurrent();
-                return true;
-            case Qt::Key_Escape:
-                emit dismissed();
-                close();
-                return true;
-            default:
-                break;
+            return true;
+        }
+        case Qt::Key_Return:
+        case Qt::Key_Enter:
+            ConfirmCurrent();
+            return true;
+        case Qt::Key_Escape:
+            emit dismissed();
+            close();
+            return true;
+        default:
+            break;
         }
     }
     if (event->type() == QEvent::FocusOut) {
@@ -180,11 +173,13 @@ bool PopupList::eventFilter(QObject* watched, QEvent* event) {
 
 void PopupList::ConfirmCurrent() {
     auto* current = list_->currentItem();
-    if (!current) return;
+    if (!current)
+        return;
     QString payload = current->data(0, Qt::UserRole).toString();
-    if (payload.isEmpty()) return;
+    if (payload.isEmpty())
+        return;
     close();
     emit chosen(payload);
 }
 
-}  // namespace pf::gui
+} // namespace pf::gui

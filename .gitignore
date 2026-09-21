@@ -42,3 +42,4 @@ MyPaper/
 .vscode/
 .idea/
 .cache/
+.clang-format
