@@ -27,7 +27,8 @@ compile_commands.json
 # accidental ones out of `git diff`.
 /project.paper
 /.paperforge/
-/GMVG/
+/GMVG2/
+/GMVG3/
 MyPaper/
 .paperforge/
 *.paper.tmp-*

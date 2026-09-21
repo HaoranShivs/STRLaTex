@@ -1,53 +1,33 @@
 {
   "assets": [
     {
-      "fileSize": 9767,
-      "hash": "dc9b265c92ff17d6",
-      "height": 93,
-      "id": "a5",
-      "mediaType": "image/png",
-      "originalName": "弱监督学习范式.png",
-      "path": "_____________________.png",
-      "width": 851
-    },
-    {
       "fileSize": 123317,
       "hash": "3b2b7602554cb319",
       "height": 1042,
-      "id": "a4",
+      "id": "a13",
       "mediaType": "image/jpeg",
       "originalName": "point_label_examples.jpg",
-      "path": "a3_point_label_examples.jpg",
+      "path": "a12_point_label_examples.jpg",
       "width": 2100
     },
     {
-      "fileSize": 1259751,
-      "hash": "fd1642b0bf736415",
-      "height": 3205,
-      "id": "a3",
+      "fileSize": 557465,
+      "hash": "49381d252bc76def",
+      "height": 1312,
+      "id": "a9",
       "mediaType": "image/png",
-      "originalName": "dir_msg_visulization.png",
-      "path": "dir_msg_visulization.png",
-      "width": 2929
+      "originalName": "GMVG_pipeline.png",
+      "path": "a8_GMVG_pipeline.png",
+      "width": 3131
     },
     {
-      "fileSize": 1259751,
-      "hash": "fd1642b0bf736415",
-      "height": 3205,
-      "id": "a2",
-      "mediaType": "image/png",
-      "originalName": "dir_msg_visulization.png",
-      "path": "a1_dir_msg_visulization.png",
-      "width": 2929
-    },
-    {
-      "fileSize": 123317,
-      "hash": "3b2b7602554cb319",
-      "height": 1042,
-      "id": "a6",
+      "fileSize": 149256,
+      "hash": "3187bcc5c9da062a",
+      "height": 494,
+      "id": "a7",
       "mediaType": "image/jpeg",
-      "originalName": "point_label_examples.jpg",
-      "path": "a5_point_label_examples.jpg",
+      "originalName": "fa.jpg",
+      "path": "fa.jpg",
       "width": 2100
     },
     {
@@ -61,24 +41,64 @@
       "width": 747
     },
     {
-      "fileSize": 149256,
-      "hash": "3187bcc5c9da062a",
-      "height": 494,
-      "id": "a7",
+      "fileSize": 123317,
+      "hash": "3b2b7602554cb319",
+      "height": 1042,
+      "id": "a6",
       "mediaType": "image/jpeg",
-      "originalName": "fa.jpg",
-      "path": "fa.jpg",
+      "originalName": "point_label_examples.jpg",
+      "path": "a5_point_label_examples.jpg",
       "width": 2100
     },
     {
-      "fileSize": 557465,
-      "hash": "49381d252bc76def",
-      "height": 1312,
-      "id": "a9",
+      "fileSize": 1259751,
+      "hash": "fd1642b0bf736415",
+      "height": 3205,
+      "id": "a2",
       "mediaType": "image/png",
-      "originalName": "GMVG_pipeline.png",
-      "path": "a8_GMVG_pipeline.png",
-      "width": 3131
+      "originalName": "dir_msg_visulization.png",
+      "path": "a1_dir_msg_visulization.png",
+      "width": 2929
+    },
+    {
+      "fileSize": 1259751,
+      "hash": "fd1642b0bf736415",
+      "height": 3205,
+      "id": "a3",
+      "mediaType": "image/png",
+      "originalName": "dir_msg_visulization.png",
+      "path": "dir_msg_visulization.png",
+      "width": 2929
+    },
+    {
+      "fileSize": 123317,
+      "hash": "3b2b7602554cb319",
+      "height": 1042,
+      "id": "a4",
+      "mediaType": "image/jpeg",
+      "originalName": "point_label_examples.jpg",
+      "path": "a3_point_label_examples.jpg",
+      "width": 2100
+    },
+    {
+      "fileSize": 149256,
+      "hash": "3187bcc5c9da062a",
+      "height": 494,
+      "id": "a11",
+      "mediaType": "image/jpeg",
+      "originalName": "fa.jpg",
+      "path": "a10_fa.jpg",
+      "width": 2100
+    },
+    {
+      "fileSize": 9767,
+      "hash": "dc9b265c92ff17d6",
+      "height": 93,
+      "id": "a5",
+      "mediaType": "image/png",
+      "originalName": "弱监督学习范式.png",
+      "path": "_____________________.png",
+      "width": 851
     }
   ],
   "bibliographyPath": "references.bib",
@@ -100,12 +120,53 @@
                 "type": "citation"
               },
               {
-                "text": ", marine rescue, and military surveillance. This is because infrared light exhibits a longer working range and stronger penetration capability compared to visible light. In IRSTD tasks, targets are generally very small, weak, and are often embedded in complex backgrounds. In IRSTD tasks, targets typically include drones, aerostats, and ships, which commonly exhibit the following characteristics: (i) Low target energy: Due to severe signal attenuation over long-distance propagation, the received infrared signal is weak. This results in low contrast between the target and strong background clutter, making the target highly susceptible to being obscured by background noise. (ii) Small target size: At long imaging ranges, targets occupy only a few pixels in the image and lack discernible texture or structural details. (iii) Complex background: The operational environment often contains numerous interfering objects that introduce edges, corners, and other salient features, significantly complicating the accurate discrimination of small targets from the background. Some examples are shown in Fig. 1. Therefore, efficiently and accurately detecting infrared small targets remains a critical challenge.",
+                "text": ", marine rescue, and military surveillance. This is because infrared light exhibits a longer working range and stronger penetration capability compared to visible light. In IRSTD tasks, targets are generally very small, weak, and are often embedded in complex backgrounds. ",
                 "type": "text"
               },
               {
-                "target": "n1",
+                "keys": [
+                  "10508299"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": "In IRSTD tasks, targets typically include drones, aerostats, and ships, which commonly exhibit the following characteristics: (i) Low target energy: Due to severe signal attenuation over long-distance propagation, the received infrared signal is weak. This results in low contrast between the target and strong background clutter, making the target highly susceptible to being obscured by background noise. (ii) ",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "2006Random"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": "Small target size: At long imaging ranges, targets occupy only a few pixels in the image and lack discernible ",
+                "type": "text"
+              },
+              {
+                "target": "n20",
                 "type": "crossReference"
+              },
+              {
+                "text": " texture or structural details. (iii) Complex background: The operational environment often contains numerous interfering objects that introduce edges, corners, and other salient features, significantly complicating the accurate discrimination of small targets from the background. Some examples are shown in Fig. ",
+                "type": "text"
+              },
+              {
+                "target": "n19",
+                "type": "crossReference"
+              },
+              {
+                "text": ". Therefore, efficiently and accurately detecting infrared small targets remains a critical challenge.",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "10703135"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
               }
             ],
             "id": "n3",
@@ -122,19 +183,19 @@
           },
           {
             "alt": "",
-            "assetId": "a7",
+            "assetId": "a11",
             "caption": [],
-            "id": "n17",
+            "id": "n19",
             "span": "single",
             "type": "figure",
             "width": "100"
           },
           {
             "alt": "",
-            "assetId": "a9",
+            "assetId": "a13",
             "caption": [],
-            "id": "n18",
-            "span": "double",
+            "id": "n20",
+            "span": "single",
             "type": "figure",
             "width": "100"
           },
@@ -187,7 +248,7 @@
     ]
   },
   "projectId": "p1",
-  "revision": 55,
+  "revision": 70,
   "schemaVersion": "3",
   "template": "ieee-conference"
 }
