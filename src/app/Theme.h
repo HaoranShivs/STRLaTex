@@ -1,14 +1,14 @@
 #pragma once
-// PaperForge GUI theme (design doc sections 2, 64, 66): light theme only,
-// editor is the visual center, side panels slightly grey.
+// PaperForge GUI 主题（设计文档 2、64、66 节）：仅浅色主题，
+// 编辑器是视觉中心，侧边面板略带灰色。
 //
-// UI typography plan (2024 UI adjustment §12): every spacing / font number
-// the editor uses lives in the theme namespaces below. BlockEditor.cpp must
-// not grow ad-hoc UiFont(11) / setFixedHeight(18) literals; change a token
-// here and the whole GUI follows.
+// UI 排版方案（2024 UI 调整 §12）：编辑器使用的每个间距／字体数值
+// 都位于下面的 theme 命名空间中。BlockEditor.cpp 不得再新增
+// 临时的 UiFont(11) / setFixedHeight(18) 字面量；在这里改一个 token，
+// 整个 GUI 随之改变。
 //
-// The GUI layout is decoupled from the PDF layout: these sizes serve reading
-// and editing only; the final PDF stays under Template + LaTeX control.
+// GUI 布局与 PDF 布局解耦：这些尺寸只服务于阅读与编辑；
+// 最终 PDF 仍由 Template + LaTeX 控制。
 
 #include <QFont>
 #include <QFontDatabase>
@@ -21,7 +21,7 @@
 
 namespace pf::gui::theme {
 
-// Palette (design #2)
+// 调色板（设计 #2）
 constexpr const char* kMainBackground = "#F3F4F6";
 constexpr const char* kEditorBackground = "#FFFFFF";
 constexpr const char* kSidePanel = "#F8F9FB";
@@ -29,35 +29,35 @@ constexpr const char* kDivider = "#E4E7EC";
 constexpr const char* kPrimaryText = "#202124";
 constexpr const char* kSecondaryText = "#667085";
 constexpr const char* kDisabledText = "#98A2B3";
-constexpr const char* kAccent = "#2A5DB0";         // focus line / links
-constexpr const char* kAccentSoft = "#EAF1FB";     // hover background
+constexpr const char* kAccent = "#2A5DB0";         // 焦点线／链接
+constexpr const char* kAccentSoft = "#EAF1FB";     // 悬停背景
 constexpr const char* kError = "#D64545";
 constexpr const char* kErrorSoft = "#FDF0F0";
 constexpr const char* kWarning = "#B7791F";
 constexpr const char* kWarningSoft = "#FBF5E9";
 constexpr const char* kOk = "#2F855A";
-constexpr const char* kBlockHover = "#FAFBFC";     // block hover background
+constexpr const char* kBlockHover = "#FAFBFC";     // 块悬停背景
 
-// Editor content width (design #62): centered column, comfortable reading.
+// 编辑器内容宽度（设计 #62）：居中栏，阅读舒适。
 constexpr int kContentWidth = 820;
 
-// ---------------- Spacing tokens (UI plan §2, §12) ----------------
-// Block chrome is deliberately thin so prose owns the page: the visual focus
-// of a paper editor is the text, not the controls.
+// ---------------- 间距 token（UI 方案 §2、§12） ----------------
+// 块的装饰刻意做得很轻，让正文占据页面：论文编辑器的视觉焦点
+// 是文字，而不是控件。
 namespace spacing {
-constexpr int kBlockGap = 12;          // insert/drop strip between blocks
-constexpr int kBlockPaddingH = 8;      // card left/right padding
-constexpr int kBlockPaddingV = 2;      // card top/bottom padding
-constexpr int kBlockHeaderHeight = 15; // hover header strip
-constexpr int kFocusLine = 2;          // left state line (focus/missing)
-constexpr int kCardRadius = 6;         // card corner radius
-constexpr int kEditorDocMargin = 4;    // QTextDocument margin inside editors
+constexpr int kBlockGap = 12;          // 块之间的插入／放置条
+constexpr int kBlockPaddingH = 8;      // 卡片左右内边距
+constexpr int kBlockPaddingV = 2;      // 卡片上下内边距
+constexpr int kBlockHeaderHeight = 15; // 悬停时的标题条
+constexpr int kFocusLine = 2;          // 左侧状态线（聚焦／缺失）
+constexpr int kCardRadius = 6;         // 卡片圆角半径
+constexpr int kEditorDocMargin = 4;    // 编辑器内部 QTextDocument 的外边距
 }  // namespace spacing
 
-// ---------------- Typography tokens (UI plan §3, §5, §12) ----------------
-// A single GUI hierarchy for the manuscript surface. Hierarchy comes from
-// size + weight + spacing, not from making every heading maximally bold:
-// the paper title stays Bold, headings below it are DemiBold (600).
+// ---------------- 排版 token（UI 方案 §3、§5、§12） ----------------
+// 稿件界面统一的 GUI 层级。层级来自字号 + 字重 + 间距，
+// 而不是把每个标题都加粗到极致：论文标题保持 Bold，
+// 其下的标题为 DemiBold (600)。
 namespace typography {
 constexpr double kTitlePt = 22.0;
 constexpr double kAuthorsPt = 12.0;
@@ -70,13 +70,13 @@ constexpr double kSubsubsectionPt = 12.5;
 constexpr double kBodyPt = 12.0;
 constexpr double kCaptionPt = 10.5;
 constexpr double kEquationSourcePt = 10.5;
-constexpr double kUiPt = 10.0;         // application chrome baseline
+constexpr double kUiPt = 10.0;         // 应用外框基准字号
 
-constexpr int kBodyLineHeight = 150;     // % proportional, body text
-constexpr int kAbstractLineHeight = 155; // % proportional, abstract
+constexpr int kBodyLineHeight = 150;     // % 比例行距，正文
+constexpr int kAbstractLineHeight = 155; // % 比例行距，摘要
 }  // namespace typography
 
-// Visual role of a block's editor; maps 1:1 onto the typography table.
+// 块编辑器的视觉角色；与排版表一一对应。
 enum class BlockVisualRole {
     Body,
     Abstract,
@@ -91,10 +91,10 @@ enum class BlockVisualRole {
     EquationSource,
 };
 
-// GUI font (UI plan §7): system UI font first, Qt fallbacks after. Do not
-// hard-code a single family - on Windows this lands on the native UI face,
-// on Linux fontconfig resolves CJK through Noto Sans CJK when present. The
-// GUI font has no relationship to the PDF's fonts.
+// GUI 字体（UI 方案 §7）：系统 UI 字体优先，其后是 Qt 回退字体。
+// 不要硬编码单一字族——在 Windows 上会落到原生 UI 字体，在 Linux
+// 上当存在 Noto Sans CJK 时由 fontconfig 解析中日韩文字。GUI 字体
+// 与 PDF 的字体毫无关系。
 inline QFont UiFont(qreal point_size = typography::kUiPt,
                     int weight = QFont::Normal) {
     QFont font = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
@@ -120,11 +120,11 @@ inline QFont MonoFont(qreal point_size = typography::kUiPt) {
     return font;
 }
 
-// The application-wide chrome font; set on QApplication so no stylesheet
-// needs to pin font-size (a stylesheet font would override every setFont()).
+// 应用级外框字体；设置在 QApplication 上，因此样式表无需固定
+// font-size（样式表字体会覆盖每一次 setFont()）。
 inline QFont AppFont() { return UiFont(typography::kUiPt); }
 
-// The font for one visual role of the manuscript surface (UI plan §3).
+// 稿件界面某个视觉角色所用的字体（UI 方案 §3）。
 inline QFont EditorFont(BlockVisualRole role) {
     using R = BlockVisualRole;
     switch (role) {
@@ -154,7 +154,7 @@ inline QFont EditorFont(BlockVisualRole role) {
     return UiFont(typography::kBodyPt);
 }
 
-// Line height (%) a role reads with; 0 means "leave the default".
+// 某个角色阅读时使用的行高（%）；0 表示「保持默认」。
 inline int LineHeightFor(BlockVisualRole role) {
     switch (role) {
         case BlockVisualRole::Body:
@@ -166,7 +166,7 @@ inline int LineHeightFor(BlockVisualRole role) {
     }
 }
 
-// Whether a role reads in the secondary text color.
+// 某个角色是否以次要文字颜色渲染。
 inline bool IsSecondaryRole(BlockVisualRole role) {
     switch (role) {
         case BlockVisualRole::Affiliations:
@@ -178,11 +178,10 @@ inline bool IsSecondaryRole(BlockVisualRole role) {
     }
 }
 
-// Apply font + proportional line height to a text document. Callers wrap
-// this in their own "programmatic edit" guard so the change is never
-// mistaken for user input. The font environment must be in place *before*
-// inline content is loaded (UI plan §6): inline math objects size and align
-// themselves from document()->defaultFont() at insertion time.
+// 把字体 + 比例行距应用到文本文档。调用方需自行用「程序化编辑」
+// 保护包裹此调用，使该变更绝不会被误认为用户输入。字体环境必须在
+// 行内内容加载*之前*就位（UI 方案 §6）：行内数学对象在插入时
+// 依据 document()->defaultFont() 确定自身大小与对齐。
 inline void ApplyDocumentTypography(QTextDocument* doc, const QFont& font,
                                     int line_height_percent) {
     if (!doc) return;
@@ -197,10 +196,9 @@ inline void ApplyDocumentTypography(QTextDocument* doc, const QFont& font,
     cursor.clearSelection();
 }
 
-// Global application stylesheet. Deliberately no font-family/font-size on
-// the generic QWidget selector: QApplication::setFont(AppFont()) is the
-// single source of the chrome font, and stylesheet fonts would silently
-// override every per-widget setFont() the editor typography relies on.
+// 全局应用样式表。通用 QWidget 选择器上刻意不设置 font-family/font-size：
+// QApplication::setFont(AppFont()) 是外框字体的唯一来源，
+// 而样式表字体会静默覆盖编辑器排版所依赖的每一次逐 widget setFont()。
 inline QString AppStyleSheet() {
     return QString(R"(
 QMainWindow, QWidget { background: %1; color: %2; }

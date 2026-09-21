@@ -1,5 +1,5 @@
 #pragma once
-// Editing Protocol value types (architecture sections 35-39).
+// Editing Protocol 值类型（架构 35-39）。
 
 #include <memory>
 #include <optional>
@@ -23,7 +23,7 @@ enum class EditOrigin : std::uint8_t {
 
 const char *ToString(EditOrigin origin);
 
-// ---------------- Payloads ----------------
+// ---------------- 载荷 ----------------
 
 struct SetTitlePayload {
   InlineContent title;
@@ -46,8 +46,8 @@ struct UpdateAuthorPayload {
   Author author;
 };
 
-// Replace the whole affiliation list. Affiliations are referenced by id from
-// authors, so a full-list replacement keeps consistency simple in V1.
+// 整体替换署名单位列表。作者通过 id 引用署名单位，
+// 因此在 V1 中整体替换更易保持一致。
 struct SetAffiliationsPayload {
   std::vector<Affiliation> affiliations;
 };
@@ -93,7 +93,7 @@ struct DeleteSubsectionPayload {
   size_t subsection_index = 0;
 };
 
-// Third heading level. A subsubsection lives inside a subsection.
+// 第三级标题。subsubsection 位于 subsection 内部。
 struct InsertSubsubsectionPayload {
   size_t section_index = 0;
   size_t subsection_index = 0;
@@ -119,8 +119,8 @@ struct DeleteSubsubsectionPayload {
   size_t subsubsection_index = 0;
 };
 
-// Inserts a subsubsection heading directly after `after` in reading order; the
-// blocks below the anchor move into the new subsubsection.
+// 按阅读顺序在 `after` 之后直接插入 subsubsection 标题；
+// 锚点之后的块会移入新建的 subsubsection。
 struct InsertSubsubsectionAfterPayload {
   NodeId after;
   InlineContent title;
@@ -168,9 +168,8 @@ struct MoveBlockPayload {
   std::optional<size_t> new_index;
 };
 
-// Inserts a subsection heading directly after `after` in reading order; the
-// blocks below the anchor move into the new subsection (see
-// DocumentEditor::InsertSubsectionAfter).
+// 按阅读顺序在 `after` 之后直接插入 subsection 标题；锚点之后的块会移入
+// 新建的 subsection（参见 DocumentEditor::InsertSubsectionAfter）。
 struct InsertSubsectionAfterPayload {
   NodeId after;
   InlineContent title;
@@ -193,9 +192,8 @@ struct EditEquationPayload {
   std::optional<std::string> label;
 };
 
-// Single- vs double-column figure. The value is recorded whether or not the
-// current template has two columns; it only changes the rendered float once a
-// two-column template is selected.
+// 图片的单栏与双栏。无论当前模板是否为双栏都会记录该值；
+// 只有选中双栏模板后，它才会改变浮动体的渲染结果。
 struct EditFigureSpanPayload {
   NodeId figure;
   FigureSpan span = FigureSpan::SingleColumn;
@@ -205,7 +203,7 @@ struct InsertCitationPayload {
   NodeId paragraph;
   std::vector<std::string> keys;
   CitationMode mode = CitationMode::Parenthetical;
-  std::optional<size_t> at_index; // inline position; nullopt = append
+  std::optional<size_t> at_index; // 行内位置；nullopt = 追加
 };
 
 struct InsertCrossReferencePayload {
@@ -221,7 +219,7 @@ struct SetKeywordsPayload {
 struct ChangeTemplatePayload {
   std::string template_id;
 };
-// Document-only payload variant (no template change).
+// 仅 Document 的载荷变体（不含模板变更）。
 using EditPayload = std::variant<
     SetTitlePayload, SetAbstractPayload, SetKeywordsPayload, AddAuthorPayload,
     RemoveAuthorPayload, UpdateAuthorPayload, SetAffiliationsPayload,
@@ -251,7 +249,7 @@ using FullEditPayload = std::variant<
     EditFigureSpanPayload, InsertCitationPayload, InsertCrossReferencePayload,
     ChangeTemplatePayload>;
 
-// ---------------- Envelope ----------------
+// ---------------- 信封 ----------------
 
 enum class EditStatus : std::uint8_t {
   Applied,
@@ -299,13 +297,13 @@ struct EditCommand {
   const char *PayloadName() const;
 };
 
-// History entry: inverse information for undo/redo. Two storage strategies:
-//  - SnapshotHistoryAction: full-document before/after snapshots; works for
-//    every document operation (including deletions).
-//  - TemplateHistoryAction: template id transitions for project-level undo.
+// 历史记录项：用于 undo/redo 的逆向信息。两种存储策略：
+//  - SnapshotHistoryAction：整篇 Document 的前后 snapshot；适用于
+//    所有文档操作（包括删除）。
+//  - TemplateHistoryAction：用于项目级 undo 的模板 id 变更。
 struct SnapshotHistoryAction {
-  std::shared_ptr<const Document> before; // restore on undo
-  std::shared_ptr<const Document> after;  // restore on redo
+  std::shared_ptr<const Document> before; // undo 时恢复
+  std::shared_ptr<const Document> after;  // redo 时恢复
 };
 
 struct TemplateHistoryAction {
@@ -322,7 +320,7 @@ struct HistoryEntry {
   ProjectRevision resulting_revision;
 };
 
-// Stable anchor (architecture section 十).
+// 稳定锚点（架构 十）。
 enum class AnchorBias : std::uint8_t {
   Before,
   After,

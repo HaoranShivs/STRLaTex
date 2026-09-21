@@ -1,6 +1,5 @@
 #pragma once
-// JSON writer/parser - minimal dependency-free implementation sufficient
-// for the project.paper serialization format used by V1.
+// JSON 读写器——无外部依赖的最小实现，足以支撑 V1 使用的 project.paper 序列化格式。
 #include <map>
 #include <memory>
 #include <optional>
@@ -59,7 +58,7 @@ public:
         return is_object() ? std::get<JsonObject>(data_) : kEmpty;
     }
 
-    // Object convenience (returns null JsonValue if missing / not object)
+    // Object 便捷访问（缺失或不是 object 时返回 null JsonValue）
     const JsonValue* find(const std::string& key) const {
         if (!is_object()) return nullptr;
         auto it = std::get<JsonObject>(data_).find(key);
@@ -97,14 +96,13 @@ private:
     std::variant<std::monostate, bool, double, std::string, JsonArray, JsonObject> data_;
 };
 
-// Parse a JSON document. On failure returns nullptr and (when requested)
-// writes a human-readable reason into *error.
+// 解析 JSON document。失败时返回 nullptr，并在需要时把人类可读的原因写入
+// *error。
 //
-// Resource bounds (P0-02): parsing is bounded by JsonParseLimits - input
-// size, nesting depth, total node count and total string bytes. Any input
-// that exceeds a bound is rejected with a structured error message; the
-// parser never aborts the process and never lets an exception escape
-// (stack-overflow and numeric-conversion crashes closed here).
+// 资源上限（P0-02）：解析受 JsonParseLimits 约束——输入大小、嵌套深度、节点
+// 总数与字符串总字节数。任何超出上限的输入都会被拒绝，并给出结构化错误信息；
+// parser 绝不终止进程，也绝不让异常逃逸（此处关闭了栈溢出与数值转换导致的
+// 崩溃）。
 struct JsonParseLimits {
     std::size_t max_input_bytes = 8 * 1024 * 1024;
     std::size_t max_depth = 128;

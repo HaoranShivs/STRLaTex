@@ -14,9 +14,8 @@ inline constexpr int kHeightProperty = QTextFormat::UserProperty + 5;
 inline constexpr int kBaselineProperty = QTextFormat::UserProperty + 6;
 }  // namespace inline_math_format
 
-// QTextDocument treats ordinary images as having their baseline at the image
-// bottom. This object keeps the TeX baseline explicit and paints the formula's
-// descent below the text baseline without increasing the line box.
+// QTextDocument 把普通图片的基线视为图片底边。该对象则显式保留 TeX 基线，
+// 并在不增大行框的前提下，把公式的下沉部分绘制到文本基线下方。
 class InlineMathObjectRenderer final : public QObject,
                                        public QTextObjectInterface {
     Q_OBJECT

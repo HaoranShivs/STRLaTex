@@ -26,7 +26,7 @@ void DocumentEditor::Throw(EditError e) const {
   throw std::runtime_error(ToString(e));
 }
 
-// ---------------- FrontMatter ----------------
+// ---------------- FrontMatter（前置信息） ----------------
 
 Result<void, EditError> DocumentEditor::SetTitle(const InlineContent &title) {
   document_.front_matter().title = title;
@@ -66,7 +66,7 @@ DocumentEditor::RemoveAffiliation(const AffiliationId &id) {
   for (auto it = affs.begin(); it != affs.end(); ++it) {
     if (it->id == id) {
       affs.erase(it);
-      // Detach from authors.
+      // 从 authors 中解除关联。
       for (auto &author : document_.front_matter().authors) {
         std::erase_if(author.affiliations,
                       [&](const AffiliationId &a) { return a == id; });
@@ -81,7 +81,7 @@ DocumentEditor::RemoveAffiliation(const AffiliationId &id) {
 Result<NodeId, EditError> DocumentEditor::AddAuthor(Author author, NodeId) {
   document_.front_matter().authors.push_back(std::move(author));
   document_.BumpVersion();
-  return NodeId(); // authors are not tree nodes; id unused
+  return NodeId(); // authors 不是树节点；id 未被使用
 }
 
 Result<void, EditError> DocumentEditor::RemoveAuthor(size_t index) {
@@ -103,7 +103,7 @@ Result<void, EditError> DocumentEditor::UpdateAuthor(size_t index,
   return {};
 }
 
-// ---------------- Body structure ----------------
+// ---------------- Body structure（正文结构） ----------------
 
 Result<NodeId, EditError>
 DocumentEditor::InsertSection(size_t index, InlineContent title, NodeId id) {
@@ -139,7 +139,7 @@ Result<void, EditError> DocumentEditor::MoveSection(size_t from, size_t to) {
   }
   Section moved = std::move(sections[from]);
   sections.erase(sections.begin() + from);
-  // After erase, 'to' may shift if to > from.
+  // 删除后，若 to > from，则 to 会偏移。
   size_t insert_at = to > from ? to - 1 : to;
   if (insert_at > sections.size())
     insert_at = sections.size();
@@ -188,11 +188,10 @@ DocumentEditor::InsertSubsectionAfter(const NodeId &anchor, InlineContent title,
     return id;
   };
 
-  // 1. A block directly inside a section or subsection: it takes the blocks
-  //    below it, and the heading goes before every existing subsection (or
-  //    at the subsection's start), which is the earliest position the model
-  //    can render. A block inside a subsubsection cannot host a subsection,
-  //    so it is rejected.
+  // 1. 直接位于 section 或 subsection 内的块：它接收其下方的块，标题置于
+  //    所有已有 subsection 之前（或位于该 subsection 的开头），这是模型
+  //    能够渲染的最早位置。位于 subsubsection 内的块无法承载 subsection，
+  //    因此予以拒绝。
   if (auto pos = FindBlockPosition(anchor)) {
     Section &section = document_.body().sections[pos->section_index];
     if (pos->in_subsubsection) {
@@ -217,7 +216,7 @@ DocumentEditor::InsertSubsectionAfter(const NodeId &anchor, InlineContent title,
     return place(section, 0, std::move(taken));
   }
 
-  // 2. An existing subsection: the new heading follows it, nothing moves.
+  // 2. 已有 subsection：新标题紧随其后，不移动任何内容。
   for (auto &section : document_.body().sections) {
     for (size_t ui = 0; ui < section.subsections.size(); ++ui) {
       if (section.subsections[ui].id == anchor) {
@@ -226,8 +225,8 @@ DocumentEditor::InsertSubsectionAfter(const NodeId &anchor, InlineContent title,
     }
   }
 
-  // 3. A section: everything it owns becomes the subsection's content, so
-  //    the heading lands directly under the section title.
+  // 3. section：其拥有的全部内容成为该 subsection 的内容，因此
+  //    标题直接落在 section 标题之下。
   if (Section *section = FindSection(anchor)) {
     std::vector<Block> taken = std::move(section->blocks);
     section->blocks.clear();
@@ -250,7 +249,7 @@ DocumentEditor::DeleteSubsection(size_t section_index,
   return {};
 }
 
-// ---------------- Subsubsections (third heading level) ----------------
+// ---------------- Subsubsections（第三级标题） ----------------
 
 Result<NodeId, EditError>
 DocumentEditor::InsertSubsubsection(size_t section_index,
@@ -295,9 +294,8 @@ DocumentEditor::InsertSubsubsectionAfter(const NodeId &anchor,
     return id;
   };
 
-  // 1. A block inside the subsection (or one of its subsubsections): the
-  //    blocks below the anchor become the new subsubsection's content, and
-  //    the heading appears where it was asked for.
+  // 1. subsection（或其某个 subsubsection）内的块：锚点下方的块成为新
+  //    subsubsection 的内容，标题出现在请求的位置。
   if (auto pos = FindBlockPosition(anchor)) {
     Section &section = document_.body().sections[pos->section_index];
     if (!pos->in_subsection) {
@@ -323,7 +321,7 @@ DocumentEditor::InsertSubsubsectionAfter(const NodeId &anchor,
     return place(sub, 0, std::move(taken));
   }
 
-  // 2. An existing subsubsection: the new heading follows it, nothing moves.
+  // 2. 已有 subsubsection：新标题紧随其后，不移动任何内容。
   if (Subsection *owner = FindParentSubsubsection(anchor)) {
     for (size_t zi = 0; zi < owner->subsubsections.size(); ++zi) {
       if (owner->subsubsections[zi].id == anchor) {
@@ -332,7 +330,7 @@ DocumentEditor::InsertSubsubsectionAfter(const NodeId &anchor,
     }
   }
 
-  // 3. A subsection: everything it owns becomes the subsubsection's content.
+  // 3. subsection：其拥有的全部内容成为该 subsubsection 的内容。
   if (Subsection *sub = FindSubsection(anchor)) {
     std::vector<Block> taken = std::move(sub->blocks);
     sub->blocks.clear();
@@ -447,7 +445,7 @@ DocumentEditor::RenameSubsubsection(const NodeId &id,
   return Unexpected(ToString(EditError::NotFound));
 }
 
-// ---------------- Blocks ----------------
+// ---------------- Blocks（块） ----------------
 
 Section *DocumentEditor::FindSection(const NodeId &id) {
   return pf::FindSection(document_, id);
@@ -522,13 +520,13 @@ std::vector<NodeId> DocumentEditor::BlockParents(const NodeId &id) {
 Result<NodeId, EditError>
 DocumentEditor::InsertBlock(const NodeId &parent, std::optional<size_t> index,
                             Block block, NodeId id) {
-  // A block may live in a section, a subsection or a subsubsection; the
-  // traversal layer owns that distinction.
+  // 块可以位于 section、subsection 或 subsubsection 中；
+  // 该区分由 traversal 层负责。
   std::vector<Block> *blocks = FindBlockListForParent(parent);
   if (!blocks)
     return Unexpected(ToString(EditError::InvalidTarget));
 
-  // Extract id from the incoming block or assign a fresh one.
+  // 从传入的块中提取 id，若为空则分配一个新的。
   if (id.empty()) {
     id = std::visit([](const auto &b) { return b.id; }, block);
   }
@@ -574,7 +572,7 @@ DocumentEditor::MoveBlock(const NodeId &id, const NodeId &new_parent,
 
   size_t at = new_index.value_or(dst_blocks->size());
   if (at > dst_blocks->size()) {
-    // Put it back where it was to avoid losing data.
+    // 放回原位，以免丢失数据。
     src_blocks->insert(src_blocks->begin() + static_cast<long>(*address->block),
                        std::move(moved));
     return Unexpected(ToString(EditError::InvalidTarget));
@@ -585,7 +583,7 @@ DocumentEditor::MoveBlock(const NodeId &id, const NodeId &new_parent,
   return {};
 }
 
-// ---------------- Content edits ----------------
+// ---------------- Content edits（内容编辑） ----------------
 
 Result<void, EditError>
 DocumentEditor::SetParagraphContent(const NodeId &id,
@@ -682,7 +680,7 @@ Result<void, EditError> DocumentEditor::SetFigureSpan(const NodeId &id,
   return {};
 }
 
-// ---------------- Tables ----------------
+// ---------------- Tables（表格） ----------------
 
 std::vector<std::vector<TableCell>> DocumentEditor::MakeCells(size_t rows,
                                                               size_t cols) {

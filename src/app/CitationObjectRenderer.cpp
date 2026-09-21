@@ -10,18 +10,17 @@
 namespace pf::gui {
 
 namespace {
-// Pill geometry. The horizontal padding keeps the brackets from touching the
-// rounded corners; the vertical numbers are expressed relative to the text
-// baseline so the pill hugs the line instead of enlarging it.
+// pill 的几何参数。水平内边距让方括号不接触圆角；垂直方向的数值以文本
+// 基线为参照，使 pill 贴合行高而不会撑大行高。
 constexpr qreal kPadX = 5.0;
-constexpr qreal kAboveAscent = 1.5;   // extra space above the cap height
-constexpr qreal kBelowBaseline = 2.5; // descent the pill dips to (inside the
-                                      // normal line's own descent area)
+constexpr qreal kAboveAscent = 1.5;   // 大写字母高度之上的额外空间
+constexpr qreal kBelowBaseline = 2.5; // pill 下探的下降量（位于普通行自身
+                                      // 的下降区域内）
 constexpr qreal kRadius = 4.0;
 
 QFont PillFont(const QTextCharFormat& format, const QTextDocument* document) {
-    // The insertion site sets the format's font to the document font; fall
-    // back to the document default when a format was built elsewhere.
+    // 插入点会把格式的字体设为文档字体；当格式在别处构建时，回退到文档
+    // 默认字体。
     QFont font = format.hasProperty(QTextFormat::FontFamily)
                      ? format.font()
                      : (document ? document->defaultFont() : QFont());
@@ -41,10 +40,9 @@ QSizeF CitationObjectRenderer::intrinsicSize(QTextDocument* document, int,
     const QFontMetricsF metrics(font);
     const qreal text_width = metrics.horizontalAdvance(DisplayOf(format));
     const qreal width = text_width + 2 * kPadX;
-    // AlignNormal makes the returned height the ascent Qt reserves above the
-    // baseline. One line ascent is enough for the pill body; the small dip
-    // below the baseline is painted into the line's normal descent area - the
-    // same trick the math renderer uses, so no line box ever grows.
+    // AlignNormal 使返回的高度成为 Qt 在基线上方保留的 ascent。单行
+    // ascent 足以容纳 pill 本体；基线下方的少量下探绘制到该行正常的下降
+    // 区域内——这与数学渲染器使用相同的技巧，因此行框永远不会变大。
     return QSizeF(width, metrics.ascent() + kAboveAscent);
 }
 
@@ -58,9 +56,9 @@ void CitationObjectRenderer::drawObject(QPainter* painter, const QRectF& rect,
 
     const QFont font = PillFont(format, document);
 
-    // For AlignNormal the reserved box runs from (baseline - ascent - pad)
-    // down to rect.bottom() == baseline. Extend it by the small dip below the
-    // baseline to get the full pill.
+    // 对于 AlignNormal，保留框从 (baseline - ascent - pad) 延伸到
+    // rect.bottom() == baseline。将其向下扩展基线下方的少量下探，得到完整
+    // 的 pill。
     const QRectF pill(rect.left(), rect.top(), rect.width(),
                       rect.height() + kBelowBaseline);
 
@@ -77,7 +75,7 @@ void CitationObjectRenderer::drawObject(QPainter* painter, const QRectF& rect,
 
     painter->setFont(font);
     painter->setPen(text_color);
-    // Draw on the line's own baseline so the pill reads as part of the text.
+    // 绘制在该行自身的基线上，使 pill 看起来是文本的一部分。
     painter->drawText(QPointF(pill.left() + kPadX, rect.bottom() - 0.5),
                       display);
     painter->restore();

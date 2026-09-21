@@ -6,8 +6,8 @@ namespace pf {
 
 void DocumentIndex::Rebuild(const Document& document) {
     index_.clear();
-    // One traversal produces every (node -> logical location) pair, so adding
-    // a heading level does not touch this file.
+    // 一次遍历即可产生全部（node -> 逻辑位置）对，因此新增一级标题
+    // 无需改动本文件。
     VisitNodes(document, [this, &document](const NodeAddress& address) {
         NodeLocation loc;
         loc.kind = address.kind;
@@ -22,9 +22,9 @@ void DocumentIndex::Rebuild(const Document& document) {
         }
         if (address.block) loc.block_index = *address.block;
         if (!address.is_heading()) {
-            // Owning container id: the section, the subsection, or the
-            // subsubsection the node lives in. A subsubsection heading itself
-            // is owned by its subsection.
+            // 所属容器 id：该 node 所在的 section、subsection 或
+            // subsubsection。subsubsection 标题本身
+            // 归其 subsection 所有。
             const auto& sections = document.body().sections;
             const Section& section = sections[loc.section_index];
             if (!address.subsection) {

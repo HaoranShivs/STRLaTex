@@ -17,10 +17,10 @@ namespace pf {
 
 namespace {
 
-// P0-02: hard invariants enforced on every deserialized project. A .paper
-// file is untrusted input; anything beyond these bounds is rejected with a
-// structured error instead of being loaded (or crashing later).
-constexpr std::size_t kMaxStringFieldBytes = 64 * 1024;   // single text field
+// P0-02：对每个反序列化后的 project 强制施加的硬性不变量。.paper 文件属于
+// 不可信输入；超出这些界限的内容一律以结构化错误拒绝，而不是将其载入
+// （或留到之后崩溃）。
+constexpr std::size_t kMaxStringFieldBytes = 64 * 1024;   // 单个文本字段
 constexpr std::size_t kMaxTableRows = 100;
 constexpr std::size_t kMaxTableColumns = 50;
 constexpr std::size_t kMaxNodes = 200000;
@@ -41,17 +41,16 @@ std::string DescribeTableProblem(const Table &table) {
   return {};
 }
 
-// Schema check for the whole deserialized project. Returns an empty string
-// when the project is valid, and a human-readable reason otherwise. Covers:
-// ids (non-empty + unique), section hierarchy shape, table invariants,
-// string lengths, reference targets and revision sanity.
+// 对反序列化后的整个 project 做 schema 校验。project 合法时返回空字符串，
+// 否则返回人类可读的原因。校验范围包括：id（非空且唯一）、节层级结构、
+// 表格不变量、字符串长度、引用目标以及 revision 的合理性。
 std::string ValidateSerializedProject(const SerializedProject &project) {
-  // Revision overflow guard: revisions are generated sequentially.
+  // revision 溢出防护：revision 按顺序生成。
   if (project.revision.value > std::uint64_t{1} << 48)
     return "revision out of range";
 
   std::set<std::string> seen_ids;
-  std::set<std::string> reference_targets;  // ids that can be cross-referenced
+  std::set<std::string> reference_targets;  // 可被交叉引用的 id
   std::size_t node_count = 0;
   auto count_id = [&](const NodeId &id, const char *what) -> std::string {
     if (++node_count > kMaxNodes)
@@ -156,7 +155,7 @@ std::string ValidateSerializedProject(const SerializedProject &project) {
     }
   }
 
-  // Cross-references must point at a node that exists and is referenceable.
+  // 交叉引用必须指向一个存在且可被引用的节点。
   for (const auto &section : project.document.body().sections) {
     auto check_ref = [&](const CrossReference &ref) -> std::string {
       if (ref.target.empty())
@@ -195,7 +194,7 @@ std::string ValidateSerializedProject(const SerializedProject &project) {
     }
   }
 
-  // Asset table: ids unique, declared paths relative and inside the project.
+  // asset 表：id 唯一，声明的路径为项目内相对路径。
   std::set<std::string> asset_ids;
   for (const auto &asset : project.assets) {
     if (!asset_ids.insert(asset.id.value()).second)
@@ -232,7 +231,7 @@ JsonValue InlineToJson(const InlineContent &content) {
       if (run->marks)
         obj["marks"] = static_cast<std::int64_t>(run->marks);
     } else if (const auto *eq = std::get_if<InlineMath>(&node)) {
-      // Design §10: the document stores the math body only.
+      // 设计 §10：document 只存储数学公式主体。
       obj["type"] = "inline_math";
       obj["latex"] = eq->expression.latex;
     } else if (const auto *cit = std::get_if<Citation>(&node)) {
@@ -269,8 +268,8 @@ std::optional<InlineContent> InlineFromJson(const JsonValue *value) {
         run.marks = static_cast<std::uint8_t>(marks->as_int());
       content.push_back(std::move(run));
     } else if (t == "inline_math" || t == "inlineEquation") {
-      // "inlineEquation"/"math" is the pre-redesign spelling; keep
-      // reading it so existing projects open unchanged.
+      // "inlineEquation"/"math" 是重构前的旧拼写；继续读取它，
+      // 以便既有项目保持原样打开。
       InlineMath eq;
       if (const auto *m = item.find("latex")) {
         eq.expression.latex = m->as_string();
@@ -393,16 +392,16 @@ JsonValue BlockToJson(const Block &block) {
       break;
     }
     obj["width"] = w;
-    // Single- vs double-column figure. Written for every figure so the choice
-    // is explicit in the file; readers that predate the key ignore it.
+    // 单栏与双栏图。为每个 figure 都写入，使该选择在文件中显式可见；
+    // 不识别该键的旧读取方会忽略它。
     obj["span"] = fig->span == FigureSpan::DoubleColumn ? "double" : "single";
   } else if (const auto *table = std::get_if<Table>(&block)) {
     JsonObject t = TableToJson(*table).as_object();
     t["type"] = "table";
     return JsonValue(std::move(t));
   } else if (const auto *eq = std::get_if<EquationBlock>(&block)) {
-    // Design §10: "equation" + latex/numbered/label; the generated
-    // environment text is never stored.
+    // 设计 §10："equation" + latex/numbered/label；
+    // 生成的环境文本从不存储。
     obj["type"] = "equation";
     obj["id"] = eq->id.value();
     obj["latex"] = eq->expression.latex;
@@ -446,8 +445,7 @@ std::optional<Block> BlockFromJson(const JsonValue *value) {
                   : ws == "75" ? FigureWidth::Percent75
                                : FigureWidth::Percent100;
     }
-    // Missing key (files written before the attribute existed) means the
-    // ordinary single-column figure.
+    // 缺少该键（在属性存在之前写入的文件）表示普通的单栏图。
     if (const auto *span = value->find("span")) {
       fig.span = span->as_string() == "double" ? FigureSpan::DoubleColumn
                                                : FigureSpan::SingleColumn;
@@ -464,7 +462,7 @@ std::optional<Block> BlockFromJson(const JsonValue *value) {
     if (const auto *m = value->find("latex")) {
       eq.expression.latex = m->as_string();
     } else if (const auto *m = value->find("math")) {
-      eq.expression.latex = m->as_string(); // pre-redesign spelling
+      eq.expression.latex = m->as_string(); // 重构前的旧拼写
     }
     if (const auto *n = value->find("numbered"))
       eq.numbered = n->as_bool();
@@ -494,8 +492,8 @@ bool BlocksFromJson(const JsonValue *value, std::vector<Block> *out) {
   return true;
 }
 
-// Descriptive wrapper: names the offending block type so a load error says
-// what was wrong instead of a bare "bad block".
+// 带描述的包装：指出出错的 block 类型，使加载错误能说明问题所在，
+// 而不是只给出干巴巴的 "bad block"。
 std::optional<std::string> BlocksFromJsonDetailed(const JsonValue *value,
                                                   std::vector<Block> *out) {
   if (!value || !value->is_array())
@@ -614,13 +612,12 @@ std::string ProjectSerializer::Serialize(const SerializedProject &project) {
 
 namespace {
 
-// Heal a project saved while the id generator was not load-aware: the counter
-// restarted at zero on every open, so the first block inserted into a loaded
-// project reused an id already on disk (e.g. two nodes both called "n1").
-// Duplicate ids make an edit resolve to the wrong block and scramble insert
-// order. The first occurrence keeps its id; every later duplicate is given a
-// fresh one. Call only after ObserveIdsFromProject() has pushed the generator
-// past the highest id already in the file.
+// 修复在 id 生成器尚未感知已加载状态时保存的项目：当时计数器在每次打开时
+// 都从零重新开始，因此插入已加载项目的第一个 block 会复用磁盘上已存在的
+// id（例如两个节点都叫 "n1"）。id 重复会导致一次编辑解析到错误的 block，
+// 并打乱插入顺序。首次出现的节点保留其 id；之后每个重复的 id 都会分配
+// 一个新的。仅可在 ObserveIdsFromProject() 已将生成器推进到文件中最高 id
+// 之后调用。
 void HealDuplicateNodeIds(Document &document) {
   std::set<std::string> seen;
   auto heal = [&seen](NodeId &id) {
@@ -651,8 +648,8 @@ void HealDuplicateNodeIds(Document &document) {
   }
 }
 
-// Push the id generator past everything this project already contains, so the
-// next id minted after opening it cannot collide with a stored id.
+// 将 id 生成器推进到该项目已包含的所有 id 之后，使打开项目后新生成的 id
+// 不会与已存储的 id 冲突。
 void ObserveIdsFromProject(const SerializedProject &project) {
   for (const auto &id : project.document.CollectNodeIds()) {
     IdGenerator::ObserveNodeId(id.value());
@@ -669,8 +666,8 @@ void ObserveIdsFromProject(const SerializedProject &project) {
 
 Result<SerializedProject, std::string>
 ProjectSerializer::Deserialize(const std::string &json_text) {
-  // Exception barrier (P0-02): a corrupt or hostile payload must surface as
-  // a structured error string - never as an uncaught exception.
+  // 异常屏障（P0-02）：损坏或恶意的负载必须以结构化错误字符串的形式
+  // 呈现——绝不能表现为未捕获的异常。
   std::string error;
   std::unique_ptr<JsonValue> root;
   try {
@@ -685,9 +682,9 @@ ProjectSerializer::Deserialize(const std::string &json_text) {
   if (!root->is_object())
     return Unexpected("root is not an object");
 
-  // Schema gate (P0-02): a file written by a NEWER schema version must hard
-  // fail - loading it would silently drop fields the app does not know and
-  // the next save would destroy data. Older versions load and migrate.
+  // schema 关卡（P0-02）：由更新的 schema 版本写入的文件必须硬失败——
+  // 加载它会静默丢弃应用不认识的字段，而下次保存将销毁数据。较旧的版本
+  // 可以加载并迁移。
   {
     std::string file_version;
     if (const auto *v = root->find("schemaVersion"))
@@ -706,8 +703,8 @@ ProjectSerializer::Deserialize(const std::string &json_text) {
     project.project_id = v->as_string();
   }
   if (const auto *v = root->find("revision")) {
-    // A double larger than 2^53 loses integer precision; clamp instead of
-    // letting the static_cast be undefined behaviour (UBSan finding).
+    // 大于 2^53 的 double 会丢失整数精度；此处改为截断，避免让
+    // static_cast 成为未定义行为（UBSan 发现的问题）。
     const double raw = v->as_double();
     if (raw < 0.0 || !std::isfinite(raw) || raw >= 9007199254740992.0) {
       return Unexpected("revision out of representable range");
@@ -837,7 +834,7 @@ ProjectSerializer::Deserialize(const std::string &json_text) {
         meta.original_name = o->as_string();
       if (const auto *s = item.find("fileSize")) {
         const double raw = s->as_double();
-        // Clamp instead of UB on out-of-range doubles (UBSan finding).
+        // 超范围 double 改为截断，避免未定义行为（UBSan 发现的问题）。
         meta.file_size = (raw >= 0.0 && std::isfinite(raw) &&
                           raw < 9007199254740992.0)
                              ? static_cast<std::uint64_t>(raw)
@@ -863,15 +860,15 @@ ProjectSerializer::Deserialize(const std::string &json_text) {
     }
   }
 
-  // Id safety (see the helpers above): first lift the generator past every
-  // stored id, then repair any duplicate node ids the old generator left
-  // behind. Both must happen before the document is handed to the session.
+  // id 安全（见上文的辅助函数）：先把生成器推进到所有已存储 id 之后，
+  // 再修复旧生成器遗留的重复节点 id。两者都必须在 document 交给 session
+  // 之前完成。
   ObserveIdsFromProject(project);
   HealDuplicateNodeIds(project.document);
 
-  // Schema validation (P0-02): shape, bounds, id uniqueness, table geometry,
-  // path safety and reference integrity. Duplicates healed above are allowed
-  // to remain; everything else is a load error.
+  // schema 校验（P0-02）：结构、界限、id 唯一性、表格几何、
+  // 路径安全与引用完整性。上文已修复的重复 id 允许保留；其余任何问题
+  // 都是加载错误。
   if (std::string problem = ValidateSerializedProject(project);
       !problem.empty()) {
     return Unexpected("project validation failed: " + problem);
@@ -897,8 +894,8 @@ SaveResult ProjectPersistence::Save(const SaveRequest &request) {
 
   std::error_code ec;
   auto dest = request.destination;
-  // A destination that names an existing directory can never be an atomic
-  // rename target; fail loudly instead of producing a confusing rename error.
+  // 目标路径若指向一个已存在的目录，它绝不可能成为原子重命名的目标；
+  // 此处必须显式失败，而不是产生令人困惑的重命名错误。
   if (std::filesystem::is_directory(dest, ec)) {
     result.status = SaveResult::Status::IoError;
     result.detail = "save destination is a directory: " + dest.string();
@@ -906,7 +903,7 @@ SaveResult ProjectPersistence::Save(const SaveRequest &request) {
   }
   std::filesystem::create_directories(dest.parent_path(), ec);
 
-  // Atomic write: temp file then rename.
+  // 原子写入：先写临时文件再重命名。
   auto temp = dest.string() + ".tmp-" + request.save_id;
   {
     std::ofstream out(temp, std::ios::binary | std::ios::trunc);
@@ -924,7 +921,7 @@ SaveResult ProjectPersistence::Save(const SaveRequest &request) {
       return result;
     }
   }
-  // Validate round-trip before replace.
+  // 在替换之前校验往返读写。
   {
     std::ifstream in(temp, std::ios::binary);
     std::ostringstream ss;
@@ -949,12 +946,12 @@ SaveResult ProjectPersistence::Save(const SaveRequest &request) {
 
 LoadResult ProjectPersistence::Load(const LoadRequest &request) {
   LoadResult result;
-  // P0-02: size gate BEFORE reading. A corrupted or hostile file cannot make
-  // the loader allocate unbounded memory.
+  // P0-02：读取之前先做大小关卡。损坏或恶意的文件无法让加载器
+  // 分配不受限制的内存。
   std::error_code ec;
   const auto file_size = std::filesystem::file_size(request.project_file, ec);
   if (ec) {
-    // Distinguish a missing file from an unreadable one.
+    // 区分文件缺失与文件不可读。
     result.status = std::filesystem::exists(request.project_file, ec)
                         ? LoadResult::Status::IoError
                         : LoadResult::Status::FileMissing;
@@ -988,8 +985,7 @@ LoadResult ProjectPersistence::Load(const LoadRequest &request) {
     result.detail = project.error();
     return result;
   }
-  // Old schema files are migrated in memory; the file on disk is untouched
-  // until the user saves.
+  // 旧 schema 文件在内存中迁移；磁盘上的文件在用户保存之前保持不变。
   auto migration = ProjectMigrator::MigrateToCurrent(&project.value());
   result.migration = std::move(migration);
   result.project = std::move(project.value());

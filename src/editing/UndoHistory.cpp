@@ -4,11 +4,10 @@ namespace pf {
 
 void UndoHistory::Push(HistoryEntry entry) {
     if (transaction_active_ && !undo_.empty()) {
-        // In V1 coalescing means: entries pushed inside one transaction window
-        // with the same key stay adjacent; the transaction owner decides when
-        // to expose them as one undo step by grouping. We keep them as separate
-        // entries but tag nothing extra here - grouping is done by the
-        // EditingSystem via the key. (V1 simplification: no destructive merge.)
+        // 在 V1 中，合并意味着：同一 transaction 窗口内、具有相同 key 的
+        // 记录保持相邻；由 transaction 的所有者决定何时通过分组把它们
+        // 暴露为一次 undo。这里仍将它们保存为独立记录，不额外打标记——
+        // 分组由 EditingSystem 通过 key 完成。（V1 简化：不做破坏性合并。）
         undo_.push_back(std::move(entry));
         return;
     }

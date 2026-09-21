@@ -1,12 +1,10 @@
 #pragma once
-// ApplicationEvent: the typed protocol between background workers and the
-// single-owner application thread (M1).
+// ApplicationEvent：后台 worker 与单一属主应用线程之间的强类型协议（M1）。
 //
-// Background threads never touch ProjectSession / ProjectState / Document /
-// EditingSystem. They produce value objects and post an ApplicationEvent;
-// ProjectSession::ProcessApplicationEvents() applies them on the thread that
-// owns the mutable state. This is the only seam where async results enter the
-// domain.
+// 后台线程绝不触碰 ProjectSession / ProjectState / Document /
+// EditingSystem。它们只生成值对象并投递一个 ApplicationEvent；
+// ProjectSession::ProcessApplicationEvents() 在持有可变状态的那个线程上应用
+// 这些事件。异步结果进入领域模型的唯一接缝就在这里。
 
 #include <variant>
 
@@ -15,38 +13,38 @@
 
 namespace pf {
 
-// A build phase transition, observed on the worker, applied on the app thread.
+// 一次 build 阶段跃迁：在 worker 上观察到，在应用线程上应用。
 struct BuildPhaseChangedEvent {
     BuildPhase previous = BuildPhase::Idle;
     BuildPhase current = BuildPhase::Idle;
 };
 
-// A completed build, still to be checked against the current revision/build.
+// 一次已完成的 build，仍需对照当前 revision/build 进行校验。
 struct BuildResultReadyEvent {
     BuildResult result;
 };
 
-// One structured build-log event (Build Diagnostics plan §4/§35). Posted by
-// the build worker as the attempt progresses; the application thread decides
-// whether its build id is still current before showing it.
+// 一条结构化的 build 日志事件（Build Diagnostics 方案 §4/§35）。由 build
+// worker 在尝试推进过程中投递；应用线程在展示之前先判定其 build id 是否仍然
+// 是当前值。
 struct BuildEventReadyEvent {
     BuildEvent event;
 };
 
-// A save worker finished one snapshot.
+// 一个 save worker 完成了一次 snapshot。
 struct SaveCompletedEvent {
     SaveCompletion completion;
 };
 
-// The autosave timer fired. The timer thread only posts this; capturing the
-// snapshot (which reads the live Document) happens on the app thread.
+// autosave 定时器触发。定时器线程只负责投递这一事件；捕获 snapshot（会读取
+// 实时的 Document）发生在应用线程上。
 struct AutosaveTickEvent {};
 
 using ApplicationEvent =
     std::variant<BuildPhaseChangedEvent, BuildResultReadyEvent,
                  BuildEventReadyEvent, SaveCompletedEvent, AutosaveTickEvent>;
 
-// Short label used by tracing/logging.
+// 供 tracing/日志使用的简短标签。
 const char* ToString(const ApplicationEvent& event);
 
 }  // namespace pf

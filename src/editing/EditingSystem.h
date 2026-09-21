@@ -1,7 +1,7 @@
 #pragma once
-// EditingSystem: accepts EditCommands, mutates the document via
-// DocumentEditor, maintains undo history and emits DocumentChangedEvents.
-// Does not know about build/save/PDF/Qt (architecture sections 35-39).
+// EditingSystem：接收 EditCommand，经由 DocumentEditor 修改文档，
+// 维护 undo 历史并发出 DocumentChangedEvent。
+// 不感知 build/save/PDF/Qt（架构 35-39）。
 
 #include <functional>
 #include <optional>
@@ -35,12 +35,12 @@ struct DocumentChangedEvent {
 
 class EditingSystem {
 public:
-    // Wiring used by ProjectSession; avoids a circular dependency by taking
-    // a minimal interface (getters + mutation callbacks).
+    // ProjectSession 使用的接线方式；通过接受最小接口（getter 与变更回调）
+    // 来避免循环依赖。
     struct Host {
         std::function<ProjectId()> project_id;
         std::function<ProjectRevision()> revision;
-        std::function<ProjectRevision()> bump_revision;  // returns new revision
+        std::function<ProjectRevision()> bump_revision;  // 返回新的 revision
         std::function<Document&()> document;
         std::function<void(const DocumentChangedEvent&)> on_document_changed;
     };
@@ -48,7 +48,7 @@ public:
     EditingSystem() = default;
     explicit EditingSystem(Host host) : host_(std::move(host)) {}
 
-    // Late wiring (useful when the host lambdas capture the owner object).
+    // 延后接线（当 host lambda 捕获持有者对象时有用）。
     void SetHost(Host host) { host_ = std::move(host); }
 
     EditResult Apply(const EditCommand& command);
@@ -59,7 +59,7 @@ public:
     DocumentIndex& index() noexcept { return index_; }
     const DocumentIndex& index() const noexcept { return index_; }
 
-    // Transaction key for coalescing consecutive typing into one undo entry.
+    // 用于把连续输入合并为一条 undo 记录的 transaction key。
     void BeginTypingTransaction(const NodeId& paragraph);
     void EndTypingTransaction();
 

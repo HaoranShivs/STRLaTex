@@ -7,50 +7,48 @@
 namespace pf::gui {
 
 enum class MathRenderBackend {
-    // Compile the expression with a real TeX engine. The bounded QPainter
-    // renderer is used only when the runtime is unavailable or TeX rejects
-    // the source.
+    // 用真实的 TeX 引擎编译表达式。只有在运行环境不可用或 TeX 拒绝
+    // 该源文件时，才使用受限的 QPainter 渲染器。
     RealTexPreferred,
-    // Fast deterministic renderer used by stress tests and as the fallback.
+    // 用于压力测试的快速确定性渲染器，同时作为回退方案。
     ApproximateOnly,
 };
 
 struct MathRenderStyle {
-    int font_px = 18;                     // base font pixel size
-    QColor color = QColor(20, 22, 26);    // glyph colour
-    qreal device_pixel_ratio = 2.0;       // render at 2x for crispness
-    QString font_family;                  // cache/style identity
-    QString template_id;                  // cache/template identity
+    int font_px = 18;                     // 基础字体像素大小
+    QColor color = QColor(20, 22, 26);    // 字形颜色
+    qreal device_pixel_ratio = 2.0;       // 以 2 倍渲染以获得清晰效果
+    QString font_family;                  // 缓存/样式标识
+    QString template_id;                  // 缓存/模板标识
     MathRenderBackend backend = MathRenderBackend::RealTexPreferred;
 };
 
 struct MathRenderResult {
-    // P0-07: the pixels travel as a QImage so the render can run on a worker
-    // thread (QPixmap may only be created on the GUI thread). The GUI-side
-    // entry point converts to `pixmap`; worker-side callers use `image`.
+    // P0-07：像素以 QImage 形式传递，这样渲染就能在 worker 线程上运行
+    //（QPixmap 只能在 GUI 线程上创建）。GUI 侧的入口点会转换为 `pixmap`；
+    // worker 侧的调用方使用 `image`。
     QImage image;
-    QPixmap pixmap;     // null only for empty input; dpr set to style.device_pixel_ratio
-    int width = 0;      // logical pixels
-    int height = 0;     // logical pixels
-    int baseline = 0;   // logical pixels from the top of the pixmap to the math baseline
-    bool exact = true;  // true for real TeX, or exact ApproximateOnly output
+    QPixmap pixmap;     // 仅空输入时为 null；dpr 设为 style.device_pixel_ratio
+    int width = 0;      // 逻辑像素
+    int height = 0;     // 逻辑像素
+    int baseline = 0;   // 从 pixmap 顶部到数学基线的逻辑像素数
+    bool exact = true;  // 真实 TeX 或精确的 ApproximateOnly 输出时为 true
     bool used_tex = false;
-    QString note;       // human-readable renderer/fallback state
-    // Device pixel ratio the image was rasterised at (worker side: the
-    // QPixmap conversion applies it on the GUI thread).
+    QString note;       // 人类可读的渲染器/回退状态
+    // 图像栅格化时所用的设备像素比（worker 侧：QPixmap 转换会在 GUI 线程上应用它）。
     qreal device_pixel_ratio = 1.0;
 
-    // True when there is something to draw.
+    // 有可绘制内容时为 true。
     bool HasPixels() const { return !pixmap.isNull() || !image.isNull(); }
 };
 
-// Render a LaTeX math body. Always returns a usable result for non-empty input.
-// GUI thread only: the result carries a QPixmap.
+// 渲染 LaTeX 数学正文。对非空输入始终返回可用的结果。
+// 仅限 GUI 线程：结果携带 QPixmap。
 MathRenderResult RenderMathPreview(const QString& latex, const MathRenderStyle& style);
 
-// P0-07 worker-thread entry point: identical rendering, but the result carries
-// a QImage and no QPixmap, so it is safe to call off the GUI thread. The
-// caller converts to a QPixmap on the GUI thread when it applies the result.
+// P0-07 worker 线程入口：渲染完全相同，但结果携带 QImage 而不带
+// QPixmap，因此可以安全地在 GUI 线程之外调用。调用方在应用结果时
+// 于 GUI 线程上将其转换为 QPixmap。
 MathRenderResult RenderMathPreviewImage(const QString& latex,
                                         const MathRenderStyle& style);
 

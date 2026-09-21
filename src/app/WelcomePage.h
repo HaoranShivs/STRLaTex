@@ -1,6 +1,6 @@
 #pragma once
-// Welcome page shown when no project is open (design #51): title, tagline,
-// New/Open actions, and recent projects list.
+// 未打开任何项目时显示的欢迎页（设计 #51）：标题、标语、
+// New/Open 操作以及最近项目列表。
 
 #include <QWidget>
 

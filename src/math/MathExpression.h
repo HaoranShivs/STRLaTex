@@ -1,39 +1,37 @@
 #pragma once
-// MathExpression: the single content type every math feature is built on
-// (math-input design §2).
+// MathExpression：每一项 math 功能都构建于其上的唯一内容类型
+// （math-输入设计 §2）。
 //
-// STRTex hides document-level LaTeX. The only place a user types LaTeX is the
-// body of a mathematical expression, and even there the delimiters and the
-// outer environment are owned by the generator:
+// STRTex 隐藏文档级 LaTeX。用户唯一需要输入 LaTeX 的地方是数学表达式的
+// 主体，而且即便在那里，定界符与外层环境也由 generator 掌管：
 //
-//     user types        \frac{a}{b}
-//     generator emits   \(\frac{a}{b}\)            (inline)
-//                       \begin{equation}...\end{equation}  (numbered block)
+//     用户输入          \frac{a}{b}
+//     generator 输出    \(\frac{a}{b}\)            （行内）
+//                       \begin{equation}...\end{equation}  （带编号块）
 //
-// Nothing in this header knows about Qt, blocks, files or rendering.
+// 本头文件对 Qt、block、文件或渲染一无所知。
 
 #include <cstdint>
 #include <string>
 
 namespace pf {
 
-// The math body exactly as the user typed it. Delimiters are never stored.
+// 与用户输入完全一致的 math 主体。定界符从不存储。
 struct MathExpression {
     std::string latex;
     bool operator==(const MathExpression&) const = default;
 };
 
-// Where a math expression is used. The flavor decides which outer construct
-// the generator wraps around the body.
+// math 表达式的使用场合。flavor 决定 generator 在主体外包裹何种外层结构。
 enum class MathFlavor : std::uint8_t {
     Inline,
     Display,
 };
 
-// Expression lifecycle (design §8).
-//   Valid   - source accepted; a preview may be shown.
-//   Pending - the user is still typing; not yet considered finished.
-//   Invalid - parsing/validation failed. The source is preserved untouched.
+// 表达式生命周期（设计 §8）。
+//   Valid   - 源码被接受；可以显示 preview。
+//   Pending - 用户仍在输入；尚未视为完成。
+//   Invalid - 解析/校验失败。源码原样保留，不作任何改动。
 enum class MathState : std::uint8_t {
     Valid,
     Pending,
@@ -49,8 +47,8 @@ inline const char* ToString(MathState state) {
     return "Invalid";
 }
 
-// Result of validating a math body. `error` is a human-readable message and
-// `code` is a stable diagnostic id ("E-MATH-...").
+// 校验 math 主体的结果。`error` 是供人阅读的消息，`code` 是稳定的
+// 诊断 id（"E-MATH-..."）。
 struct MathValidation {
     MathState state = MathState::Valid;
     std::string code;

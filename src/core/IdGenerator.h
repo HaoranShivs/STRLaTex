@@ -1,5 +1,5 @@
 #pragma once
-// Centralized id generation: stable, unique, monotonically-prefixed.
+// 集中式 id 生成：稳定、唯一、前缀单调递增。
 #include <atomic>
 #include <cstdint>
 #include <string>
@@ -37,15 +37,14 @@ public:
     return "p" + std::to_string(++project_counter_);
   }
 
-  // Deterministic id used when loading a project from disk.
+  // 从磁盘加载项目时使用的确定性 id。
   static NodeId NodeFromSerialized(const std::string &value) {
     return NodeId(value);
   }
 
-  // Advance the counters past ids that were just loaded from disk. Without
-  // this a fresh process starts at zero after opening a project, so the next
-  // inserted block reuses an id that already exists ("n1" twice). Duplicate
-  // node ids make an edit hit the wrong block and scramble insert order.
+  // 将计数器推进到刚从磁盘加载的 id 之后。否则新进程在打开项目后仍从零开始，
+  // 下一个插入的 block 会复用已存在的 id（出现两个 "n1"）。重复的 node id
+  // 会使编辑落到错误的 block 上，并打乱插入顺序。
   static void ObserveNodeId(const std::string &value) {
     ObserveCounter(value, "n", node_counter_);
   }
@@ -57,9 +56,8 @@ public:
   }
 
 private:
-  // If `value` is `<prefix><digits>`, raise `counter` to at least <digits>.
-  // Anything else is ignored: ids are free-form strings, and a non-numeric
-  // one cannot collide with the generated sequence.
+  // 若 `value` 形如 `<prefix><digits>`，则把 `counter` 至少提升到 <digits>。
+  // 其他情况一律忽略：id 是自由格式字符串，非数字 id 不会与生成的序列冲突。
   static void ObserveCounter(const std::string &value,
                              const std::string &prefix,
                              std::atomic<std::uint64_t> &counter) {

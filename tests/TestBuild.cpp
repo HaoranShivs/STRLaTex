@@ -1,5 +1,5 @@
-// Build pipeline tests with MockCompiler (no real tectonic):
-// latest-wins, revision checks, diagnostic mapping, validation.
+// 使用 MockCompiler 的 build 流水线测试（不涉及真正的 tectonic）：
+// latest-wins、revision 校验、诊断映射、validation。
 #include "TestMain.hpp"
 
 #include <filesystem>
@@ -90,7 +90,7 @@ PF_TEST(BuildSuccessWithMockCompiler) {
     PF_CHECK(rig.results[0].outcome == BuildResult::Outcome::Success);
     PF_CHECK(!rig.results[0].pdf_path.empty());
     PF_CHECK(rig.results[0].revision.value == 1);
-    // The result is attributable to the exact snapshot + build attempt.
+    // 结果可精确归属到某个 snapshot + 某次 build 尝试。
     PF_CHECK(rig.results[0].snapshot_id == snapshot_id);
     PF_CHECK(rig.results[0].build_id == build_id);
     PF_CHECK(rig.results[0].project_id == rig.state.id());
@@ -102,9 +102,9 @@ PF_TEST(BuildFailureProducesDiagnostics) {
     PF_CHECK(rig.WaitForResult());
     PF_CHECK(rig.results.size() == 1);
     PF_CHECK(rig.results[0].outcome == BuildResult::Outcome::Failure);
-    // MockCompiler emits "main.tex:1: simulated error" -> mapped diagnostic.
-    // Merge order is validator, generator, compiler (Build Diagnostics plan
-    // §18), so the compiler diagnostic is looked up by source, not by index.
+    // MockCompiler 输出 "main.tex:1: simulated error" -> 映射后的诊断。
+    // 合并顺序为 validator、generator、compiler（Build Diagnostics 方案
+    // §18），因此 compiler 诊断按 source 查找，而不是按下标。
     PF_CHECK(!rig.results[0].diagnostics.empty());
     const Diagnostic* compiler_diag = nullptr;
     for (const auto& d : rig.results[0].diagnostics) {
@@ -114,16 +114,16 @@ PF_TEST(BuildFailureProducesDiagnostics) {
     if (compiler_diag) {
         PF_CHECK(compiler_diag->severity == DiagnosticSeverity::Error);
         PF_CHECK(compiler_diag->code == "LATEX_ERROR");
-        // Every diagnostic is tagged with the build that produced it (§12).
+        // 每条诊断都标记了产生它的 build（§12）。
         PF_CHECK(compiler_diag->build_id == rig.results[0].build_id);
-        // The generated-source position survives even without a node map.
+        // 即使没有 node map，生成源中的位置也会保留。
         PF_CHECK(compiler_diag->location.file == "main.tex");
         PF_CHECK(compiler_diag->location.line.value_or(0) == 1);
     }
 }
 
 PF_TEST(BuildLatestWinsPending) {
-    // Slow debounce: post multiple snapshots; only the latest should build.
+    // 慢速 debounce：提交多个 snapshot；只有最新的那个应当被 build。
     BuildTestRig rig(true, std::chrono::milliseconds{150});
     rig.coordinator->RequestBuild(rig.MakeSnapshot(ProjectRevision{1}));
     std::this_thread::sleep_for(std::chrono::milliseconds{20});
@@ -131,9 +131,9 @@ PF_TEST(BuildLatestWinsPending) {
     std::this_thread::sleep_for(std::chrono::milliseconds{20});
     rig.coordinator->RequestBuild(rig.MakeSnapshot(ProjectRevision{3}));
     PF_CHECK(rig.WaitForResult(8000));
-    // Allow a possible second build cycle.
+    // 留出可能出现的第二轮 build 周期。
     std::this_thread::sleep_for(std::chrono::milliseconds{300});
-    // Rev 3 (latest) must be among the results.
+    // Rev 3（最新）必须出现在结果中。
     bool has_rev3 = false;
     for (const auto& r : rig.results) {
         if (r.revision.value == 3 &&
@@ -142,7 +142,7 @@ PF_TEST(BuildLatestWinsPending) {
         }
     }
     PF_CHECK(has_rev3);
-    // Rev 1 must never complete (it was superseded during debounce).
+    // Rev 1 绝不能完成（它在 debounce 期间已被取代）。
     for (const auto& r : rig.results) {
         if (r.revision.value == 1) {
             PF_CHECK(r.outcome != BuildResult::Outcome::Success);
@@ -151,8 +151,8 @@ PF_TEST(BuildLatestWinsPending) {
 }
 
 PF_TEST(DiagnosticMapperMapsLineToNode) {
-    // Compile result with an error at a known line; source map pointing
-    // there resolves to a node id.
+    // 编译结果在已知行上有一个错误；指向该处的 source map
+    // 会解析为一个 node id。
     SourceMap smap;
     GeneratedSourceRange range;
     range.file = "main.tex";
@@ -164,7 +164,7 @@ PF_TEST(DiagnosticMapperMapsLineToNode) {
     cres.status = CompileStatus::Failure;
     CompilerMessage msg;
     msg.file = "main.tex";
-    msg.line = 132;  // inside the mapped range neighborhood
+    msg.line = 132;  // 位于映射范围的临近区域内
     msg.is_error = true;
     msg.text = "Undefined control sequence";
     cres.messages.push_back(msg);
@@ -175,15 +175,15 @@ PF_TEST(DiagnosticMapperMapsLineToNode) {
     PF_CHECK(diagnostics[0].source == DiagnosticSource::Compiler);
     PF_CHECK(diagnostics[0].severity == DiagnosticSeverity::Error);
     PF_CHECK(diagnostics[0].revision.value == 5);
-    // Mapped through SourceMap to the equation node.
+    // 通过 SourceMap 映射到该公式节点。
     PF_CHECK(diagnostics[0].location.kind == DiagnosticLocationKind::Node);
     PF_CHECK(diagnostics[0].location.node == NodeId("eq12"));
 }
 
 PF_TEST(DiagnosticMapperClassifiesLatexMessages) {
-    // Classification (Build Diagnostics plan §13/§16/§19): stable codes,
-    // warnings stay warnings (they must never fail a build, §31), and exact
-    // duplicates from latexmk's reruns are shown once.
+    // 分类（Build Diagnostics 方案 §13/§16/§19）：code 稳定，
+    // warning 始终是 warning（绝不能导致 build 失败，§31），并且
+    // latexmk 重跑产生的完全重复项只显示一次。
     SourceMap smap;
     CompileResult cres;
     cres.status = CompileStatus::Failure;
@@ -191,7 +191,7 @@ PF_TEST(DiagnosticMapperClassifiesLatexMessages) {
     cres.messages.push_back({"main.tex", 43, false, "LaTeX Warning: Citation `x99' on page 1 undefined"});
     cres.messages.push_back({"main.tex", 44, false, "LaTeX Warning: Reference `sec:a' on page 1 undefined"});
     cres.messages.push_back({"main.tex", 9, true, "! LaTeX Error: Emergency stop."});
-    // Same message twice (rerun repeats it): deduped.
+    // 同一消息出现两次（重跑会重复输出）：已去重。
     cres.messages.push_back({"main.tex", 9, true, "! LaTeX Error: Emergency stop."});
 
     DiagnosticMapper mapper;
@@ -208,15 +208,15 @@ PF_TEST(DiagnosticMapperClassifiesLatexMessages) {
     for (const auto& d : diagnostics) {
         PF_CHECK(d.build_id == build);
         PF_CHECK(!d.raw_message.empty());
-        // No source-map entry -> no node, but the generated-file position
-        // survives so Problems can still show main.tex:LINE (plan §47).
+        // 没有 source-map 条目 -> 没有 node，但生成文件中的位置
+        // 仍会保留，因此 Problems 仍能显示 main.tex:LINE（方案 §47）。
         PF_CHECK(d.location.kind == DiagnosticLocationKind::GeneratedFile);
     }
 }
 
 PF_TEST(BuildEmitsLifecycleEvents) {
-    // One successful build produces the whole event story, all tagged with
-    // the same build id (Build Diagnostics plan §3-§5, §60 "正常 Build").
+    // 一次成功的 build 会产生完整的事件序列，全部标记为
+    // 同一个 build id（Build Diagnostics 方案 §3-§5，§60 "正常 Build"）。
     BuildTestRig rig(true);
     auto snapshot = rig.MakeSnapshot(ProjectRevision{1});
     const BuildId build_id = snapshot.build_id;
@@ -238,12 +238,12 @@ PF_TEST(BuildEmitsLifecycleEvents) {
     PF_CHECK(has(BuildEventType::GenerationFinished));
     PF_CHECK(has(BuildEventType::ProcessStarted));
     PF_CHECK(has(BuildEventType::ProcessFinished));
-    PF_CHECK(has(BuildEventType::StdOut));  // mock log streamed live
+    PF_CHECK(has(BuildEventType::StdOut));  // mock 日志实时流式输出
     PF_CHECK(has(BuildEventType::BuildSucceeded));
-    // First event is the start, last is the terminal one (§5 state flow).
+    // 第一个事件是开始，最后一个是终止事件（§5 状态流转）。
     PF_CHECK(order.front() == BuildEventType::BuildStarted);
     PF_CHECK(order.back() == BuildEventType::BuildSucceeded);
-    // Session bookkeeping for the Build Log footer (§3).
+    // Build Log 底栏所用的 session 记账信息（§3）。
     PF_CHECK(rig.results[0].finished_ms >= rig.results[0].started_ms);
     PF_CHECK(rig.results[0].exit_code == 0);
 }
@@ -262,7 +262,7 @@ PF_TEST(BuildFailureEmitsFailedEvent) {
         if (e.type == BuildEventType::BuildSucceeded) saw_succeeded = true;
     }
     PF_CHECK(saw_failed);
-    PF_CHECK(!saw_succeeded);  // Failed must never be followed by Success (§5)
+    PF_CHECK(!saw_succeeded);  // Failed 之后绝不能出现 Success（§5）
     PF_CHECK(rig.results[0].exit_code == 1);
 }
 
@@ -289,7 +289,7 @@ PF_TEST(ValidatorMissingCitation) {
         if (d.code == "E-CITATION-UNKNOWN-KEY") found = true;
     }
     PF_CHECK(found);
-    PF_CHECK(result.can_render);  // semantic issues do not block rendering
+    PF_CHECK(result.can_render);  // 语义问题不阻塞渲染
 }
 
 PF_TEST(ValidatorDanglingCrossReference) {
@@ -334,12 +334,12 @@ PF_TEST(ValidatorEmptyTitleWarning) {
 }
 
 PF_TEST(ValidatorTemplateRequiredFields) {
-    // IEEE template requires authors/affiliations/abstract/keywords.
+    // IEEE 模板要求 authors/affiliations/abstract/keywords。
     Document doc;
     DocumentEditor editor(doc);
     (void)editor.SetTitle(InlineFromText("Title Only"));
     (void)editor.SetAbstract(InlineFromText("Has abstract"));
-    // No authors, no affiliations, no keywords.
+    // 没有 authors、affiliations 和 keywords。
 
     Validator validator;
     ValidationInput input;
@@ -357,10 +357,10 @@ PF_TEST(ValidatorTemplateRequiredFields) {
     PF_CHECK(has("W-REQ-AUTHORS"));
     PF_CHECK(has("W-REQ-AFFILIATIONS"));
     PF_CHECK(has("W-REQ-KEYWORDS"));
-    PF_CHECK(!has("W-REQ-TITLE"));       // title present
-    PF_CHECK(!has("W-REQ-ABSTRACT"));    // abstract present
+    PF_CHECK(!has("W-REQ-TITLE"));       // title 存在
+    PF_CHECK(!has("W-REQ-ABSTRACT"));    // abstract 存在
 
-    // generic-article requires authors (default) but not affiliations.
+    // generic-article 要求 authors（默认）但不要求 affiliations。
     input.template_id = "generic-article";
     result = validator.Validate(input);
     PF_CHECK(has("W-REQ-AUTHORS"));
@@ -408,14 +408,14 @@ PF_TEST(AuthorsAffiliationsRenderWithThanks) {
     PF_CHECK(!rendered.package.files.empty());
     const std::string& tex = rendered.package.files[0].content;
 
-    // Authors carry the number of their institution.
+    // 作者带上其机构的编号。
     PF_CHECK(tex.find("\\author{Alice\\textsuperscript{1} \\and "
                       "Bob\\textsuperscript{2}") != std::string::npos);
-    // Both institutions are listed once, numbered, inside a single \thanks.
+    // 两个机构都只列出一次并编号，放在单个 \thanks 内。
     PF_CHECK(tex.find("\\thanks{\\textsuperscript{1} University One \\\\ "
                       "\\textsuperscript{2} Institute Two}") !=
              std::string::npos);
-    // ... and never repeated per author.
+    // ... 且绝不按作者重复。
     PF_CHECK(CountOccurrences(tex, "University One") == 1);
     PF_CHECK(CountOccurrences(tex, "Institute Two") == 1);
     PF_CHECK(tex.find("Keywords:") != std::string::npos);
@@ -448,10 +448,10 @@ PF_TEST(SetAffiliationsPayloadEditing) {
     PF_CHECK(state.document().front_matter().affiliations[0].name ==
              "University One");
 
-    // A second institution can be added, and authors pointing at the first one
-    // keep a resolving link.
-    // The front matter is only mutable through the editing system, so the
-    // author goes in the same way the GUI adds one.
+    // 可以添加第二个机构，而指向第一个机构的作者
+    // 仍保持可解析的链接。
+    // front matter 只能通过 editing system 修改，因此
+    // 作者的添加方式与 GUI 添加作者的方式一致。
     {
         Author author;
         author.name = "Alice";
@@ -482,7 +482,7 @@ PF_TEST(SetAffiliationsPayloadEditing) {
     PF_CHECK(state.document().front_matter().authors[0].affiliations[0] ==
              AffiliationId("aff0"));
 
-    // Shortening the list drops the link instead of leaving a dangling id.
+    // 缩短列表会移除链接，而不是留下悬空的 id。
     EditCommand drop_cmd;
     drop_cmd.operation_id = OperationId(IdGenerator::NewOperationId());
     drop_cmd.project_id = state.id();

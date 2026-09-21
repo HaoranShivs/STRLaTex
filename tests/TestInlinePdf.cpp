@@ -1,6 +1,5 @@
-// Stage B follow-up, PDF end to end: bold and italic typed in an
-// InlineEditor must survive the editing protocol, reach the LaTeX, and be
-// present in the PDF built by the real tectonic toolchain.
+// Stage B 后续，PDF 端到端：在 InlineEditor 中输入的粗体和斜体必须经受住编辑协议，
+// 抵达 LaTeX，并出现在由真实 tectonic 工具链构建的 PDF 中。
 #include <QApplication>
 #include <QTextCharFormat>
 #include <QTextCursor>
@@ -31,7 +30,7 @@ QApplication* EnsureQApplication() { return qApp; }
 
 PF_TEST(BoldAndItalicReachTheBuiltPdf) {
     EnsureQApplication();
-  // 1. A user types a paragraph with bold and italic, in an InlineEditor.
+  // 1. 用户在 InlineEditor 中输入一段带粗体和斜体的文字。
   InlineEditor editor;
   {
     QTextCursor c(editor.document());
@@ -46,21 +45,21 @@ PF_TEST(BoldAndItalicReachTheBuiltPdf) {
   }
   const InlineContent content = editor.Content();
 
-  // 2. It goes into a document through the editing protocol.
+  // 2. 它经由编辑协议进入 document。
   auto dir = std::filesystem::temp_directory_path() / "pf-pdf-check";
   std::filesystem::remove_all(dir);
   ProjectSession::Config config;
-  // Production path: the bundled portable TeX Live (plan §3). No user TeX
-  // install, no dependency on the ambient PATH.
+  // 生产路径：随附的可移植 TeX Live（方案 §3）。不依赖用户安装的 TeX，
+  // 也不依赖环境变量 PATH。
   config.install_root = PF_INSTALL_ROOT;
   config.debounce = std::chrono::milliseconds{0};
   ProjectSession session(config);
   session.NewProject(dir);
 
-  // IEEE conference: the template whose bold/italic was reported broken.
+  // IEEE conference：即被报告粗体/斜体损坏的那个模板。
   session.ChangeTemplate("ieee-conference");
 
-  // A title is required for tectonic to produce a PDF.
+  // tectonic 生成 PDF 需要标题。
   EditCommand title_cmd;
   title_cmd.operation_id = OperationId(IdGenerator::NewOperationId());
   title_cmd.project_id = session.state().id();
@@ -96,7 +95,7 @@ PF_TEST(BoldAndItalicReachTheBuiltPdf) {
         return;
     }
 
-  // 3. The stored document must carry the marks.
+  // 3. 存储的 document 必须携带这些标记。
   Document& doc = session.mutable_document();
   const auto& stored = std::get<Paragraph>(DocumentMutableAccess::body(doc).sections[0].blocks[0]);
   int bold=0, ital=0;
@@ -112,7 +111,7 @@ PF_TEST(BoldAndItalicReachTheBuiltPdf) {
         return;
     }
 
-  // 4. Render + real tectonic build.
+  // 4. 渲染 + 真实 tectonic build。
   bool done=false; std::optional<BuildResult> result;
   session.SetBuildResultHandler([&](const BuildResult& r){ result=r; done=true; });
   session.RequestBuild(true);
@@ -133,7 +132,7 @@ PF_TEST(BoldAndItalicReachTheBuiltPdf) {
     }
   std::cout << "PDF: " << result->pdf_path << "\n";
 
-  // 5. The LaTeX that produced it.
+  // 5. 生成它的 LaTeX。
   auto ws = std::filesystem::path(result->pdf_path).parent_path() / "main.tex";
   std::ifstream in(ws, std::ios::binary);
   std::ostringstream ss; ss << in.rdbuf();

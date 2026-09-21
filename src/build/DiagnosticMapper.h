@@ -9,9 +9,9 @@
 
 namespace pf {
 
-// Turns raw compiler messages into structured Diagnostics (Build Diagnostics
-// plan §15-§19). The mapper is the only place where a compiler line becomes a
-// problem: the GUI never parses log text itself.
+// 把编译器的原始消息转换为结构化 Diagnostic（Build Diagnostics 方案
+// §15-§19）。mapper 是编译器输出行变成问题的唯一场所：GUI 绝不自己解析
+// 日志文本。
 class DiagnosticMapper {
 public:
     std::vector<Diagnostic> Map(const CompileResult& result,
@@ -19,11 +19,10 @@ public:
                                 ProjectRevision revision,
                                 const BuildId& build_id = BuildId()) const;
 
-    // Stable diagnostic code for one compiler message (plan §13/§16): the
-    // first version classifies the high-value LaTeX patterns and leaves
-    // everything else as LATEX_ERROR / LATEX_WARNING. The classifier may
-    // downgrade a raw "is_error" line that is really a warning (Overfull,
-    // undefined reference/citation, ...).
+    // 单条编译器消息的稳定 diagnostic code（方案 §13/§16）：首版会归类高
+    // 价值的 LaTeX 模式，其余一律留作 LATEX_ERROR / LATEX_WARNING。分类器
+    // 可以把实为 warning 的原始 "is_error" 行降级（Overfull、
+    // undefined reference/citation 等）。
     static std::string CodeFor(const CompilerMessage& message,
                                DiagnosticSeverity* severity);
 };

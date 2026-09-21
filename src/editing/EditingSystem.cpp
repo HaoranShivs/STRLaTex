@@ -122,16 +122,16 @@ EditResult EditingSystem::Apply(const EditCommand &command) {
 
 EditResult EditingSystem::ApplyFullPayload(const EditCommand &cmd) {
   if (const auto *tpl = std::get_if<ChangeTemplatePayload>(&cmd.payload)) {
-    // Template change is a project-level mutation (rule 补充 8):
-    // DocumentVersion unchanged, ProjectRevision +1.
+    // 模板变更是项目级变更（架构补充 8）：
+    // DocumentVersion 不变，ProjectRevision +1。
     ProjectRevision old_rev = host_.revision();
     ProjectRevision new_rev = host_.bump_revision();
     Notify(cmd, old_rev, new_rev, {}, {ChangeKind::TemplateChanged});
     return EditResult::Ok(new_rev);
   }
 
-  // Document payloads: capture full before/after snapshots so that every
-  // operation (including deletions) is invertible.
+  // Document 类 payload：抓取完整的 before/after snapshot，
+  // 使每个操作（包括删除）都可逆。
   Document &doc = host_.document();
   auto before = std::make_shared<const Document>(doc);
 
@@ -167,7 +167,7 @@ EditResult EditingSystem::ApplyDocumentPayload(const EditCommand &cmd,
                                                const EditPayload &payload) {
   DocumentEditor editor(host_.document());
 
-  // All result paths bump the project revision via host on success.
+  // 所有结果路径在成功时都经由 host 递增项目 revision。
   auto finish = [&](Result<NodeId, EditError> r) -> EditResult {
     if (!r) {
       return EditResult::Fail(FailureReason::InvalidTarget,
@@ -224,11 +224,10 @@ EditResult EditingSystem::ApplyDocumentPayload(const EditCommand &cmd,
     return finishMeta(editor.UpdateAuthor(p->index, p->author));
   }
   if (const auto *p = std::get_if<SetAffiliationsPayload>(&payload)) {
-    // Replace the affiliation list wholesale.
+    // 整体替换 affiliation 列表。
     auto &front = editor.doc().front_matter();
     front.affiliations = p->affiliations;
-    // Authors may only reference institutions that still exist; without
-    // this, shortening the list would leave dangling affiliation ids.
+    // 作者只可引用仍然存在的机构；否则缩短列表会留下悬空的 affiliation id。
     for (auto &author : front.authors) {
       std::vector<AffiliationId> kept;
       for (const auto &id : author.affiliations) {
@@ -356,13 +355,13 @@ EditResult EditingSystem::ApplyDocumentPayload(const EditCommand &cmd,
         {p->equation}, ChangeKind::TextChanged);
   }
   if (const auto *p = std::get_if<EditFigureSpanPayload>(&payload)) {
-    // Layout-only change: the text is untouched, so this is MetadataChanged
-    // and never triggers a reflow of neighbouring content.
+    // 仅布局变更：文本未改动，因此标记为 MetadataChanged，
+    // 且永不触发相邻内容的 reflow。
     return finishVoid(editor.SetFigureSpan(p->figure, p->span), {p->figure},
                       ChangeKind::MetadataChanged);
   }
   if (const auto *p = std::get_if<InsertCitationPayload>(&payload)) {
-    // Insert citation inline into the paragraph content.
+    // 将 citation 以内联方式插入段落内容。
     Block *block = editor.FindBlock(p->paragraph);
     if (!block)
       return EditResult::Fail(FailureReason::InvalidTarget,
@@ -412,8 +411,8 @@ EditResult EditingSystem::Undo() {
   if (!entry)
     return EditResult::Fail(FailureReason::InvalidTarget, "nothing to undo");
   if (const auto *snap = std::get_if<SnapshotHistoryAction>(&entry->action)) {
-    // Restore the pre-mutation document state: host-level mutation that
-    // bumps revision, notifies, rebuilds the index.
+    // 恢复变更前的文档状态：host 层级的变更会递增 revision、
+    // 发出通知并重建索引。
     Document &doc = host_.document();
     Document before_copy = *snap->before;
     doc = std::move(before_copy);

@@ -13,22 +13,18 @@ BuildSnapshot SnapshotFactory::CreateBuildSnapshot(
   snapshot.snapshot_id = IdGenerator::NewSnapshotId();
   snapshot.build_id = BuildId(IdGenerator::NewBuildId());
   snapshot.revision = state.revision();
-  // Immutable deep copy of the document.
+  // document 的不可变深拷贝。
   snapshot.document = std::make_shared<const Document>(state.document());
   snapshot.template_id = state.template_selection();
   snapshot.bibliography_bibtex = bibliography_bibtex;
-  // Asset manifest: asset id -> relative path (resolved by the compiler
-  // workspace staging). The staged destination keeps the source file name
-  // and extension under the package's assets/ directory, which is exactly
-  // what the renderer emits in \includegraphics and what pdfLaTeX needs to
-  // recognise the graphics format.
+  // Asset manifest：asset id -> 相对路径（由 compiler workspace 暂存阶段解析）。
+  // 暂存目标在包的 assets/ 目录下保留源文件名与扩展名，这正是渲染器在
+  // \includegraphics 中输出的内容，也是 pdfLaTeX 识别图形格式所必需的。
   //
-  // P0-04 (second check): every stored relative path is re-validated here,
-  // immediately before it is turned into a filesystem source. An asset whose
-  // path escapes the project (malformed or hand-edited project.paper, or a
-  // registry entry mutated in memory) is skipped - the renderer then reports
-  // the missing-asset state instead of copying an arbitrary file into the
-  // build workspace.
+  // P0-04（第二道检查）：每个存储的相对路径都会在此处、在它被转换为文件系统源
+  // 之前立即重新校验。路径逃逸出项目的 asset（project.paper 格式错误或被手工
+  // 修改，或注册表项在内存中被篡改）会被跳过——渲染器随后报告缺失 asset 状态，
+  // 而不是把任意文件复制进 build workspace。
   for (const auto &[id, meta] : assets_->registry().All()) {
     auto safe = ResolveUntrustedProjectPath(assets_->assets_dir(),
                                             meta.relative_path);

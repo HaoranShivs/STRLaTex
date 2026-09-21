@@ -1,10 +1,9 @@
-// MathPreviewRenderer tests: widget-level (they need the QApplication that
-// InlineEditorEditorTest.cpp already creates) but headless-safe.
+// MathPreviewRenderer 测试：属于 widget 层（需要 InlineEditorEditorTest.cpp
+// 已经创建的 QApplication），但可在无头环境下安全运行。
 //
-// These stress tests select the bounded pure-Qt fallback explicitly, so the
-// contract they defend is mostly "always returns something usable":
-// a non-null pixmap for non-empty input, a baseline that inline layout can
-// align to, and no crash/hang on malformed or exotic source.
+// 这些压力测试显式选用有界的纯 Qt 兜底路径，因此它们守护的契约主要是
+// 「始终返回可用的东西」：非空输入返回非空 pixmap、可供行内布局对齐的
+// baseline，以及面对畸形或怪异源码时不崩溃、不挂起。
 #include "TestMain.hpp"
 
 #include <chrono>
@@ -111,7 +110,7 @@ PF_TEST(MathPreviewFallsBackInsteadOfCrashing) {
 
     PF_CHECK(!unknown.pixmap.isNull());
     PF_CHECK(!truncated.pixmap.isNull());
-    // The whole point of the fallback is that it is reported, not silent.
+    // 兜底的关键就在于它会被上报，而不是悄无声息。
     PF_CHECK(!unknown.exact);
     PF_CHECK(!truncated.exact);
     PF_CHECK(!truncated.note.isEmpty());
@@ -192,8 +191,8 @@ PF_TEST(MathPreviewNeverNullOnFuzz) {
         PF_CHECK_EQ(res.pixmap.devicePixelRatio(), style.device_pixel_ratio);
         ++rendered;
     }
-    // Deterministic stress inputs: recursion must be bounded even when the
-    // nesting uses unbraced command arguments or \left/\right chains.
+    // 确定性的压力输入：即使嵌套使用无花括号的命令参数或 \left/\right 链，
+    // 递归也必须是有界的。
     QStringList stress = fuzz;
     stress << QStringLiteral("\\frac").repeated(300) + QStringLiteral(" a b");
     stress << QStringLiteral("\\hat").repeated(300) + QStringLiteral(" x");

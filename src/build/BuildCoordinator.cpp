@@ -38,8 +38,8 @@ std::vector<std::string> ExtractBibliographyKeys(const std::string &bibtex) {
 
 BuildCoordinator::BuildCoordinator(Host host, ICompiler *compiler)
     : host_(std::move(host)), compiler_(compiler) {
-  // Start the worker only after every member is initialized: the loop reads
-  // stopping_/phase_ immediately.
+  // 必须在所有成员初始化完成后再启动 worker：循环会立即读取
+  // stopping_/phase_。
   worker_ = std::thread([this] { WorkerLoop(); });
 }
 
@@ -166,8 +166,8 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
   BuildResult result;
   result.project_id = snapshot.project_id;
   result.snapshot_id = snapshot.snapshot_id;
-  // Every attempt carries a build id, even one that fails validation before
-  // rendering, so the result is always attributable.
+  // 每次尝试都携带 build id，即使在 rendering 之前就未通过校验的尝试也是
+  // 如此，因此结果始终可追溯。
   result.build_id = snapshot.build_id.empty()
                         ? BuildId(IdGenerator::NewBuildId())
                         : snapshot.build_id;
@@ -225,11 +225,10 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
   EmitEvent(id, BuildEventType::GenerationFinished,
             "Generated " + rendered.package.entry_file);
 
-  // TEMP-DEBUG: dump the generated LaTeX next to the project so the user
-  // can inspect what the renderer produced before tectonic compiles it.
-  // Written to <project>/.paperforge/build/main.tex and removed once the
-  // diagnosis is done.
-  // The host hook is optional: tests build a coordinator without it.
+  // TEMP-DEBUG：将生成的 LaTeX 转储到项目旁边，便于用户在 tectonic 编译
+  // 之前检查 renderer 产出了什么。写入 <project>/.paperforge/build/main.tex，
+  // 诊断结束后移除。
+  // host 钩子是可选的：测试构建 coordinator 时不会设置它。
   if (host_.debug_dump_dir) {
     std::error_code dump_ec;
     for (const auto &file : rendered.package.files) {
@@ -245,9 +244,9 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
         dump << file.content;
       }
     }
-    // Stage the referenced assets next to the dumped main.tex too, so the
-    // \includegraphics paths in the dumped source resolve to real files
-    // (assets/<name>.<ext>) instead of dangling names.
+    // 同时将引用的 assets 放置到转储的 main.tex 旁边，使转储源码中的
+    // \includegraphics 路径能解析到真实文件（assets/<name>.<ext>），
+    // 而不是悬空的名称。
     const auto dump_root = host_.debug_dump_dir().value_or("");
     if (!dump_root.empty()) {
       for (const auto &[destination_name, source] : snapshot.asset_sources) {
@@ -269,17 +268,16 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
                               snapshot.snapshot_id;
   compile_request.asset_sources = snapshot.asset_sources;
   compile_request.toolchain = snapshot.toolchain;
-  // Stream the compiler's live output as structured events (plan §44): the
-  // Build Log grows while the process runs. Callbacks fire on this (worker)
-  // thread and carry the current build id, so the application side can drop
-  // them if a newer build has started.
+  // 将编译器的实时输出以结构化事件流式发出（方案 §44）：进程运行期间
+  // Build Log 持续增长。回调在此（worker）线程上触发并携带当前 build id，
+  // 因此若有更新的 build 已启动，应用侧可以丢弃它们。
   compile_request.on_output = [this, id](const CompileOutputChunk &chunk) {
     EmitEvent(id,
               chunk.is_stderr ? BuildEventType::StdErr : BuildEventType::StdOut,
               chunk.text);
   };
-  // The compiler is chosen from the template's toolchain requirement (plan
-  // §13); a single-request compiler is still honoured for tests.
+  // compiler 依据模板的 toolchain 需求选定（方案 §13）；为测试起见，
+  // 仍然支持单次请求的 compiler。
   const std::unique_ptr<ICompiler> selected =
       compiler_provider_ ? compiler_provider_(snapshot.toolchain) : nullptr;
   ICompiler *const used =
@@ -315,8 +313,8 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
   result.failure_kind = compiled.failure_kind;
   result.exit_code = compiled.exit_code;
 
-  // TEMP-DEBUG: copy the compiled PDF next to the project for comparison
-  // with what the preview window shows.
+  // TEMP-DEBUG：将编译出的 PDF 复制到项目旁边，用于与预览窗口显示的内容
+  // 进行比对。
   if (compiled.status == CompileStatus::Success && host_.debug_dump_dir) {
     const auto dump_dir = host_.debug_dump_dir().value_or("");
     if (!dump_dir.empty()) {
@@ -327,10 +325,10 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
     }
   }
   std::vector<Diagnostic> compiler_diagnostics;
-  // Parser robustness (plan §46): classification is best-effort. A parser
-  // fault is an internal log message - it may cost the Problems list its
-  // compiler entries but must never fail an otherwise good build or crash
-  // the pipeline; the raw log stays complete in BuildResult::log either way.
+  // Parser 健壮性（方案 §46）：分类是尽力而为的。parser 故障只记一条内部
+  // 日志消息——它可能使 Problems 列表丢失其 compiler 条目，但绝不能使
+  // 原本良好的 build 失败，也不能使流水线崩溃；无论如何，BuildResult::log
+  // 中的原始日志始终完整。
   try {
     compiler_diagnostics = DiagnosticMapper().Map(compiled, rendered.source_map,
                                                   snapshot.revision, id);
@@ -341,7 +339,7 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot &snapshot) {
     EmitEvent(id, BuildEventType::InternalMessage,
               "Diagnostic parser failure (unknown exception)");
   }
-  // Merge order (Build Diagnostics plan §18): validator, generator, compiler.
+  // 合并顺序（Build Diagnostics 方案 §18）：validator、generator、compiler。
   result.diagnostics.insert(result.diagnostics.end(),
                             compiler_diagnostics.begin(),
                             compiler_diagnostics.end());

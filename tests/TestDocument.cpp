@@ -1,4 +1,4 @@
-// Document model tests: schema, editor constraints, index.
+// Document 模型测试：schema、编辑器约束、索引。
 #include "TestMain.hpp"
 
 #include "core/IdGenerator.h"
@@ -74,7 +74,7 @@ PF_TEST(DocumentEditorTableRectangularity) {
     PF_CHECK(table.value().cells.size() == 3);
     PF_CHECK(table.value().cells[0].size() == 2);
 
-    // Empty columns are rejected
+    // 空列会被拒绝
     auto bad = DocumentEditor::MakeTable({}, 2, false);
     PF_CHECK(!bad.ok());
 }
@@ -126,11 +126,11 @@ PF_TEST(DocumentEditorMoveBlock) {
     c.content = InlineFromText("C");
     editor.InsertBlock(s2, std::nullopt, c);
 
-    // Move A from s1 to s2.
+    // 把 A 从 s1 移动到 s2。
     PF_CHECK(editor.MoveBlock(pa.value(), s2, 0).ok());
     {
         const Document& cd = doc;
-        PF_CHECK(cd.body().sections[0].blocks.size() == 3);  // B + para + eq
+        PF_CHECK(cd.body().sections[0].blocks.size() == 3);  // B + 段落 + eq
         PF_CHECK(cd.body().sections[1].blocks.size() == 2);  // C + A
     }
 
@@ -143,7 +143,7 @@ PF_TEST(DocumentEditorMoveBlock) {
 PF_TEST(InsertSubsectionAfterAnchor) {
     Document doc;
     DocumentEditor editor(doc);
-    const Document& cd = doc;  // read-only view: body() is const-only outside
+    const Document& cd = doc;  // 只读视图：body() 在外部仅提供 const 版本
     auto sec = editor.InsertSection(cd.body().sections.size(),
                                     InlineFromText("S"));
     PF_CHECK(sec.ok());
@@ -160,8 +160,8 @@ PF_TEST(InsertSubsectionAfterAnchor) {
     auto pc = editor.InsertBlock(section, std::nullopt, c);
     PF_CHECK(pa.ok() && pb.ok() && pc.ok());
 
-    // Inserting a heading after "one" must move "two" and "three" into it, so
-    // the heading really appears between "one" and "two".
+    // 在「one」之后插入标题必须把「two」和「three」移入该标题之下，因此
+    // 该标题确实出现在「one」与「two」之间。
     auto sub = editor.InsertSubsectionAfter(pa.value(), InlineFromText("Sub"));
     PF_CHECK(sub.ok());
     {
@@ -177,7 +177,7 @@ PF_TEST(InsertSubsectionAfterAnchor) {
         PF_CHECK(second && InlineToPlainText(second->content) == "three");
     }
 
-    // A heading after a block inside a subsection follows that subsection.
+    // 子节内部某个 block 之后的标题会跟随该子节。
     const NodeId inner = std::visit([](const auto& v) { return v.id; },
                                     cd.body()
                                         .sections.front()
@@ -191,7 +191,7 @@ PF_TEST(InsertSubsectionAfterAnchor) {
         PF_CHECK(s.subsections[1].blocks.size() == 1);
     }
 
-    // After a subsection heading nothing moves.
+    // 子节标题之后不会发生任何移动。
     PF_CHECK(editor
                  .InsertSubsectionAfter(cd.body().sections.front()
                                             .subsections[0]
@@ -203,8 +203,7 @@ PF_TEST(InsertSubsectionAfterAnchor) {
                  cd.body().sections.front().subsections[1].title) ==
              "Sibling");
 
-    // After a section title the whole body of the section becomes the
-    // subsection's content.
+    // 在 section 标题之后，该 section 的全部正文会成为子节的内容。
     Document second;
     DocumentEditor editor2(second);
     const Document& cd2 = second;
@@ -226,7 +225,7 @@ PF_TEST(InsertSubsectionAfterAnchor) {
         PF_CHECK(s.subsections[0].blocks.size() == 2);
     }
 
-    // An unknown anchor is rejected instead of silently appending.
+    // 未知锚点会被拒绝，而不是静默追加。
     PF_CHECK(!editor2.InsertSubsectionAfter(NodeId("nope"), InlineFromText("x"))
                   .ok());
 }
@@ -247,7 +246,7 @@ PF_TEST(DocumentEditorSubsectionStructure) {
         PF_CHECK(cd.body().sections[0].subsections[0].blocks.size() == 1);
     }
 
-    // Invalid parent rejected
+    // 无效父节点会被拒绝
     Paragraph q;
     q.content = InlineFromText("bad");
     auto r = editor.InsertBlock(NodeId("nope"), std::nullopt, q);
@@ -258,7 +257,7 @@ PF_TEST(DocumentIndexRebuild) {
     const Document doc = MakeSampleDoc();
     DocumentIndex index;
     index.Rebuild(doc);
-    PF_CHECK(index.Size() == 4);  // 2 sections + 2 blocks in section 0
+    PF_CHECK(index.Size() == 4);  // section 0 中的 2 个 section + 2 个 block
     size_t expected = doc.CollectNodeIds().size();
     PF_CHECK(index.Size() == expected);
 
@@ -267,7 +266,7 @@ PF_TEST(DocumentIndexRebuild) {
     PF_CHECK(loc.has_value());
     PF_CHECK(loc->kind == NodeKind::Section);
 
-    // Block location
+    // block 位置
     for (const auto& block : doc.body().sections[0].blocks) {
         NodeId bid = std::visit([](const auto& b) { return b.id; }, block);
         auto bloc = index.Find(bid);
@@ -291,8 +290,8 @@ PF_TEST(InlineTextHelpers) {
 }
 
 PF_TEST(ReflowHardWrappedText) {
-    // A paragraph copied out of a PDF arrives pre-wrapped at a fixed column;
-    // the single breaks have to become spaces so it can re-flow.
+    // 从 PDF 复制出的段落会按固定列宽预先换行；
+    // 必须把这里的单个换行变成空格，它才能重新排版。
     const std::string pasted =
         "The success of deep learning in infrared small\n"
         "target detection relies on large-scale annotations, yet\n"
@@ -303,7 +302,7 @@ PF_TEST(ReflowHardWrappedText) {
              std::string::npos);
     PF_CHECK(reflowed.find("  ") == std::string::npos);
 
-    // Blank lines are real paragraph breaks and must survive.
+    // 空行是真正的段落分隔，必须保留。
     const std::string two_paragraphs =
         "First paragraph that is long enough to look wrapped.\n"
         "It continues here on a second line of the same paragraph.\n"
@@ -317,7 +316,7 @@ PF_TEST(ReflowHardWrappedText) {
     PF_CHECK(joined.find("Second paragraph that is also long enough") !=
              std::string::npos);
 
-    // Deliberate structure is never rewritten.
+    // 有意设置的结构永远不会被重写。
     const std::string bullets =
         "- first item of a list that is long enough to wrap somewhere\n"
         "- second item of the same list, also long enough to wrap\n"
@@ -330,14 +329,14 @@ PF_TEST(ReflowHardWrappedText) {
         "3. third numbered item, likewise long enough to be wrapped";
     PF_CHECK(ReflowHardWrappedText(enumerated) == enumerated);
 
-    // An explicit LaTeX break is content, not wrapping.
+    // 显式的 LaTeX 换行属于内容，而不是自动换行。
     const std::string explicit_break =
         "first line that ends with an explicit break\\\\\n"
         "second line that is long enough to look like a hard wrap\n"
         "third line that is also long enough to be considered wrapped";
     PF_CHECK(ReflowHardWrappedText(explicit_break) == explicit_break);
 
-    // Too short to be a pre-wrapped block: leave it exactly as typed.
+    // 太短，不足以判定为预先换行的文本块：完全按输入原样保留。
     const std::string typed = "line one\nline two";
     PF_CHECK(ReflowHardWrappedText(typed) == typed);
     PF_CHECK(ReflowHardWrappedText("single line") == "single line");

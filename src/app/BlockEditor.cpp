@@ -51,22 +51,20 @@ using theme::kAccent;
 QString ToQ(const std::string &s) { return QString::fromStdString(s); }
 std::string ToStd(const QString &s) { return s.toStdString(); }
 
-// Reordering uses a private mime type so the editor ignores drags from
-// outside (files, text) and other apps ignore ours.
+// 重排序使用私有 mime 类型，因此编辑器会忽略来自外部的拖拽
+// （文件、文本），其他应用也会忽略我们的拖拽。
 constexpr const char *kBlockMime = "application/x-paperforge-block";
 
-// Figure preview label. A plain QLabel keeps whatever pixmap it was given, so
-// a figure scaled once to a fixed box is cropped whenever the editor column is
-// narrower (the top/bottom truncation users see). This label instead keeps the
-// source pixmap and re-scales it to its own width with the aspect ratio
-// preserved, so it always fits the editor column and shows the whole image.
+// 图片预览标签。普通 QLabel 会保留给定的任意 pixmap，因此一旦图片被缩放到
+// 固定框，编辑器列变窄时就会被裁剪（即用户看到的上下截断）。本标签则保留源
+// pixmap，并按自身宽度重新缩放且保持宽高比，从而始终适配编辑器列并显示
+// 完整图像。
 class FigureImageLabel : public QLabel {
 public:
   explicit FigureImageLabel(QWidget *parent = nullptr) : QLabel(parent) {
     setAlignment(Qt::AlignCenter);
-    // Horizontal Ignored: the card's layout decides the width (the editor
-    // column). Vertical Minimum: the height is a floor, never a cap, so the
-    // layout cannot squeeze the label below the scaled image height.
+    // 水平方向 Ignored：由卡片的布局决定宽度（编辑器列）。垂直方向 Minimum：
+    // 高度是下限而非上限，因此布局无法把标签压缩到缩放后图像高度以下。
     setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Minimum);
     setMinimumWidth(1);
   }
@@ -99,11 +97,10 @@ private:
     const QPixmap scaled = source_.scaled(
         target, QWIDGETSIZE_MAX, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     setPixmap(scaled);
-    // Make the scaled image height a hard floor. Without this the enclosing
-    // QVBoxLayout shrinks the label down to its minimum size when the column
-    // is short, and QLabel then center-clips the pixmap (the top/bottom
-    // truncation users see). The floor also forces the scroll area's host to
-    // grow, so the editor scrolls instead of cropping the figure.
+    // 将缩放后图像的高度设为硬下限。否则当列较矮时，外层 QVBoxLayout 会把
+    // 标签压缩到其最小尺寸，QLabel 随后会居中裁剪 pixmap（即用户看到的上下
+    // 截断）。该下限还会迫使滚动区域的宿主增高，从而让编辑器滚动而非裁剪
+    // 图片。
     const int needed = qMax(120, scaled.height());
     if (minimumHeight() != needed)
       setMinimumHeight(needed);
@@ -113,9 +110,9 @@ private:
   int last_width_ = -1;
 };
 
-// Block kinds offered by the insert affordances, in menu order.
-// Superseded by InsertOptionsFor(), which filters by position and template
-// capability; kept only for the block menu's generic listing.
+// 插入入口提供的块类型，按菜单顺序排列。
+// 已被 InsertOptionsFor() 取代，后者按位置和模板能力过滤；此处仅保留用于
+// 块菜单的通用列表。
 struct InsertEntry {
   const char *label;
   const char *kind;
@@ -123,8 +120,8 @@ struct InsertEntry {
 
 std::vector<InsertEntry> InsertEntries(bool body_empty) {
   if (body_empty) {
-    // A text block needs a heading to live in, and a section needs no
-    // anchor, so an empty body can only start with a section.
+    // 文本块需要有标题作为宿主，而节本身不需要锚点，
+    // 因此空正文只能从节开始。
     return {{"Section Title", "section"}};
   }
   return {{"Text", "text"},
@@ -135,14 +132,14 @@ std::vector<InsertEntry> InsertEntries(bool body_empty) {
           {"Import Table…", "table"}};
 }
 
-// Rows whose content is a run of prose: they re-flow to the block width, so a
-// hard-wrapped paste has to be softened (see ReflowHardWrappedText).
+// 内容是一段连续散文的行：它们会按块宽度重新排布，因此硬换行粘贴的内容
+// 必须被柔化（见 ReflowHardWrappedText）。
 bool IsProseRole(const QString &role) {
   return role == QLatin1String("abstract") || role == QLatin1String("caption");
 }
 
-// Display kind -> typography role (UI plan §3). One mapping used by both the
-// card chrome (margins, label) and the editor font.
+// 显示类型 -> 排版角色（UI 方案 §3）。卡片外观（边距、标签）和编辑器字体
+// 共用这一个映射。
 theme::BlockVisualRole RoleForKind(const QString &kind) {
   using R = theme::BlockVisualRole;
   if (kind == QLatin1String("Title"))
@@ -166,9 +163,9 @@ theme::BlockVisualRole RoleForKind(const QString &kind) {
   return R::Body;
 }
 
-// Per-role card padding (UI plan §2/§3): thin chrome for prose, deliberate
-// whitespace around headings and between front-matter identities. The host
-// layout spacing is 0, so these margins *are* the vertical rhythm.
+// 按角色设置的卡片内边距（UI 方案 §2、§3）：正文用纤细外观，标题周围以及
+// 前置信息各条目之间保留刻意的留白。宿主布局间距为 0，因此这些边距本身
+// 就是垂直节奏。
 QMargins CardMarginsFor(theme::BlockVisualRole role) {
   using R = theme::BlockVisualRole;
   const int h = theme::spacing::kBlockPaddingH;
@@ -195,8 +192,8 @@ QMargins CardMarginsFor(theme::BlockVisualRole role) {
   }
 }
 
-// Header label text. Abstract and Keywords keep a permanent small-caps
-// identity (UI plan §8); every other label shows the kind verbatim.
+// 表头标签文本。Abstract 和 Keywords 保持常驻的小型大写标识（UI 方案 §8）；
+// 其他标签则原样显示类型。
 QString DisplayLabelFor(const QString &kind) {
   if (kind == QLatin1String("Abstract"))
     return QStringLiteral("ABSTRACT");
@@ -205,7 +202,7 @@ QString DisplayLabelFor(const QString &kind) {
   return kind;
 }
 
-// The block card a child widget (editor, header button) belongs to.
+// 子控件（编辑器、表头按钮）所属的块卡片。
 QFrame *CardOf(const QObject *widget) {
   for (const QObject *p = widget; p != nullptr; p = p->parent()) {
     if (auto *frame = qobject_cast<QFrame *>(const_cast<QObject *>(p));
@@ -216,13 +213,12 @@ QFrame *CardOf(const QObject *widget) {
   return nullptr;
 }
 
-// What may be inserted relative to `container_kind`, using the template's
-// heading capability (plan §3, §9). The names are EditorItemKind machine
-// names; MainWindow maps them onto edit commands.
+// 相对 `container_kind` 允许插入的内容，依据模板的标题能力（方案 §3、§9）。
+// 名称是 EditorItemKind 的机器名；MainWindow 将其映射到编辑命令。
 struct InsertOption {
   const char *label;
   const char *kind;  // EditorItemKindName
-  const char *group; // menu group: Structure / Content
+  const char *group; // 菜单分组：Structure / Content
 };
 
 std::vector<InsertOption> InsertOptionsFor(bool body_empty,
@@ -233,14 +229,14 @@ std::vector<InsertOption> InsertOptionsFor(bool body_empty,
   const bool in_subsubsection = container_kind == NodeKind::Subsubsection;
 
   if (body_empty) {
-    // A text block needs a heading to live in, and a section needs no
-    // anchor, so an empty body can only start with a section.
+    // 文本块需要有标题作为宿主，而节本身不需要锚点，
+    // 因此空正文只能从节开始。
     return {{"Section Title", "section", "Structure"}};
   }
 
   std::vector<InsertOption> options;
-  // A heading may only be inserted at a level the container can hold, and
-  // only if the template supports that depth.
+  // 标题只能插入到容器能够承载的层级，
+  // 且仅当模板支持该深度时。
   const int container_depth = HeadingDepth(container_kind);
   if (!in_subsubsection && 1 <= max_heading_depth) {
     options.push_back({"Section Title", "section", "Structure"});
@@ -259,9 +255,8 @@ std::vector<InsertOption> InsertOptionsFor(bool body_empty,
   return options;
 }
 
-// Which structural container an anchor node sits in, so the insert menu can
-// offer only what the model can express there. Blocks inherit the container
-// they live in; a heading is its own container.
+// 锚点节点所处的结构容器，以便插入菜单只提供该处模型所能表达的内容。
+// 块继承其所在容器；标题自身就是一个容器。
 NodeKind ContainerKindFor(const Document &doc, const QString &anchor) {
   if (anchor.isEmpty())
     return NodeKind::Section;
@@ -274,8 +269,7 @@ NodeKind ContainerKindFor(const Document &doc, const QString &anchor) {
   case NodeKind::Figure:
   case NodeKind::Table:
   case NodeKind::Equation:
-    // A block inside a section (or the section heading itself) means
-    // the next row is still owned by the section.
+    // 节内的块（或节标题本身）意味着下一行仍归属于该节。
     return NodeKind::Section;
   case NodeKind::Subsection:
     return NodeKind::Subsection;
@@ -285,7 +279,7 @@ NodeKind ContainerKindFor(const Document &doc, const QString &anchor) {
   return NodeKind::Section;
 }
 
-// Editor that sizes itself to its content and exposes key events for / and @.
+// 自适应内容高度、并对外暴露 / 和 @ 按键事件的编辑器。
 class BlockEdit : public QPlainTextEdit {
   Q_OBJECT
 
@@ -299,27 +293,24 @@ public:
     setWordWrapMode(QTextOption::WordWrap);
     setFrameShape(QFrame::NoFrame);
     document()->setDocumentMargin(theme::spacing::kEditorDocMargin);
-    // NOTE: deliberately no idle/"typing" timer. An auto-commit a few
-    // hundred milliseconds after the last keystroke made every pause in
-    // typing rewrite the document, which rebuilt every row and destroyed
-    // the text still being entered. Edits are committed on focus-out,
-    // Enter and Ctrl+Enter only (design: no implicit content refresh).
+    // NOTE：刻意不设空闲/「输入中」计时器。最后一次按键后几百毫秒的自动提交
+    // 会让每一次输入停顿都重写文档，从而重建每一行并销毁仍在输入的文本。
+    // 编辑只在失焦、Enter 和 Ctrl+Enter 时提交（设计：不做隐式内容刷新）。
     connect(this, &QPlainTextEdit::textChanged, this, [this]() {
       Resize();
       if (!loading_)
         dirty_ = true;
     });
-    // Re-fit when the layout changes for any other reason: a width change
-    // that re-wraps the text, or a font/zoom change.
+    // 因其他任何原因导致布局变化时重新适配：宽度变化引起文本重新换行，
+    // 或字体/缩放变化。
     connect(document()->documentLayout(),
             &QAbstractTextDocumentLayout::documentSizeChanged, this,
             [this](const QSizeF &) { Resize(); });
     Resize();
   }
 
-  // Role font + proportional line height (UI plan §5). Programmatic: never
-  // dirties the row, and the line height is re-applied after every
-  // setPlainText reload because that resets block formats.
+  // 角色字体 + 比例行高（UI 方案 §5）。程序性设置：绝不会将行标脏，且每次
+  // setPlainText 重新加载后都会重新应用行高，因为该操作会重置块格式。
   void SetTypography(const QFont &font, int line_height_percent) {
     line_height_percent_ = line_height_percent;
     loading_ = true;
@@ -329,8 +320,7 @@ public:
     Resize();
   }
 
-  // Programmatic load from the document: never marks the row dirty and
-  // never triggers a commit.
+  // 从文档进行的程序性加载：绝不把行标脏，也绝不触发提交。
   void SetInitialText(const QString &text) {
     loading_ = true;
     setPlainText(text);
@@ -342,15 +332,14 @@ public:
   bool IsDirty() const { return dirty_; }
   void MarkClean() { dirty_ = false; }
   void MarkDirty() { dirty_ = true; }
-  // Wrap programmatic formatting (alignment, fonts, hints) so it cannot be
-  // mistaken for user input.
+  // 包裹程序性格式化（对齐、字体、提示），使其不会被误认为用户输入。
   void BeginProgrammaticEdit() { loading_ = true; }
   void EndProgrammaticEdit() {
     loading_ = false;
     dirty_ = false;
   }
 
-  // Adopt model text while keeping the caret roughly in place.
+  // 采纳模型文本，同时大致保持光标位置不变。
   void SetTextFromModel(const QString &text) {
     loading_ = true;
     const int position = textCursor().position();
@@ -368,26 +357,21 @@ public:
     Resize();
   }
 
-  // Restore the proportional line height after a raw setPlainText (the
-  // Reflow Text action). Callers must already hold the programmatic-edit
-  // guard; this must not lift it.
+  // 在原始 setPlainText（Reflow Text 动作）之后恢复比例行高。调用方必须已经
+  // 持有程序性编辑守卫；此处不得将其解除。
   void ReapplyLineHeight() {
     ApplyLineHeight();
     Resize();
   }
 
-  // Grow/shrink to fit the wrapped text exactly. Nothing here scrolls: the
-  // single vertical scrollbar lives on the editor pane around all blocks.
-  // Height of the wrapped text in pixels.
+  // 精确地增长/收缩以适配换行后的文本。这里不做任何滚动：唯一的垂直滚动条
+  // 位于包裹所有块的编辑器窗格上。换行后文本的像素高度。
   //
-  // Two Qt traps live here. QPlainTextDocumentLayout's documentSize() and
-  // QTextDocument::size() report the *line count* (1, 2, 3 ...), not a
-  // height; and per-block bounding rects are only meaningful for blocks the
-  // layout has actually processed, so reading the last block's bottom gave
-  // one line for a pasted multi-line abstract. Measuring the plain text with
-  // the widget's own font is reliable; the sum of laid-out block heights is
-  // a second opinion for what font metrics cannot see (tab stops, per-block
-  // formats).
+  // 这里藏着两个 Qt 陷阱。QPlainTextDocumentLayout 的 documentSize() 和
+  // QTextDocument::size() 报告的是*行数*（1、2、3……），而非高度；而逐块的
+  // 包围矩形只对布局实际处理过的块有意义，因此读取最后一块的底边会让粘贴的
+  // 多行摘要只得到一行。用控件自身字体测量纯文本是可靠的；已布局块高之和则
+  // 是字体度量无法看到的因素（制表位、逐块格式）的第二重佐证。
   qreal ContentHeight() const {
     QTextDocument *doc = document();
     const QAbstractTextDocumentLayout *layout = doc->documentLayout();
@@ -422,7 +406,7 @@ signals:
 
 protected:
   void keyPressEvent(QKeyEvent *event) override {
-    // "/" at line start with empty-ish context opens the block menu.
+    // 在行首且上下文基本为空时输入「/」会打开块菜单。
     if (property("commands_enabled").toBool() &&
         event->text() == QStringLiteral("/")) {
       if (toPlainText().trimmed().isEmpty()) {
@@ -430,9 +414,8 @@ protected:
         return;
       }
     }
-    // The old "@" reference menu was part of the [cite:key] text
-    // encoding path and is gone: citations are semantic objects inserted
-    // through the toolbar picker (citation plan §5).
+    // 旧的「@」引用菜单属于 [cite:key] 文本编码路径的一部分，现已移除：
+    // 引用是通过工具栏选择器插入的语义对象（引用方案 §5）。
     if ((event->modifiers() & Qt::ControlModifier) &&
         (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
       emit CommitRequested();
@@ -459,8 +442,8 @@ protected:
     Resize();
   }
 
-  // Undo the hard wrapping a PDF copy brings along, so the paragraph can
-  // re-flow to the block width instead of staying a fixed column wide.
+  // 撤销从 PDF 复制时带来的硬换行，使段落可以按块宽度重新排布，而不是
+  // 保持固定的列宽。
   void insertFromMimeData(const QMimeData *source) override {
     if (reflow_on_paste_ && source && source->hasText()) {
       const QString pasted = source->text();
@@ -476,8 +459,8 @@ protected:
   }
 
 private:
-  // Re-apply the stored proportional line height after a setPlainText
-  // reload dropped the block formats (callers hold loading_).
+  // 在 setPlainText 重新加载丢弃块格式之后，重新应用已存储的比例行高
+  // （调用方持有 loading_）。
   void ApplyLineHeight() {
     if (line_height_percent_ > 0) {
       theme::ApplyDocumentTypography(document(), document()->defaultFont(),
@@ -487,14 +470,14 @@ private:
 
   bool single_line_ = false;
   bool loading_ = false;
-  bool dirty_ = false;           // user typed something not yet in the document
-  bool reflow_on_paste_ = false; // long-text rows re-flow pasted text
+  bool dirty_ = false;           // 用户已输入但尚未写入文档的内容
+  bool reflow_on_paste_ = false; // 长文本行会重新排布粘贴的文本
   int min_height_ = 0;
   int line_height_percent_ = 0;
 };
 
-// The "\u22ee\u22ee" grip in a card header. Dragging it starts a reorder; the
-// gaps between blocks accept the drop.
+// 卡片表头中的「\u22ee\u22ee」抓手。拖动它会开始一次重排序；
+// 块之间的间隙负责接受放置。
 class DragHandle : public QWidget {
   Q_OBJECT
 
@@ -513,7 +496,7 @@ protected:
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setPen(QPen(QColor(theme::kDisabledText), 1.4));
-    // The two columns of a grip.
+    // 抓手的两个竖列。
     const int cx = width() / 2;
     for (int dx : {-2, 2}) {
       painter.drawLine(cx + dx, 4, cx + dx, height() - 4);
@@ -539,7 +522,7 @@ protected:
     mime->setData(kBlockMime, node_id_.toUtf8());
     auto *drag = new QDrag(this);
     drag->setMimeData(mime);
-    // A small pixmap so the cursor shows what is being carried.
+    // 一个小 pixmap，让光标显示正在搬运的内容。
     QPixmap preview(120, 18);
     preview.fill(QColor(theme::kAccentSoft));
     QPainter painter(&preview);
@@ -561,10 +544,9 @@ private:
   bool pressed_ = false;
 };
 
-// The strip between two blocks. It always reserves its height (so nothing
-// jumps when the pointer arrives) and reveals an insert button on hover, which
-// is how a block is added without hunting for a toolbar. The last block gets
-// one too, and an empty body gets one after the front matter.
+// 两个块之间的条带。它始终保留自身高度（因此指针到达时不会发生跳动），
+// 并在悬停时显现一个插入按钮，这样添加块时无需四处寻找工具栏。最后一个块
+// 之后也有一个，空正文在前置信息之后也会有一个。
 class BlockGap : public QWidget {
   Q_OBJECT
 
@@ -600,14 +582,14 @@ protected:
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
     const int mid = height() / 2;
-    // A hairline across the content width, with the button in the middle.
+    // 横贯内容宽度的一条细线，按钮居中。
     const int inset = 12;
     QColor line(theme::kAccent);
     line.setAlpha(drop_active_ ? 255 : 70);
     painter.setPen(QPen(line, drop_active_ ? 2 : 1));
     painter.drawLine(inset, mid, width() - inset, mid);
     if (drop_active_)
-      return; // the line alone marks the drop target
+      return; // 仅凭这条线即可标示放置目标
 
     const QPoint centre(width() / 2, mid);
     const int radius = 7;
@@ -655,8 +637,8 @@ protected:
   }
 
 public slots:
-  // What a completed drop does. Split out so the reorder can be driven
-  // without Qt's drag manager, which needs a real pointer device.
+  // 完成放置后要做什么。单独拆出，以便在不依赖 Qt 拖拽管理器（需要真实
+  // 指针设备）的情况下驱动重排序。
   void applyDrop(const QString &node_id) {
     if (on_drop_)
       on_drop_(node_id);
@@ -685,17 +667,15 @@ BlockEditor::BlockEditor(QWidget *parent) : QWidget(parent) {
   host_->setStyleSheet(
       QString("background: %1;").arg(theme::kEditorBackground));
   auto *host_layout = new QVBoxLayout(host_);
-  // Spacing 0: the vertical rhythm lives in the per-role card margins and
-  // the kBlockGap strips, so prose blocks sit tight and headings breathe
-  // (UI plan §2/§3).
+  // 间距 0：垂直节奏由按角色设置的卡片边距和 kBlockGap 条带承担，因此正文块
+  // 排列紧凑，标题则留有呼吸空间（UI 方案 §2、§3）。
   host_layout->setContentsMargins(24, 12, 24, 20);
   host_layout->setSpacing(0);
   host_layout->addStretch(1);
   scroll_->setWidget(host_);
   outer->addWidget(scroll_);
-  // The manuscript column is capped at kContentWidth and centered when the
-  // pane is wider (focus mode, or a wide three-pane window): long lines
-  // hurt reading, and the column is a reading affordance, not the PDF.
+  // 稿件列宽以 kContentWidth 为上限，并在窗格更宽时居中（专注模式，或较宽的
+  // 三窗格窗口）：长行有损阅读，而这一列是阅读辅助，并非 PDF。
   scroll_->viewport()->installEventFilter(this);
   CenterContentColumn();
 }
@@ -766,10 +746,9 @@ QWidget *BlockEditor::BuildFormatToolbar(InlineEditor *editor) {
   connect(reference, &QToolButton::clicked, this,
           [this, editor]() { ShowReferencePicker(editor); });
 
-  // The buttons must never take focus. If one did, clicking it would end the
-  // row's edit, commit the pre-format content, and rebuild every card before
-  // the click handler ran - so the mark landed on a destroyed editor and the
-  // row was re-laid out mid-edit (the "big blank area" report).
+  // 这些按钮绝不能获得焦点。否则点击它会先结束该行的编辑、提交格式化前的
+  // 内容，并在点击处理器运行之前重建每一张卡片——于是标记落在已被销毁的
+  // 编辑器上，该行也在编辑中途被重新布局（即「大块空白区域」问题）。
   bold->setFocusPolicy(Qt::NoFocus);
   italic->setFocusPolicy(Qt::NoFocus);
   math->setFocusPolicy(Qt::NoFocus);
@@ -809,12 +788,10 @@ void BlockEditor::ShowCitationPicker(InlineEditor *editor) {
     items.push_back(empty);
   }
 
-  // Citation plan §4: the picker works on the caret the user had *before*
-  // the popup took focus. The popup's focus round trip must not be
-  // mistaken for the end of body editing (BeginProtectedInsert suppresses
-  // the focusOut commit), and choosing an entry completes the semantic
-  // insert + commit at once - there is no "some later focusOut will
-  // submit this".
+  // 引用方案 §4：选择器作用于弹出层获得焦点*之前*用户所在的光标位置。弹出层
+  // 的焦点往返绝不能被误认为正文编辑的结束（BeginProtectedInsert 会抑制
+  // focusOut 提交），而选中一项会立即完成语义插入 + 提交——不存在「稍后某次
+  // focusOut 会提交它」这种情况。
   const QString node_id = editor->property("row_node").toString();
   const int caret = editor->textCursor().position();
   editor->BeginProtectedInsert();
@@ -829,8 +806,8 @@ void BlockEditor::ShowCitationPicker(InlineEditor *editor) {
           guard->EndProtectedInsert();
         if (key.isEmpty() || !guard)
           return;
-        // Restore the caret to where the user was, insert the citation
-        // object there, and commit the whole row's rich content now.
+        // 将光标恢复到用户原来的位置，在那里插入引用对象，
+        // 并立即提交该行完整的富文本内容。
         QTextCursor cursor(guard->document());
         cursor.setPosition(
             qMax(0, qMin(caret, guard->document()->characterCount() - 1)));
@@ -838,9 +815,8 @@ void BlockEditor::ShowCitationPicker(InlineEditor *editor) {
         guard->InsertCitationObject({key});
         guard->setFocus(Qt::OtherFocusReason);
         CommitInlineRow(guard.data());
-        // The commit above rebuilds the rows with fresh citation numbers;
-        // re-attach to the (new) row so typing can continue right behind
-        // the inserted pill.
+        // 上面的提交会用新的引用编号重建各行；
+        // 重新附着到（新的）行上，以便紧接着插入的 pill 继续输入。
         const int after = caret + 1;
         QTimer::singleShot(0, this, [this, node_id, after]() {
           for (auto &block : blocks_) {
@@ -870,8 +846,8 @@ void BlockEditor::ShowReferencePicker(InlineEditor *editor) {
   if (!editor)
     return;
   std::vector<PopupList::Item> items;
-  // Cross references point at document nodes, so the items come from the
-  // last rebuild's reference list where they were tagged as node:….
+  // 交叉引用指向文档节点，因此这些条目来自上一次重建的引用列表，
+  // 在那里它们被标记为 node:…。
   for (const auto &item : reference_items_) {
     if (!item.payload.startsWith(QStringLiteral("xref:")))
       continue;
@@ -934,8 +910,8 @@ void BlockEditor::ShowReferencePicker(InlineEditor *editor) {
   popup->popup(editor->mapToGlobal(QPoint(24, editor->height() + 4)), items);
 }
 
-// Commit a rich row now: the picker must not rely on a later focusOut. The
-// document is updated synchronously through ParagraphContentEdited.
+// 立即提交一个富文本行：选择器不得依赖稍后的 focusOut。文档通过
+// ParagraphContentEdited 同步更新。
 void BlockEditor::CommitInlineRow(InlineEditor *editor) {
   if (!editor)
     return;
@@ -1010,9 +986,9 @@ QWidget *BlockEditor::MakeTextCard(const QString &node_id,
   auto *card_layout = qobject_cast<QVBoxLayout *>(card->layout());
 
   auto *editor = new InlineEditor(card);
-  // Order matters (UI plan §6): establish the 12pt/150% font environment
-  // *before* loading the content, because InsertMathObject sizes and
-  // aligns inline math from document()->defaultFont() at insertion time.
+  // 顺序很重要（UI 方案 §6）：在加载内容*之前*先建立 12pt/150% 的字体环境，
+  // 因为 InsertMathObject 在插入时依据 document()->defaultFont() 来确定行内
+  // 数学公式的尺寸与对齐。
   editor->SetBodyTypography(theme::EditorFont(theme::BlockVisualRole::Body),
                             theme::typography::kBodyLineHeight);
   editor->SetContent(content);
@@ -1021,12 +997,11 @@ QWidget *BlockEditor::MakeTextCard(const QString &node_id,
   editor->setProperty("row_outline_key", outline_key);
   editor->setPlaceholderText(
       QStringLiteral("Write text…  Ctrl+Enter adds a new block"));
-  // Pills render with the document-wide numbering / label maps (citation
-  // plan §3): the row's Citation object stays semantic, only its paint
-  // depends on these.
+  // Pill 使用文档范围的编号/标签映射进行渲染（引用方案 §3）：行内的 Citation
+  // 对象保持语义化，仅其绘制依赖这些映射。
   editor->SetCitationNumbers(citation_numbers_);
   editor->SetCrossReferenceLabels(CrossReferenceLabels());
-  editor->installEventFilter(this); // focus state + outline sync
+  editor->installEventFilter(this); // 焦点状态 + 大纲同步
 
   connect(editor, &InlineEditor::Committed, this, [this, editor, node_id]() {
     for (auto &block : blocks_) {
@@ -1050,9 +1025,8 @@ QWidget *BlockEditor::MakeTextCard(const QString &node_id,
   });
 
   card_layout->addWidget(editor);
-  // The format strip belongs to the block's chrome, not its content: it
-  // appears on hover/focus so an idle paragraph reads as pure text (UI
-  // plan §2). Stored as a property so UpdateCardState can toggle it.
+  // 格式条属于块的装饰，而非其内容：它在悬停/聚焦时出现，使空闲的段落读起来
+  // 就是纯文本（UI 方案 §2）。以属性形式存储，方便 UpdateCardState 切换。
   QWidget *format_bar = BuildFormatToolbar(editor);
   card_layout->addWidget(format_bar);
   card->setProperty("format_bar", QVariant::fromValue(format_bar));
@@ -1074,8 +1048,8 @@ QWidget *BlockEditor::MakeTextCard(const QString &node_id,
 QWidget *BlockEditor::MakeEquationCard(const QString &node_id,
                                        const pf::EquationBlock &equation,
                                        const QString &outline_key) {
-  // Design §4: the equation row owns LaTeX Source, Preview, Numbered and
-  // Label. The user only ever edits the math body.
+  // 设计 §4：公式行拥有 LaTeX Source、Preview、Numbered 和 Label。
+  // 用户始终只编辑数学正文。
   auto *card = MakeCard(node_id, QStringLiteral("Equation"),
                         QStringLiteral("equation"), true);
   auto *card_layout = qobject_cast<QVBoxLayout *>(card->layout());
@@ -1130,16 +1104,15 @@ QWidget *BlockEditor::MakeEquationCard(const QString &node_id,
   controls_layout->addWidget(label_edit, 1);
   card_layout->addWidget(controls);
 
-  // P0-07: per-card async render state. `card_id` is unique per card and
-  // registered with the service; the generation guards against a reply that
-  // arrives after a newer request for the same card.
+  // P0-07：逐卡片的异步渲染状态。`card_id` 每张卡片唯一，并向服务注册；
+  // generation 用于防范在同一卡片已有更新请求之后才到达的应答。
   const QString card_id = QStringLiteral("equation-card-") + node_id;
-  // The generation lives on the heap: the service connection below outlives
-  // this function, so capturing a reference to a stack local would leave the
-  // lambda reading freed memory (ASan: stack-use-after-return).
+  // generation 存放在堆上：下面的服务连接会存活到本函数返回之后，
+  // 因此捕获栈局部变量的引用会让 lambda 读取已释放的内存
+  // （ASan: stack-use-after-return）。
   auto preview_generation = std::make_shared<std::uint64_t>(0);
 
-  // Source changed -> validation -> request render -> preview (design §7).
+  // 源码变化 -> 校验 -> 请求渲染 -> 预览（设计 §7）。
   auto refresh = [preview, status, card_id, preview_generation](
                      const QString &latex) {
     const pf::MathValidation validation =
@@ -1157,17 +1130,15 @@ QWidget *BlockEditor::MakeEquationCard(const QString &node_id,
     }
     MathRenderStyle style;
     style.font_px = 22;
-    // P0-07: render on the shared worker thread. The card registers its own
-    // client so the reply is routed back to this label and a late reply for
-    // an older body is discarded by the service's generation check.
+    // P0-07：在共享 worker 线程上渲染。卡片注册自己的客户端，以便应答被路由
+    // 回该标签，而针对旧正文的迟到应答会被服务的 generation 检查丢弃。
     preview->setText(QStringLiteral("…"));
     preview->setPixmap(QPixmap());
     *preview_generation = MathRenderService::Shared()->Request(
         card_id, QStringLiteral("display"), latex, style);
   };
-  // P0-07: apply the asynchronous result to this card only. The service
-  // already dropped replies from a superseded generation; the id + generation
-  // check here keeps a recycled card from showing a foreign formula.
+  // P0-07：仅将异步结果应用到本卡片。服务已经丢弃了来自被取代 generation 的
+  // 应答；此处的 id + generation 检查可防止被复用的卡片显示出别的公式。
   MathRenderService* math_service = MathRenderService::Shared();
   math_service->RegisterClient(card_id, preview);
   connect(math_service, &MathRenderService::mathRendered, preview,
@@ -1218,9 +1189,8 @@ QWidget *BlockEditor::MakeEquationCard(const QString &node_id,
     }
   });
 
-  // Numbered / label changes are separate attributes; they commit at once.
-  // The block is looked up by its editor because `blocks_` can reallocate
-  // while the rest of the document is still being rebuilt.
+  // Numbered / label 的变更是独立属性；它们会立即提交。块通过其编辑器查找，
+  // 因为文档其余部分仍在重建期间 `blocks_` 可能重新分配。
   connect(numbered, &QCheckBox::toggled, this,
           [this, source, label_edit](bool on) {
             for (auto &candidate : blocks_) {
@@ -1249,13 +1219,12 @@ QWidget *BlockEditor::MakeEquationCard(const QString &node_id,
   return card;
 }
 
-// ---------------- P0-05: shared block-card factory ----------------
+// ---------------- P0-05：共享块卡片工厂 ----------------
 //
-// Before this split the Section loop knew all four block kinds while the
-// Subsection and Subsubsection loops only handled Paragraph and Equation, so
-// a Figure or Table nested below a Section rendered nowhere: the document
-// held it, the outline listed it, but the editor showed nothing. One factory
-// plus one append path now serves every heading level.
+// 在这次拆分之前，Section 循环认识全部四种块类型，而 Subsection 和
+// Subsubsection 循环只处理 Paragraph 和 Equation，因此在 Section 之下嵌套的
+// Figure 或 Table 无处渲染：文档持有它，大纲列出它，但编辑器什么都不显示。
+// 现在一个工厂加一条追加路径即可服务所有标题层级。
 
 QWidget *BlockEditor::MakeFigureCard(const pf::Figure &figure,
                                      const QString &outline_key) {
@@ -1269,8 +1238,8 @@ QWidget *BlockEditor::MakeFigureCard(const pf::Figure &figure,
           .arg(theme::kSidePanel, theme::kDivider, theme::kSecondaryText));
   const QString path =
       asset_path_resolver_ ? asset_path_resolver_(figure.asset_id) : QString();
-  // Scale to the editor column width, not a fixed box: the label keeps the
-  // full image visible and re-fits it whenever the pane resizes.
+  // 缩放到编辑器列宽，而非固定框：标签保持完整图像可见，
+  // 并在窗格尺寸变化时重新适配。
   image->SetSourcePixmap(path.isEmpty() ? QPixmap() : QPixmap(path));
   card_layout->addWidget(image);
   auto *caption = NewEditor(card,
@@ -1285,9 +1254,9 @@ QWidget *BlockEditor::MakeFigureCard(const pf::Figure &figure,
   caption->setProperty("row_focus_key", node_id);
   caption->setProperty("row_outline_key", outline_key);
   caption->setProperty("commands_enabled", true);
-  // Single- vs double-column figure. Recorded on the document whatever the
-  // template is; only a two-column template exports a difference (see
-  // LatexRenderer: DoubleColumn emits the starred float).
+  // 单栏 vs 双栏图片。无论模板是什么都记录在文档上；
+  // 只有双栏模板才会导出差异（见 LatexRenderer：DoubleColumn 会输出带星号的
+  // 浮动体）。
   auto *span_box = new QCheckBox(
       QStringLiteral("Span both columns (double-column figure)"), card);
   span_box->setChecked(figure.span == pf::FigureSpan::DoubleColumn);
@@ -1403,8 +1372,8 @@ void BlockEditor::AppendBlocks(const std::vector<pf::Block> &blocks,
     if (card == nullptr)
       continue;
     host_layout->insertWidget(host_layout->count() - 1, card);
-    // A gap follows every body block (including the last), so the pointer
-    // never has to travel to a toolbar to add the next one.
+    // 每个正文块之后都跟一个间隙（包括最后一个），因此指针无需移动到工具栏
+    // 就能添加下一个块。
     const QString anchor = std::visit(
         [](const auto &typed) { return QString::fromStdString(typed.id.value()); },
         block);
@@ -1421,12 +1390,12 @@ QWidget *BlockEditor::MakeCard(const QString &node_id, const QString &kind,
   card->setProperty("commit_role", commit_role);
 
   auto *card_layout = new QVBoxLayout(card);
-  // Thin chrome (UI plan §2): the card padding comes from the theme, with
-  // per-role whitespace so headings and front matter keep their identity.
+  // 纤细外观（UI 方案 §2）：卡片内边距来自主题，并按角色保留留白，
+  // 使标题和前置信息保持各自的辨识度。
   card_layout->setContentsMargins(CardMarginsFor(RoleForKind(kind)));
   card_layout->setSpacing(2);
 
-  // Hover header (space always reserved to avoid layout jumps, design #61).
+  // 悬停表头（始终预留空间以避免布局跳动，设计 #61）。
   auto *header = new QWidget(card);
   header->setFixedHeight(theme::spacing::kBlockHeaderHeight);
   auto *header_layout = new QHBoxLayout(header);
@@ -1438,16 +1407,15 @@ QWidget *BlockEditor::MakeCard(const QString &node_id, const QString &kind,
       QString("color: %1; font-size: 8pt; font-weight: 600;"
               " letter-spacing: 0.4px;")
           .arg(theme::kSecondaryText));
-  // The Text row's label is pure noise while reading prose (UI plan §2):
-  // it appears on hover/focus only. Abstract/Keywords keep their small
-  // uppercase identity label permanently (UI plan §8).
+  // 阅读正文时 Text 行的标签纯属噪音（UI 方案 §2）：它仅在悬停/聚焦时出现。
+  // Abstract/Keywords 则永久保留其小型大写标识标签（UI 方案 §8）。
   const bool hover_only_label = kind == QLatin1String("Text");
   type_label->setProperty("hover_only", hover_only_label);
   header_layout->addWidget(handle);
   header_layout->addWidget(type_label);
   header_layout->addStretch(1);
 
-  // More ("⋯") button with a context menu.
+  // More（「⋯」）按钮，带上下文菜单。
   auto *more = new QToolButton(header);
   more->setText("⋯");
   more->setAutoRaise(true);
@@ -1518,7 +1486,7 @@ QWidget *BlockEditor::MakeCard(const QString &node_id, const QString &kind,
   type_label->setVisible(header_inline && !hover_only_label);
   more->setVisible(false);
 
-  // Hover / focus / missing / flash chrome (design #4, UI plan §9).
+  // 悬停 / 聚焦 / 缺失 / 闪烁外观（设计 #4，UI 方案 §9）。
   card->setProperty("card_hover", false);
   card->setProperty("card_focus", false);
   card->setProperty("card_missing", false);
@@ -1528,15 +1496,14 @@ QWidget *BlockEditor::MakeCard(const QString &node_id, const QString &kind,
   return card;
 }
 
-// The single place a block card's visual state is composed (UI plan §9):
-//   idle     transparent 2px left line, no background
-//   hover    #FAFBFC wash
-//   focused  2px accent line, near-white background
-//   missing  2px error line, faint ErrorSoft wash
-//   flash    2px accent line + AccentSoft wash (problem navigation, brief)
-// The header chrome (grip / hover-only label / more button) follows the same
-// hover || focus condition. No full rectangular border is ever drawn: the
-// visual focus stays on the text, not on the control.
+// 组合块卡片视觉状态的唯一场所（UI 方案 §9）：
+//   idle     透明的 2px 左侧线，无背景
+//   hover    #FAFBFC 淡色
+//   focused  2px 强调色线，近白色背景
+//   missing  2px 错误色线，淡淡的 ErrorSoft 淡色
+//   flash    2px 强调色线 + AccentSoft 淡色（问题导航，短暂）
+// 表头外观（抓手 / 仅悬停标签 / more 按钮）遵循同样的 hover || focus 条件。
+// 绝不绘制完整的矩形边框：视觉焦点始终停留在文本上，而非控件上。
 void BlockEditor::UpdateCardState(QWidget *card) {
   if (!card)
     return;
@@ -1566,8 +1533,8 @@ void BlockEditor::UpdateCardState(QWidget *card) {
                           .arg(theme::spacing::kCardRadius));
 
   const bool chrome = hover || focus;
-  // The format strip is part of the chrome: a focused row reveals its
-  // editing tools, an idle row shows only text (UI plan §2).
+  // 格式条是外观的一部分：聚焦的行会显示其编辑工具，空闲的行只显示文本
+  // （UI 方案 §2）。
   if (auto *bar = card->property("format_bar").value<QWidget *>()) {
     bar->setVisible(chrome);
   }
@@ -1598,8 +1565,8 @@ QPlainTextEdit *BlockEditor::NewEditor(QWidget *card, const QString &text,
                                        theme::BlockVisualRole role,
                                        bool single_line) {
   auto *edit = new BlockEdit(single_line, card);
-  // Font environment before text (UI plan §6): metrics, line height and
-  // the placeholder minimum all derive from the role's font.
+  // 先设置字体环境，再设置文本（UI 方案 §6）：度量、行高和占位符最小高度
+  // 都源自角色的字体。
   edit->SetTypography(theme::EditorFont(role), theme::LineHeightFor(role));
   edit->SetInitialText(text);
   edit->setStyleSheet(
@@ -1609,9 +1576,8 @@ QPlainTextEdit *BlockEditor::NewEditor(QWidget *card, const QString &text,
           .arg(theme::IsSecondaryRole(role) ? theme::kSecondaryText
                                             : theme::kPrimaryText,
                theme::kAccentSoft));
-  // Minimum height for placeholders (the abstract asks for three lines),
-  // scaled by the role's line height so the empty state matches the
-  // loaded one.
+  // 占位符的最小高度（abstract 要求三行），按角色的行高缩放，
+  // 使空状态与已加载状态一致。
   const int line_height = theme::LineHeightFor(role);
   const qreal line_scale = line_height > 0 ? line_height / 100.0 : 1.0;
   const int min_h =
@@ -1656,8 +1622,8 @@ void BlockEditor::ReflowRow(QWidget *card, const QString &node_id) {
   editor->setTextCursor(cursor);
   if (block_edit)
     block_edit->EndProgrammaticEdit();
-  // Commit at once: the point of the action is to persist the re-flow, not
-  // to leave it waiting for a focus change.
+  // 立即提交：该动作的意义在于持久化重新排布的结果，
+  // 而不是让它等待焦点变化。
   CommitBlock(*target);
   RevealNode(node_id);
 }
@@ -1665,8 +1631,8 @@ void BlockEditor::ReflowRow(QWidget *card, const QString &node_id) {
 void BlockEditor::CommitBlock(Block &block) {
   if (rebuilding_)
     return;
-  // A Text row commits through its InlineEditor (rich content); every other
-  // row is a plain BlockEdit.
+  // Text 行通过其 InlineEditor 提交（富文本内容）；其他所有行都是普通的
+  // BlockEdit。
   if (block.inline_editor) {
     const InlineContent content = block.inline_editor->Content();
     if (content == block.committed_content) {
@@ -1684,15 +1650,14 @@ void BlockEditor::CommitBlock(Block &block) {
     return;
   auto *edit = qobject_cast<BlockEdit *>(block.editor);
   QString text = block.editor->toPlainText();
-  // Prose may still carry the hard line breaks of a paste; softening them is
-  // output-neutral (LaTeX treats a single break as a space) and lets the
-  // paragraph re-flow to the block width.
+  // 正文可能仍带有粘贴时的硬换行；柔化它们对输出无影响（LaTeX 将单个换行视
+  // 为空格），并让段落能按块宽度重新排布。
   if (IsProseRole(block.commit_role)) {
     text = ToQ(pf::ReflowHardWrappedText(ToStd(text)));
   }
-  // Nothing changed since the document last saw this row: no edit, so no
-  // documentChanged -> no rebuild. This is what stops restyling or simply
-  // focusing a row from cycling into a full editor rebuild.
+  // 自文档上次看到该行以来没有任何变化：没有编辑，因此没有 documentChanged
+  // -> 没有重建。这正是阻止「重新设置样式」或仅仅聚焦某行陷入完整编辑器重建
+  // 循环的原因。
   if (text == block.committed_text) {
     if (edit)
       edit->MarkClean();
@@ -1729,14 +1694,13 @@ void BlockEditor::CommitBlock(Block &block) {
 
 bool BlockEditor::eventFilter(QObject *watched, QEvent *event) {
   const QEvent::Type type = event->type();
-  // Keep the reading column centered when the pane resizes (splitter drag,
-  // focus mode, window resize).
+  // 窗格尺寸变化时（拖动分隔条、专注模式、窗口缩放）保持阅读列居中。
   if (scroll_ && watched == scroll_->viewport() && type == QEvent::Resize) {
     CenterContentColumn();
     return false;
   }
-  // Hover chrome for block cards (design #4). The style itself is composed
-  // in UpdateCardState; the filter only records the state.
+  // 块卡片的悬停外观（设计 #4）。样式本身在 UpdateCardState 中组合；
+  // 过滤器只记录状态。
   if (type == QEvent::Enter || type == QEvent::Leave) {
     auto *card = qobject_cast<QFrame *>(watched);
     if (card && card->objectName() == "blockCard") {
@@ -1745,8 +1709,8 @@ bool BlockEditor::eventFilter(QObject *watched, QEvent *event) {
     }
     return false;
   }
-  // Row focus: accent line on the card and reverse outline sync (UI plan
-  // §9/§10). Every row editor (BlockEdit and InlineEditor) is filtered.
+  // 行聚焦：卡片上的强调色线，以及反向大纲同步（UI 方案 §9、§10）。
+  // 每个行编辑器（BlockEdit 和 InlineEditor）都会被过滤。
   if (type == QEvent::FocusIn || type == QEvent::FocusOut) {
     if (auto *card = CardOf(watched)) {
       card->setProperty("card_focus", type == QEvent::FocusIn);
@@ -1761,7 +1725,7 @@ bool BlockEditor::eventFilter(QObject *watched, QEvent *event) {
     return false;
   }
 
-  // Key wiring from editors.
+  // 来自各编辑器的按键接线。
   auto *edit = qobject_cast<BlockEdit *>(watched);
   if (edit && type == QEvent::KeyPress) {
     auto *key_event = static_cast<QKeyEvent *>(event);
@@ -1818,8 +1782,7 @@ void BlockEditor::BuildAuthorBindingPanel(QWidget *card,
           QString("color: %1; font-size: 9pt;").arg(theme::kPrimaryText));
       row_layout->addWidget(name);
 
-      // The button shows the current numbers, so the binding is visible
-      // without opening anything.
+      // 按钮显示当前的编号，因此无需打开任何东西就能看到绑定关系。
       QStringList current;
       for (size_t a = 0; a < front.affiliations.size(); ++a) {
         for (const auto &link : author.affiliations) {
@@ -1885,7 +1848,7 @@ QWidget *BlockEditor::MakeGap(const QString &anchor) {
       [this, anchor](QWidget *source) { ShowInsertMenu(anchor, source); },
       [this, anchor](const QString &node) {
         if (anchor.isEmpty()) {
-          // The body is empty, so there is nothing to reorder into.
+          // 正文为空，因此没有可重排进去的内容。
           return;
         }
         if (node == anchor)
@@ -1929,8 +1892,7 @@ void BlockEditor::ShowInsertMenu(const QString &anchor, QWidget *source) {
 }
 
 void BlockEditor::OpenSlashMenu(QPlainTextEdit *origin) {
-  // Same rules as the gap menu: filtered by the container the row belongs
-  // to and by the template's heading depth.
+  // 规则与间隙菜单相同：按该行所属的容器以及模板的标题深度进行过滤。
   QString row_node;
   for (const auto &block : blocks_) {
     if (block.editor == origin) {
@@ -1974,21 +1936,18 @@ void BlockEditor::OpenSlashMenu(QPlainTextEdit *origin) {
 }
 
 void BlockEditor::RebuildFromDocument(const Document &doc) {
-  // The insert menus resolve anchors against this document until the next
-  // rebuild; MainWindow keeps the session alive for the editor's lifetime,
-  // and rebuilds always pass the current document.
+  // 在下一次重建之前，插入菜单都以本文档解析锚点；MainWindow 会让 session
+  // 存活至编辑器的整个生命周期，而重建始终传入当前文档。
   container_document_ = &doc;
-  // Save focus, and the live text of a row the user is still editing. That
-  // text wins over the document: a rebuild triggered from anywhere else
-  // must never discard what is currently being typed.
+  // 保存焦点，以及用户仍在编辑的行的当前文本。该文本优先于文档：从其他任何
+  // 地方触发的重建都绝不能丢弃当前正在输入的内容。
   focus_node_.clear();
   focus_pos_ = 0;
   QString pending_key;
   QString pending_text;
   bool has_pending = false;
-  // A rich row keeps its caret across the rebuild too: the citation picker
-  // commits through a row rebuild and expects typing to continue exactly
-  // where the pill was inserted (citation plan §4).
+  // 富文本行在重建期间同样保留其光标：引用选择器通过一次行重建来提交，
+  // 并期望输入精确地从插入 pill 的位置继续（引用方案 §4）。
   if (auto *rich = qobject_cast<InlineEditor *>(focusWidget())) {
     focus_node_ = rich->property("row_focus_key").toString();
     focus_pos_ = rich->textCursor().position();
@@ -2005,9 +1964,8 @@ void BlockEditor::RebuildFromDocument(const Document &doc) {
 
   rebuilding_ = true;
   auto *host_layout = qobject_cast<QVBoxLayout *>(host_->layout());
-  // Clear every widget from the previous pass, keeping only the trailing
-  // stretch. Rows and gaps are both created per rebuild, and a survivor
-  // would keep stealing hover and clicks from the rows drawn over it.
+  // 清空上一轮的所有控件，只保留末尾的 stretch。行和间隙都在每次重建时创建，
+  // 若有残留控件存活，它会持续从覆盖其上的行那里抢走悬停和点击。
   for (int i = host_layout->count() - 1; i >= 0; --i) {
     QLayoutItem *item = host_layout->itemAt(i);
     if (item == nullptr || item->widget() == nullptr)
@@ -2019,8 +1977,8 @@ void BlockEditor::RebuildFromDocument(const Document &doc) {
     delete item;
   }
   blocks_.clear();
-  // A gap follows every body block (including the last), so the pointer
-  // never has to travel to a toolbar to add the next one.
+  // 每个正文块之后都跟一个间隙（包括最后一个），因此指针无需移动到工具栏
+  // 就能添加下一个块。
   auto append_gap = [&](const QString &anchor) {
     host_layout->insertWidget(host_layout->count() - 1, MakeGap(anchor));
   };
@@ -2035,18 +1993,16 @@ void BlockEditor::RebuildFromDocument(const Document &doc) {
     const bool restore_pending = has_pending && focus_key == pending_key;
     QString row_text = restore_pending ? pending_text : text;
     if (IsProseRole(commit_role) && !restore_pending) {
-      // Never re-flow while the user is typing in the row.
+      // 用户正在该行输入时绝不重新排布。
       row_text = ToQ(pf::ReflowHardWrappedText(ToStd(row_text)));
     }
-    // Role selects the font + line height (UI plan §3/§5): the title,
-    // authors, abstract, section/sub/subsub headings and prose each read
-    // at the size and weight of the unified GUI typography table.
+    // 角色决定字体 + 行高（UI 方案 §3、§5）：标题、作者、摘要、节/小节/小小节
+    // 标题以及正文，都按统一 GUI 排版表的字号和字重呈现。
     QPlainTextEdit *edit =
         NewEditor(card, row_text, min_lines, RoleForKind(kind), single_line);
     if (auto *block_edit = qobject_cast<BlockEdit *>(edit)) {
       if (restore_pending) {
-        // The model text is the baseline so the user's text is still
-        // committed on focus-out.
+        // 模型文本作为基线，因此用户的文本仍会在失焦时提交。
         block_edit->BeginProgrammaticEdit();
         block_edit->EndProgrammaticEdit();
         block_edit->MarkClean();
@@ -2074,8 +2030,8 @@ void BlockEditor::RebuildFromDocument(const Document &doc) {
       if (block_edit)
         block_edit->EndProgrammaticEdit();
     };
-    // Font + weight are already set from the role; here only the reading
-    // affordances (placeholder, centring) differ per front-matter kind.
+    // 字体 + 字重已由角色设置好；这里只按前置信息类型差异设置阅读辅助
+    // （占位符、居中）。
     if (kind == "Title") {
       edit->setPlaceholderText("Untitled paper");
       center_text();
@@ -2105,17 +2061,17 @@ void BlockEditor::RebuildFromDocument(const Document &doc) {
     block.card = card;
     block.editor = edit;
     block.commit_role = commit_role;
-    block.committed_text = text; // what the document holds for this row
+    block.committed_text = text; // 文档为该行保存的内容
     block.outline_key = outline_key;
     if (restore_pending) {
-      // Keep it dirty: the user's uncommitted text is still pending.
+      // 保持其为脏：用户未提交的文本仍处于待处理状态。
       if (auto *restored = qobject_cast<BlockEdit *>(edit)) {
         restored->MarkDirty();
       }
     }
-    // Commit on Enter (commit signal) - the BlockEdit emits
-    // CommitRequested on Enter AND focusOut; we want focus-out commit,
-    // Enter just moves on. Wire it:
+    // 在 Enter 时提交（commit 信号）——BlockEdit 会在 Enter 和 focusOut 时
+    // 都发出 CommitRequested；我们需要的是失焦提交，Enter 只是继续移动。
+    // 接线如下：
     BlockEdit *block_edit = qobject_cast<BlockEdit *>(edit);
     connect(block_edit, &BlockEdit::CommitRequested, this, [this, edit]() {
       for (auto &b : blocks_) {
@@ -2137,9 +2093,8 @@ void BlockEditor::RebuildFromDocument(const Document &doc) {
     return card;
   };
 
-  // Front matter. Its rows are not outline nodes, so they pass an empty
-  // outline key (the Abstract is the exception: it is reachable from the
-  // outline as "front:abstract").
+  // 前置信息。其行不是大纲节点，因此传入空的大纲键（Abstract 是例外：
+  // 它可通过 "front:abstract" 从大纲访问）。
   const auto &fm = doc.front_matter();
   add("", "Title", "title", ToQ(pf::InlineToPlainText(fm.title)), QString(),
       true, 1, true);
@@ -2148,7 +2103,7 @@ void BlockEditor::RebuildFromDocument(const Document &doc) {
     if (i)
       authors += " · ";
     authors += ToQ(fm.authors[i].name);
-    // affiliation superscripts
+    // 机构上标
     for (const auto &aff_id : fm.authors[i].affiliations) {
       for (size_t a = 0; a < fm.affiliations.size(); ++a) {
         if (fm.affiliations[a].id == aff_id) {
@@ -2185,16 +2140,16 @@ void BlockEditor::RebuildFromDocument(const Document &doc) {
   }
   add("", "Keywords", "keywords", keywords, QString(), true, 1, true);
 
-  // Body.
+  // 正文。
   if (doc.body().sections.empty()) {
-    // Nothing to hover between yet: offer to start the body.
+    // 尚无内容可供悬停：提示开始撰写正文。
     append_gap(QString());
   }
   for (const auto &section : doc.body().sections) {
     const QString section_key = ToQ(section.id.value());
     add(section_key, "Section Title", "section",
         ToQ(pf::InlineToPlainText(section.title)), section_key, true, 1, true);
-    // P0-05: one append path for every block kind at every heading level.
+    // P0-05：每个标题层级的所有块类型都走这一条追加路径。
     AppendBlocks(section.blocks, section_key);
     for (const auto &sub : section.subsections) {
       const QString sub_key = ToQ(sub.id.value());
@@ -2213,10 +2168,10 @@ void BlockEditor::RebuildFromDocument(const Document &doc) {
 
   ApplyHints();
 
-  // Restore focus.
+  // 恢复焦点。
   if (!focus_node_.isEmpty()) {
     for (const auto &block : blocks_) {
-      // Text rows: the rich editor, caret clamped to its document.
+      // Text 行：富文本编辑器，光标钳制在其文档内。
       if (block.inline_editor &&
           block.inline_editor->property("row_focus_key").toString() ==
               focus_node_) {
@@ -2267,8 +2222,8 @@ void BlockEditor::ApplyHints() {
     }
     if (!block.card)
       continue;
-    // The style is composed in UpdateCardState from this flag; no
-    // per-site stylesheet (UI plan §9).
+    // 样式在 UpdateCardState 中根据此标志组合；没有逐处设置的样式表
+    // （UI 方案 §9）。
     block.card->setProperty("card_missing", missing);
     UpdateCardState(block.card);
   }
@@ -2276,7 +2231,7 @@ void BlockEditor::ApplyHints() {
 
 void BlockEditor::SetReferenceItems(std::vector<PopupList::Item> items) {
   reference_items_ = std::move(items);
-  // Cross-reference pills display the target's label.
+  // 交叉引用 pill 显示目标的标签。
   const auto labels = CrossReferenceLabels();
   for (auto &block : blocks_) {
     if (block.inline_editor) {
@@ -2291,19 +2246,17 @@ void BlockEditor::SetAssetPathResolver(
 }
 
 bool BlockEditor::HasUncommittedFocus() const {
-  // A modal formula editor temporarily owns focus, but its row still
-  // contains the pending edit and must survive document notifications.
-  // So does a row with an open citation/reference picker: the picker will
-  // insert into *that* widget and commit it itself (citation plan §4).
+  // 模态公式编辑器会暂时拥有焦点，但它所在的行仍包含待处理的编辑，
+  // 必须能在文档通知中存活。打开了引用/交叉引用选择器的行也是如此：
+  // 选择器会插入到*那个*控件中并自行提交它（引用方案 §4）。
   for (const auto &block : blocks_) {
     if (block.inline_editor && (block.inline_editor->IsMathEditorOpen() ||
                                 block.inline_editor->IsProtectedInsertOpen())) {
       return true;
     }
   }
-  // Text rows (InlineEditor) carry uncommitted input just like the plain
-  // rows; a rebuild while either is dirty would destroy what is being
-  // typed - and, for a rich row, the format state too.
+  // Text 行（InlineEditor）与普通行一样带有未提交的输入；在任一方为脏时重建
+  // 都会销毁正在输入的内容——对富文本行而言，还会销毁格式状态。
   if (auto *rich = qobject_cast<InlineEditor *>(focusWidget())) {
     return rich->IsDirty();
   }
@@ -2350,17 +2303,16 @@ std::optional<QString> BlockEditor::FocusedNodeId() const {
 
 void BlockEditor::RevealNode(const QString &node_id) {
   for (const auto &block : blocks_) {
-    // Front-matter rows (Abstract, Title) are addressed by their row key,
-    // real blocks by their node id.
+    // 前置信息行（Abstract、Title）通过其行键寻址，
+    // 真实块则通过其 node id 寻址。
     const bool matches =
         block.node_id == node_id ||
         (block.editor &&
          block.editor->property("row_focus_key").toString() == node_id);
     if (matches && block.card) {
-      // Problem navigation lands here (Build Diagnostics plan §26, UI
-      // plan §9): scroll, brief accent flash, and move focus into the
-      // row. The flash is a property, not a hand-written stylesheet, so
-      // it composes with the focus/hover state instead of overriding it.
+      // 问题导航会落到这里（Build Diagnostics 方案 §26，UI 方案 §9）：
+      // 滚动、短暂强调色闪烁，并将焦点移入该行。闪烁是一个属性，而非手写的
+      // 样式表，因此它会与聚焦/悬停状态组合，而不是覆盖它们。
       scroll_->ensureWidgetVisible(block.card, 0, 80);
       QWidget *revealed = block.card;
       revealed->setProperty("card_flash", true);

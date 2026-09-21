@@ -22,13 +22,11 @@ namespace pf {
 struct BuildSnapshot {
   ProjectId project_id;
   std::string snapshot_id;
-  // Resolved by the session when the snapshot was captured (plan §14): the
-  // engine is the template's decision, carried with the request so the
-  // compile stage never re-derives it from the document.
+  // 由 session 在捕获 snapshot 时解析（方案 §14）：engine 是模板的决定，
+  // 随请求一同携带，使 compile 阶段绝不会从 document 重新推导。
   BuildToolchain toolchain;
-  // Identity of this build attempt. Minted with the snapshot so the
-  // application thread can tell one attempt from another when the result
-  // comes back.
+  // 本次 build 尝试的身份标识。与 snapshot 一同生成，使结果返回时
+  // 应用线程能区分不同的尝试。
   BuildId build_id;
   ProjectRevision revision;
   std::shared_ptr<const Document> document;
@@ -54,8 +52,8 @@ struct BuildResult {
   };
 
   Outcome outcome = Outcome::Failure;
-  // Classification of a failure (plan §37): runtime problems are distinct
-  // from document LaTeX problems so the UI never mixes them.
+  // 失败分类（方案 §37）：运行时问题与 document 的 LaTeX 问题相互区分，
+  // 使 UI 绝不会将二者混淆。
   CompileFailureKind failure_kind = CompileFailureKind::None;
   ProjectId project_id;
   std::string snapshot_id;
@@ -64,9 +62,9 @@ struct BuildResult {
   std::filesystem::path pdf_path;
   std::string log;
   std::vector<Diagnostic> diagnostics;
-  // Session bookkeeping (Build Diagnostics plan §3): the wall-clock span of
-  // the attempt and the compiler's exit code, so the Build Log footer can
-  // show "Duration: 1.662 s" and the success rule is auditable (§31).
+  // Session 记账（Build Diagnostics 方案 §3）：本次尝试的墙上时钟时长与
+  // 编译器的退出码，使 Build Log 页脚能显示「Duration: 1.662 s」，
+  // 且成功判定可审计（§31）。
   std::int64_t started_ms = 0;
   std::int64_t finished_ms = 0;
   int exit_code = -1;
@@ -77,23 +75,22 @@ public:
   struct Host {
     std::function<ProjectId()> project_id;
     std::function<std::string()> workspace_root;
-    // TEMP-DEBUG: project-local directory for dumping generated LaTeX
-    // (e.g. <project>/.paperforge/build). Empty optional disables dumps.
+    // TEMP-DEBUG：用于转储生成的 LaTeX 的项目本地目录
+    //（例如 <project>/.paperforge/build）。optional 为空时禁用转储。
     std::function<std::optional<std::string>()> debug_dump_dir;
     std::function<void(const BuildResult &)> on_build_finished;
     std::function<void(BuildPhase, BuildPhase)> on_phase_changed;
-    // Structured lifecycle events (Build Diagnostics plan §4). Emitted on the
-    // worker thread for every step of a build, each carrying the build id it
-    // belongs to. The host republishes them to the application thread; the
-    // Build Log view renders them. The compiler also streams stdout/stderr
-    // here so the log grows live during a compile (§44).
+    // 结构化的生命周期事件（Build Diagnostics 方案 §4）。在 worker 线程上
+    // 为 build 的每一步发出，每个事件携带其所属的 build id。host 将它们
+    // 转发到应用线程；Build Log 视图负责渲染。编译器也在此流式输出
+    // stdout/stderr，使日志在 compile 期间实时增长（§44）。
     std::function<void(const BuildEvent &)> on_build_event;
   };
 
   BuildCoordinator(Host host, ICompiler *compiler);
-  // Production form (plan §13): the coordinator asks for a compiler per
-  // build, chosen from the snapshot's toolchain. Exactly one of the two
-  // constructors is used for the coordinator's lifetime.
+  // 生产形式（方案 §13）：coordinator 为每次 build 请求一个 compiler，
+  // 由 snapshot 的 toolchain 选定。coordinator 的生命周期内只会使用
+  // 这两个构造函数之一。
   BuildCoordinator(
       Host host,
       std::function<std::unique_ptr<ICompiler>(const BuildToolchain &)>
@@ -111,8 +108,8 @@ public:
 private:
   void WorkerLoop();
   void SetPhase(BuildPhase phase);
-  // Publish one lifecycle event tagged with the build id (plan §4). No-op
-  // when the host has no sink, so tests that ignore events keep working.
+  // 发布一个带 build id 标记的生命周期事件（方案 §4）。host 未设置接收端时
+  // 为空操作，因此忽略事件的测试仍可正常工作。
   void EmitEvent(const BuildId &build_id, BuildEventType type,
                  std::string message) const;
   BuildResult BuildOne(const BuildSnapshot &snapshot);

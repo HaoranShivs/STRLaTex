@@ -29,7 +29,7 @@ std::string InlineToPlainText(const InlineContent& content) {
 bool InlineIsBlank(const InlineContent& content) {
     for (const auto& node : content) {
         const auto* run = std::get_if<TextRun>(&node);
-        if (!run) return false;  // equations/citations/refs count as content
+        if (!run) return false;  // 公式/引文/引用都算作内容
         for (char c : run->text) {
             if (!std::isspace(static_cast<unsigned char>(c))) return false;
         }
@@ -116,12 +116,12 @@ InlineContent InlineFromEditorText(std::string text) {
     return content;
 }
 
-// ---- Rich text (Stage B) ----
+// ---- 富文本（阶段 B）----
 
 namespace {
 
-// The fence that turns `marks` on/off in the editor representation. Emitted
-// and parsed symmetrically so the round trip is lossless.
+// 在编辑器表示形式中开关 `marks` 的围栏标记。生成与解析保持对称，
+// 因此往返无损。
 std::string FenceFor(std::uint8_t marks) {
     if (marks == (TextMark::Strong | TextMark::Emphasis)) return "***";
     if (marks == TextMark::Strong) return "**";
@@ -129,7 +129,7 @@ std::string FenceFor(std::uint8_t marks) {
     return {};
 }
 
-// True when a word boundary is needed between the last character and a fence.
+// 当最后一个字符与围栏之间需要词边界时为真。
 bool NeedsSpaceBeforeFence(const std::string& out) {
     if (out.empty()) return false;
     const char last = out.back();
@@ -149,14 +149,14 @@ std::string InlineToRichText(const InlineContent& content) {
             }
             if (NeedsSpaceBeforeFence(out)) out += ' ';
             out += fence + run->text + fence;
-            // A fenced run followed by a letter would swallow the next word
-            // when parsed, so close with a boundary as well.
+            // 带围栏的 run 后紧跟字母时，解析会吞掉下一个单词，
+            // 因此同样要以边界收尾。
             if (!out.empty() && out.back() == fence.back()) {
-                // nothing extra: the closing fence already terminates the run
+                // 无需额外处理：闭合围栏已经终止了该 run
             }
         } else if (const auto* eq = std::get_if<InlineMath>(&node)) {
-            // GenerateInlineMath's delimiter, so the readable editor spelling
-            // matches the LaTeX the generator emits.
+            // 采用 GenerateInlineMath 的分隔符，使可读的编辑器写法
+            // 与生成器输出的 LaTeX 一致。
             out += "\\(" + eq->expression.latex + "\\)";
         } else if (const auto* cit = std::get_if<Citation>(&node)) {
             out += "[cite:";
@@ -174,15 +174,13 @@ std::string InlineToRichText(const InlineContent& content) {
 
 namespace {
 
-// True when `pos` starts a fence of exactly `count` asterisks that reads as
-// markup rather than as a literal asterisk in prose.
+// 当 `pos` 处开始的、恰好由 `count` 个星号组成的围栏被解读为标记而非
+// 行文中的字面星号时为真。
 //
-// Rules that keep "a * b" or "2***3" as text:
-//   * not part of a longer asterisk run,
-//   * either preceded by start-of-text/whitespace (opening) or preceded by
-//     text (closing),
-//   * and the character on the *content* side is not a space, so an opening
-//     fence actually hugs the words it marks.
+// 让 "a * b" 或 "2***3" 保持为文本的规则：
+//   * 不属于更长的星号连续段，
+//   * 前面要么是文本起始/空白（开启），要么是文本（闭合），
+//   * 且*内容*一侧的字符不是空格，这样开启围栏才真正紧贴它所标记的词。
 bool IsFence(const std::string& text, size_t pos, size_t count, bool opening) {
     if (pos + count > text.size()) return false;
     for (size_t i = 0; i < count; ++i) {
@@ -192,7 +190,7 @@ bool IsFence(const std::string& text, size_t pos, size_t count, bool opening) {
     const bool space_before =
         pos == 0 || std::isspace(static_cast<unsigned char>(text[pos - 1]));
     if (opening && !space_before) return false;
-    if (!opening && space_before) return false;  // a closer hugs the text
+    if (!opening && space_before) return false;  // 闭合标记紧贴文本
     const bool content_side_space =
         pos + count >= text.size() ||
         std::isspace(static_cast<unsigned char>(text[pos + count]));
@@ -207,8 +205,7 @@ InlineContent InlineFromRichText(const std::string& text) {
     std::string plain;
     std::uint8_t marks = 0;
 
-    // Close the pending run: merge into the previous run when marks match,
-    // otherwise start a new one.
+    // 结算待处理的 run：标记相同时并入上一个 run，否则新建一个。
     auto flush = [&]() {
         if (plain.empty()) return;
         if (!content.empty()) {
@@ -225,7 +222,7 @@ InlineContent InlineFromRichText(const std::string& text) {
 
     size_t i = 0;
     while (i < text.size()) {
-        // Semantic tokens first: they are never markup.
+        // 优先处理语义 token：它们绝不是标记。
         if (text.compare(i, 6, "[cite:") == 0 || text.compare(i, 5, "[ref:") == 0) {
             const size_t close = text.find(']', i);
             if (close != std::string::npos) {
@@ -237,9 +234,8 @@ InlineContent InlineFromRichText(const std::string& text) {
                 continue;
             }
         }
-        // Inline math. The canonical editor spelling is \(...\) because the
-        // user never types the delimiters; $...$ is still accepted so files
-        // written by the previous representation keep parsing.
+        // 内联公式。规范的编辑器写法是 \(...\)，因为用户从不输入分隔符；
+        // $...$ 仍然接受，以便按旧表示形式写出的文件继续可解析。
         if (text.compare(i, 2, "\\(") == 0) {
             const size_t close = text.find("\\)", i + 2);
             if (close != std::string::npos && close > i + 2) {
@@ -262,9 +258,9 @@ InlineContent InlineFromRichText(const std::string& text) {
                 continue;
             }
         }
-        // Character marks. Longest fence wins, so *** is a single toggle.
-        // A fence only counts as an opener/closer when it hugs the text, so
-        // prose like "a * b" or "x * y * z" survives untouched.
+        // 字符标记。最长围栏优先，因此 *** 是一次整体开关。
+        // 围栏只有在紧贴文本时才算作开启/闭合，因此
+        // "a * b" 或 "x * y * z" 这类行文原样保留。
         const std::uint8_t both = TextMark::Strong | TextMark::Emphasis;
         if (IsFence(text, i, 3, marks != both)) {
             flush();
@@ -300,7 +296,7 @@ bool InlineIsRich(const InlineContent& content) {
         if (const auto* run = std::get_if<TextRun>(&node)) {
             if (run->marks != 0) return true;
         } else {
-            return true;  // equation / citation / reference
+            return true;  // 公式/引文/引用
         }
     }
     return false;
@@ -308,7 +304,7 @@ bool InlineIsRich(const InlineContent& content) {
 
 namespace {
 
-// A line that starts like a list item, heading or quote keeps its own line.
+// 以列表项、标题或引用开头的那类行各自独占一行。
 bool StartsStructuredLine(const std::string& line) {
     if (line.empty()) return false;
     const char first = line[0];
@@ -316,7 +312,7 @@ bool StartsStructuredLine(const std::string& line) {
         first == '#' || first == '|') {
         return true;
     }
-    // "1." / "1)" / "1、" style enumerations.
+    // "1." / "1)" / "1、" 形式的枚举。
     size_t digits = 0;
     while (digits < line.size() &&
            std::isdigit(static_cast<unsigned char>(line[digits]))) {
@@ -325,7 +321,7 @@ bool StartsStructuredLine(const std::string& line) {
     if (digits > 0 && digits < line.size()) {
         const char next = line[digits];
         if (next == '.' || next == ')') return true;
-        // "、" (U+3001) as an enumeration separator.
+        // 以 "、"（U+3001）作为枚举分隔符。
         if (line.compare(digits, 3, "\xe3\x80\x81") == 0) return true;
     }
     return false;
@@ -356,9 +352,9 @@ std::string ReflowHardWrappedText(std::string_view text) {
         }
     }
     lines.push_back(current);
-    if (lines.size() < 3) return std::string(text);  // not hard-wrapped
+    if (lines.size() < 3) return std::string(text);  // 并非硬折行
 
-    // Anything carrying deliberate line structure is left alone.
+    // 任何带有刻意行结构的文本都保持原样。
     size_t short_lines = 0;
     for (const auto& raw : lines) {
         const std::string line = Trim(raw);
@@ -369,7 +365,7 @@ std::string ReflowHardWrappedText(std::string_view text) {
     }
     if (short_lines * 2 > lines.size()) return std::string(text);
 
-    // Merge single breaks into spaces; blank lines stay paragraph breaks.
+    // 将单个换行合并为空格；空行仍保留为段落分隔。
     std::string out;
     bool append_space = false;
     bool paragraph_break = false;

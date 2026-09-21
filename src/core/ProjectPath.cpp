@@ -26,18 +26,17 @@ bool ContainsNul(std::string_view raw) {
     return raw.find('\0') != std::string_view::npos;
 }
 
-// True when the drive/root part of `p` would make it absolute on any
-// platform. std::filesystem on POSIX ignores "C:/x" as a drive prefix (it
-// parses as a relative path), but such a path must be rejected anyway: the
-// file may be written on and opened from Windows.
+// 当 `p` 的驱动器/根部分在任何平台上都会使其成为绝对路径时返回 true。POSIX
+// 上的 std::filesystem 不把 "C:/x" 当作驱动器前缀（会解析为相对路径），但这类
+// 路径仍必须拒绝：文件可能在 Windows 上写入并打开。
 bool HasRootComponent(const std::filesystem::path& p) {
     if (p.is_absolute())
         return true;
-    // root_name: "C:" on Windows, empty on POSIX. root_directory: "/".
+    // root_name：Windows 上为 "C:"，POSIX 上为空。root_directory："/"。
     if (!p.root_name().empty() || !p.root_directory().empty())
         return true;
-    // POSIX-side detection of Windows spellings: "C:/x", "C:\\x" or
-    // "\\server\share" (leading separator).
+    // POSIX 侧对 Windows 写法的识别："C:/x"、"C:\\x" 或
+    // "\\server\share"（前导分隔符）。
     const std::string native = p.native();
     if (!native.empty() && (native.front() == '/' || native.front() == '\\'))
         return true;
@@ -49,8 +48,8 @@ bool HasRootComponent(const std::filesystem::path& p) {
     return false;
 }
 
-// Windows-agnostic component scan: split on both separators so a file written
-// on Windows ("assets\\x.png") is judged by the same rules on Linux.
+// 与 Windows 无关的组件扫描：同时按两种分隔符切分，使在 Windows 上写入的文件
+// （"assets\\x.png"）在 Linux 上按同一套规则判定。
 struct RawComponents {
     std::array<std::string, 64> parts;
     std::size_t count = 0;
@@ -86,23 +85,21 @@ Result<ProjectRelativePath, PathError> ProjectRelativePath::Parse(
     if (HasRootComponent(candidate))
         return Unexpected2<PathError>(PathError::Absolute);
 
-    // Component-level rules, evaluated on both separator variants.
+    // 组件级规则，对两种分隔符变体都适用。
     const RawComponents parts = SplitRaw(raw);
     std::string normalized;
     normalized.reserve(raw.size());
     for (std::size_t i = 0; i < parts.count; ++i) {
         const std::string& part = parts.parts[i];
-        // "assets//x" -> empty component; "." -> current directory; ".." ->
-        // parent traversal. All three are rejected: a project-relative path
-        // names a file inside the tree, not a filesystem navigation.
+        // "assets//x" -> 空组件；"." -> 当前目录；".." -> 向上穿越父目录。三者
+        // 一律拒绝：项目相对路径命名的是树内的文件，而不是文件系统导航。
         if (part.empty())
             return Unexpected2<PathError>(PathError::InvalidComponent);
         if (part == "." || part == "..")
             return Unexpected2<PathError>(PathError::OutsideProjectRoot);
-        // Trailing separator already produced an empty component; a lone "."
-        // or ".." was handled above. Windows reserved names are not checked
-        // here - the renderer never runs on a case-insensitive drive layout
-        // that would matter.
+        // 末尾分隔符已经产生空组件；单独的 "." 或 ".." 已在上面处理。此处不检查
+        // Windows 保留名——renderer 从不在大小写不敏感的驱动器布局上运行，因而
+        // 无关紧要。
         if (!normalized.empty())
             normalized.push_back('/');
         normalized.append(part);
@@ -118,8 +115,7 @@ Result<std::filesystem::path, PathError> ResolveProjectRelativePath(
     const std::filesystem::path& project_root,
     const ProjectRelativePath& relative) {
     std::error_code ec;
-    // Weakly canonical: resolve what exists (symlinks included) without
-    // requiring the target to exist yet.
+    // 弱规范化：解析已存在的部分（含符号链接），但不要求目标已存在。
     const std::filesystem::path root = std::filesystem::weakly_canonical(project_root, ec);
     if (ec)
         return Unexpected2<PathError>(PathError::NotResolved);
@@ -129,19 +125,18 @@ Result<std::filesystem::path, PathError> ResolveProjectRelativePath(
     if (ec)
         return Unexpected2<PathError>(PathError::NotResolved);
 
-    // Containment by component walk, never by string prefix.
+    // 通过逐组件遍历判断包含关系，绝不使用字符串前缀。
     auto root_it = root.begin();
     auto root_end = root.end();
     auto target_it = target.begin();
-    // On POSIX both begin with "/"; skip the common root separators so the
-    // comparison starts at the first real component.
+    // 在 POSIX 上两者都以 "/" 开头；跳过共同的根分隔符，使比较从第一个真实
+    // 组件开始。
     while (root_it != root_end && target_it != target.end() &&
            *root_it == *target_it) {
         ++root_it;
         ++target_it;
     }
-    // Every root component must have matched: the target lies outside the
-    // project root otherwise.
+    // root 的每个组件都必须匹配成功，否则 target 位于项目根之外。
     if (root_it != root_end)
         return Unexpected2<PathError>(PathError::OutsideProjectRoot);
 

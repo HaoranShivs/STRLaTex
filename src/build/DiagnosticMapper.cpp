@@ -15,11 +15,10 @@ bool Contains(const std::string& haystack, const std::string& needle) {
 
 std::string DiagnosticMapper::CodeFor(const CompilerMessage& message,
                                       DiagnosticSeverity* severity) {
-    // First-version classification (Build Diagnostics plan §13/§16). Only
-    // high-value patterns are recognised; everything else keeps the coarse
-    // LATEX_ERROR / LATEX_WARNING code and its raw text. A message the
-    // compiler flagged as an error but whose content is a known warning is
-    // downgraded here, because a Warning must never fail a build (§31).
+    // 首版分类（Build Diagnostics 方案 §13/§16）。只识别高价值模式；
+    // 其余一律保留粗粒度的 LATEX_ERROR / LATEX_WARNING code 及其原始文本。
+    // 编译器标记为 error、但内容属于已知 warning 的消息会在这里降级，
+    // 因为 Warning 绝不能导致 build 失败（§31）。
     const std::string& text = message.text;
 
     if (Contains(text, "Overfull \\hbox")) {
@@ -63,9 +62,8 @@ std::vector<Diagnostic> DiagnosticMapper::Map(
     const CompileResult& result, const SourceMap& source_map,
     ProjectRevision revision, const BuildId& build_id) const {
     std::vector<Diagnostic> diagnostics;
-    // Exact-duplicate suppression (plan §19): the same problem reported for
-    // the same place twice (latexmk reruns TeX, and the log repeats) is
-    // displayed once. No semantic dedup in the first version.
+    // 精确去重（方案 §19）：同一位置的同一问题被报告两次（latexmk 会重跑
+    // TeX，日志因此重复）时只显示一次。首版不做语义去重。
     std::set<std::tuple<std::string, std::string, std::string, std::string,
                         std::uint32_t>>
         seen;
@@ -94,18 +92,17 @@ std::vector<Diagnostic> DiagnosticMapper::Map(
         diagnostic.revision = revision;
         diagnostic.raw_message = message.text;
 
-        // Attribute the message to its generated-source position first, then
-        // map that line back to the semantic node that produced it (plan
-        // §17). Even when the map finds a block, the file + line stay on the
-        // diagnostic so the GUI can fall back to the Build Log (§28).
+        // 先把消息归到其在生成源中的位置，再把该行映射回产生它的语义节点
+        // （方案 §17）。即使映射找到了 block，file + line 仍会留在
+        // diagnostic 上，以便 GUI 回退到 Build Log（§28）。
         if (!message.file.empty() && message.line > 0) {
             diagnostic.location = DiagnosticLocation::ForGeneratedFile(
                 message.file, message.line);
         } else {
             diagnostic.location = DiagnosticLocation::ForProject();
         }
-        // The map indexes main.tex lines; messages from other files (the
-        // class file, a package) intentionally resolve to no node (§47).
+        // 该映射索引的是 main.tex 的行；来自其他文件（class 文件、package）
+        // 的消息会有意解析不到任何 node（§47）。
         if (auto entry = source_map.ResolveEntry(message.line)) {
             diagnostic.location.kind = DiagnosticLocationKind::Node;
             diagnostic.location.node = entry->node;

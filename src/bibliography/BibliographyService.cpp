@@ -7,7 +7,7 @@
 
 namespace pf {
 
-// ---------------- BibTeX parser ----------------
+// ---------------- BibTeX 解析器 ----------------
 
 namespace {
 
@@ -24,7 +24,7 @@ std::string ToLower(std::string s) {
     return s;
 }
 
-// Remove matching outer braces/quotes from a field value.
+// 去除字段值外层成对的花括号/引号。
 std::string StripBraces(std::string value) {
     value = Trim(std::move(value));
     while (value.size() >= 2 &&
@@ -33,7 +33,7 @@ std::string StripBraces(std::string value) {
         value = value.substr(1, value.size() - 2);
         value = Trim(std::move(value));
     }
-    // Collapse internal whitespace/newlines.
+    // 合并内部空白与换行。
     std::string out;
     bool in_space = false;
     for (char c : value) {
@@ -57,7 +57,7 @@ public:
         size_t pos = 0;
         bool any_error = false;
         while (pos < text_.size()) {
-            // Find next '@'
+            // 查找下一个 '@'
             size_t at = text_.find('@', pos);
             if (at == std::string::npos) break;
             size_t open = text_.find_first_of("{(", at);
@@ -67,14 +67,14 @@ public:
             }
             BibEntry entry;
             entry.entry_type = ToLower(Trim(text_.substr(at + 1, open - at - 1)));
-            // Read key up to comma
+            // 读取 key，直到逗号
             size_t key_end = text_.find(',', open);
             if (key_end == std::string::npos) {
                 any_error = true;
                 break;
             }
             entry.key = Trim(text_.substr(open + 1, key_end - open - 1));
-            // Read fields until matching close brace
+            // 读取字段，直到匹配的右花括号
             int depth = 1;
             size_t i = key_end + 1;
             char closer = (text_[open] == '{') ? '}' : ')';
@@ -100,14 +100,14 @@ private:
     void ParseFields(const std::string& body, BibEntry* entry) {
         size_t i = 0;
         while (i < body.size()) {
-            // skip separators
+            // 跳过分隔符
             while (i < body.size() && (body[i] == ',' || std::isspace(static_cast<unsigned char>(body[i])))) ++i;
             if (i >= body.size()) break;
             size_t eq = body.find('=', i);
             if (eq == std::string::npos) break;
             std::string name = ToLower(Trim(body.substr(i, eq - i)));
             i = eq + 1;
-            // value: {..} or "..." or bare
+            // 值：{..}、"..." 或裸值
             std::string value;
             if (i < body.size() && body[i] == '{') {
                 int depth = 1;
@@ -136,7 +136,7 @@ private:
                 entry->fields[name] = StripBraces(value);
             }
         }
-        // Derive well-known fields.
+        // 提取已知字段。
         auto f = [&](const char* n) -> std::string {
             auto it = entry->fields.find(n);
             return it == entry->fields.end() ? std::string() : it->second;
@@ -161,10 +161,10 @@ std::vector<std::string> SplitBibAuthors(const std::string& authors) {
         if (c == '{') ++brace;
         else if (c == '}') --brace;
         if (c == ',' && brace == 0) {
-            // "Last, First" separator within one author: keep, don't split
+            // 同一作者内的 "Last, First" 分隔符：保留，不拆分
             current += c;
         } else if ((c == ' ' || c == '\t') && brace == 0) {
-            // look ahead: " and " separates authors
+            // 前瞻：" and " 用于分隔作者
             if (current.size() >= 3 && current.substr(current.size() - 3) == "and") {
                 out.push_back(Trim(current.substr(0, current.size() - 3)));
                 current.clear();
@@ -176,7 +176,7 @@ std::vector<std::string> SplitBibAuthors(const std::string& authors) {
         }
     }
     if (!Trim(current).empty()) out.push_back(Trim(current));
-    // Post-process "and" at end
+    // 后处理结尾的 "and"
     for (auto& a : out) {
         a = Trim(a);
         if (a.size() >= 3 && a.substr(a.size() - 3) == "and") {
@@ -191,7 +191,7 @@ std::vector<std::string> SplitBibAuthors(const std::string& authors) {
     return out;
 }
 
-// ---------------- Database / Service ----------------
+// ---------------- 数据库 / 服务 ----------------
 
 void BibliographyDatabase::Clear() {
     entries_.clear();
@@ -242,10 +242,9 @@ BibliographyImportResult BibliographyService::ImportText(const std::string& bibt
         result.detail = "no valid entries found";
         return result;
     }
-    // Duplicate keys *inside this file* are a data problem: keep the last
-    // definition (BibTeX's own behaviour) but report every repeated key so
-    // the importer can warn (citation plan §9). Re-imports that overwrite an
-    // existing key are an update, not a duplicate, and stay silent.
+    // *在本文件内*重复的键属于数据问题：保留最后一条定义（BibTeX 自身的
+    // 行为），但要报告每一个重复键，以便导入方发出警告（引用方案 §9）。
+    // 覆盖已有键的重新导入属于更新而非重复，保持静默。
     std::vector<std::string> seen;
     for (const auto& e : entries) {
         if (std::find(seen.begin(), seen.end(), e.key) == seen.end()) {

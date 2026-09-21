@@ -11,14 +11,14 @@ namespace pf {
 
 namespace {
 
-// The executables the production build path needs (plan §18). latexmk drives
-// the others, but they must all be present for the runtime to be usable.
+// 生产 build 路径所需的可执行文件（方案 §18）。latexmk 会驱动其余程序，
+// 但它们必须全部存在，runtime 才可使用。
 const char* const kRequiredExecutables[] = {
     "latexmk", "pdflatex", "xelatex", "lualatex", "bibtex", "kpsewhich",
 };
 
-// A minimum document that exercises the exact feature the templates depend on:
-// bold, italic and bold-italic must survive a real compile (plan §19).
+// 一个最小文档，用于验证模板所依赖的确切特性：
+// 粗体、斜体与粗斜体必须能在一次真实编译中保留下来（方案 §19）。
 const char* const kFontTestTex =
     "\\documentclass{article}\n"
     "\\usepackage{amsmath}\n"
@@ -57,7 +57,7 @@ RuntimeInfo RuntimeManager::Initialize() {
     }
     info_.texlive_root = texlive_root_;
 
-    // The bin dir is platform-specific inside the runtime (plan §3).
+    // bin 目录在 runtime 内因平台而异（方案 §3）。
     std::filesystem::path bin_dir;
     for (const auto& entry : std::filesystem::directory_iterator(texlive_root_ / "bin", ec)) {
         if (entry.is_directory()) {
@@ -117,8 +117,8 @@ bool RuntimeManager::VerifyCompile(
         return false;
     }
 
-    // A throwaway workspace under the runtime's own var dir keeps the health
-    // check self-contained and writable without touching the user's HOME.
+    // 在 runtime 自带的 var 目录下使用一次性 workspace，可让健康检查
+    // 自包含且可写，同时不触碰用户的 HOME。
     const auto work = texlive_root / "texmf-var" / "health";
     std::filesystem::create_directories(work, ec);
 

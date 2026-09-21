@@ -1,5 +1,5 @@
 #pragma once
-// Unified Diagnostic structure (architecture section 28).
+// 统一的 Diagnostic 结构（架构 28）。
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -29,18 +29,18 @@ enum class DiagnosticSeverity : std::uint8_t {
 const char* ToString(DiagnosticSource source);
 const char* ToString(DiagnosticSeverity severity);
 
-// Location: where in the *semantic* document the diagnostic applies.
-// Exactly one representation is used (variant-like via optional fields,
-// kept simple for V1).
+// Location：诊断作用于*语义*文档中的哪个位置。
+// 只使用一种表示（借助 optional 字段实现的类 variant 结构，
+// V1 中保持简单）。
 enum class DiagnosticLocationKind : std::uint8_t {
     None,
-    Node,           // points to a document node
-    Table,          // node + row + column
-    CitationKey,    // bibliography citation key
-    Project,        // project-level (no specific node)
-    GeneratedFile,  // generated LaTeX file + line, no resolvable block
-                    // (Build Diagnostics plan §17/§47: template/package/class
-                    // errors keep file + line but have no blockId)
+    Node,           // 指向某个文档节点
+    Table,          // 节点 + 行 + 列
+    CitationKey,    // 参考文献引用键
+    Project,        // 项目级（无具体节点）
+    GeneratedFile,  // 生成的 LaTeX 文件 + 行号，没有可解析的 block
+                    // （Build Diagnostics 方案 §17/§47：template/package/class
+                    // 错误保留 file + line，但没有 blockId）
 };
 
 struct DiagnosticLocation {
@@ -49,13 +49,12 @@ struct DiagnosticLocation {
     std::optional<int> row;            // kind == Table
     std::optional<int> column;         // kind == Table
     std::string citation_key;          // kind == CitationKey
-    // Generated-source position (plan §12/§17): carried alongside a Node when
-    // a compiler error could be mapped back to a block, and used alone for
-    // errors that belong to the template or a package.
-    std::string file;                  // e.g. "main.tex"
-    std::optional<std::uint32_t> line; // 1-based line in `file`
-    // Human-readable block kind for the GUI ("Figure", "Text", ...). Filled
-    // from the renderer's source map so Problems can name the target.
+    // 生成源码位置（方案 §12/§17）：当编译器错误能够映射回某个 block 时，与
+    // Node 一同携带；对于属于 template 或 package 的错误则单独使用。
+    std::string file;                  // 例如 "main.tex"
+    std::optional<std::uint32_t> line; // `file` 中从 1 开始的行号
+    // 供 GUI 展示的 block 类型可读名称（"Figure"、"Text" 等）。由渲染器的
+    // source map 填充，使 Problems 能够指明目标。
     std::string label;
 
     bool has_file_location() const {
@@ -105,9 +104,8 @@ struct DiagnosticLocation {
 
 struct Diagnostic {
     std::string id;  // DiagnosticId
-    // The build attempt that produced this diagnostic (plan §12): a
-    // diagnostic is only ever displayed as part of its own build's result,
-    // which is what keeps an old build from polluting a new one.
+    // 产生该诊断的 build 尝试（方案 §12）：诊断只会作为其所属 build 结果的一部分
+    // 展示，这正是防止旧 build 污染新 build 的关键。
     BuildId build_id;
     DiagnosticSource source = DiagnosticSource::Document;
     DiagnosticSeverity severity = DiagnosticSeverity::Error;
@@ -115,8 +113,8 @@ struct Diagnostic {
     std::string message;
     ProjectRevision revision;
     DiagnosticLocation location;
-    // Unmodified compiler line (plan §12): lets a double-click without a
-    // block locate the offending text in the Build Log (§29).
+    // 未经修改的编译器原始行（方案 §12）：使没有 block 的双击也能在
+    // Build Log 中定位到出错的文本（§29）。
     std::string raw_message;
 
     std::string Summary() const;

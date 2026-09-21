@@ -1,19 +1,18 @@
 #pragma once
-// BlockEditor: the document as a vertical stack of block cards (design
-// #3-#8, #61-#62).
-// Each block shows a hover-only header (drag handle + type label + actions),
-// a focused accent line on the left, and a self-sizing editor. "/" opens the
-// block command popup (design #6). Body text, citations and references all
-// commit through the rich InlineEditor path (citation plan §5).
+// BlockEditor：把文档呈现为垂直堆叠的 block 卡片（设计 #3-#8、#61-#62）。
+// 每个 block 显示仅在悬停时出现的头部（拖拽手柄 + 类型标签 + 操作按钮）、
+// 聚焦时左侧的强调线，以及自适应高度的编辑器。输入 "/" 打开 block 命令
+// 弹窗（设计 #6）。正文、引用和交叉引用都通过富 InlineEditor 路径提交
+// （引用方案 §5）。
 //
-// Visual states (design #4, UI plan §9 - unified in UpdateCardState):
-//   idle     - pure white, no visible chrome, just content
-//   hover    - #FAFBFC wash; handle + type label + more button appear
-//   focused  - 2px accent line on the left edge, background near-white
-//   missing  - 2px error line + faint ErrorSoft wash (required-but-empty)
-//   problem  - 2px accent line + brief AccentSoft flash (RevealNode)
-// The Text row's type label is hover/focus-only (UI plan §2); Abstract and
-// Keywords keep a small uppercase identity label (UI plan §8).
+// 视觉状态（设计 #4、UI 方案 §9——统一在 UpdateCardState 中处理）：
+//   idle     - 纯白，无可见装饰，仅内容
+//   hover    - #FAFBFC 淡底；出现手柄 + 类型标签 + 更多按钮
+//   focused  - 左边缘 2px 强调线，背景接近白色
+//   missing  - 2px 错误线 + 淡淡的 ErrorSoft 底色（必填但为空）
+//   problem  - 2px 强调线 + 短暂的 AccentSoft 闪烁（RevealNode）
+// Text 行的类型标签仅在悬停/聚焦时显示（UI 方案 §2）；Abstract 与
+// Keywords 保留一个小号大写身份标签（UI 方案 §8）。
 
 #include <QScrollArea>
 #include <QWidget>
@@ -41,11 +40,11 @@ class BlockEditor : public QWidget {
 public:
   explicit BlockEditor(QWidget *parent = nullptr);
 
-  // Replace all rows with the document's content; preserves focus/cursor.
+  // 用文档内容替换所有行；保留焦点/光标。
   void RebuildFromDocument(const Document &doc);
 
-  // Heading depth the current template supports (plan §9). Controls whether
-  // the insert and "/" menus offer Subsubsection Title. 0 = unrestricted.
+  // 当前模板支持的最大标题层级（方案 §9）。控制插入菜单和 "/" 菜单是否
+  // 提供 Subsubsection Title。0 = 不限制。
   void SetMaxHeadingDepth(int depth) { max_heading_depth_ = depth; }
 
   struct RequiredHints {
@@ -57,45 +56,42 @@ public:
   };
   void SetRequiredHints(const RequiredHints &hints);
 
-  // Scroll so the given node's block is visible, briefly highlight it.
+  // 滚动使给定节点的 block 可见，并短暂高亮它。
   void RevealNode(const QString &node_id);
 
-  // Reference items for the "@" popup (label, detail, payload=key|node).
+  // "@" 弹窗的引用条目（label、detail、payload=key|node）。
   void SetReferenceItems(std::vector<PopupList::Item> items);
 
-  // Document-wide citation numbering (citation plan §3). The pills in the
-  // Text rows are the visual projection of this map; the document still
-  // only stores keys. Shared_ptr because every row reads the same map.
+  // 文档级引用编号（引用方案 §3）。Text 行中的 pill 是此映射的视觉投影；
+  // 文档本身仍然只存储 key。用 shared_ptr 是因为每一行都读取同一份映射。
   void
   SetCitationNumbers(std::shared_ptr<const pf::CitationNumberResolver> numbers);
 
-  // Resolve a document AssetId to a local image path for figure previews.
+  // 把文档中的 AssetId 解析为本地图片路径，用于图片预览。
   void SetAssetPathResolver(std::function<QString(const AssetId &)> resolver);
 
   std::optional<QString> FocusedNodeId() const;
 
-  // True while the focused row holds text the user has typed but that has
-  // not been committed to the document yet. Callers must not rebuild the
-  // rows while this is true, or the in-progress input would be destroyed.
+  // 当聚焦行中存有用户已输入但尚未提交到文档的文本时为 true。此时调用方
+  // 不得重建行，否则正在输入的内容会被销毁。
   bool HasUncommittedFocus() const;
 
-  // Restyle rows from the current template hints without touching editors.
+  // 依据当前模板提示重新设置行样式，不触碰编辑器。
   void RefreshHints();
 
-  // Commit the focused row now (used before structural edits and builds).
+  // 立即提交聚焦行（用于结构性编辑和 build 之前）。
   void CommitFocused();
 
 signals:
-  // Field edits (committed on focus-out / Enter).
+  // 字段编辑（在失焦 / 回车时提交）。
   void TitleEdited(const QString &text);
   void AuthorsEdited(const QString &text);
   void AffiliationsEdited(const QString &text);
   void AbstractEdited(const QString &text);
   void KeywordsEdited(const QString &text);
-  // Rich commit from an InlineEditor row: the whole InlineContent arrives
-  // structured (marks, citations, references, inline equations). This is
-  // the only body-text data path (citation plan §5) - the old plain
-  // ParagraphEdited/[cite:key] encoding is gone.
+  // 来自 InlineEditor 行的富文本提交：整个 InlineContent 以结构化形式到达
+  // （mark、citation、reference、行内公式）。这是唯一的正文数据路径
+  // （引用方案 §5）——旧的纯文本 ParagraphEdited/[cite:key] 编码已移除。
   void ParagraphContentEdited(const QString &node_id,
                               const InlineContent &content);
   void EquationEdited(const QString &node_id, const QString &math,
@@ -104,37 +100,34 @@ signals:
   void SubsectionRenamed(const QString &node_id, const QString &text);
   void SubsubsectionRenamed(const QString &node_id, const QString &text);
   void CaptionEdited(const QString &node_id, const QString &text);
-  // Figure layout: true = the figure spans both columns of a two-column
-  // template (stored regardless of the current template).
+  // 图片布局：true = 图片横跨双栏模板的两栏（无论当前模板如何都会存储）。
   void FigureSpanChanged(const QString &node_id, bool double_column);
 
-  // Emitted after a row commits its text (changed or not). Lets the window
-  // run a refresh it deferred while the user was still typing.
+  // 在行提交其文本后发出（无论是否改变）。让窗口可以执行在用户仍在输入时
+  // 被推迟的刷新。
   void RowCommitted();
-  // The row under the caret moved (UI plan §10). The key addresses the
-  // Outline entry that owns the row: the innermost heading node id, or
-  // "front:abstract" for the abstract row, or empty for rows the outline
-  // does not show. MainWindow forwards this to OutlinePanel::SelectNode so
-  // the outline always tells the user which section is being edited.
+  // 光标所在的行发生了移动（UI 方案 §10）。key 指向拥有该行的 Outline 条目：
+  // 最内层标题的 node id，或摘要行的 "front:abstract"，或空字符串（outline
+  // 不显示的行）。MainWindow 将其转发给 OutlinePanel::SelectNode，使 outline
+  // 始终告知用户正在编辑哪一节。
   void FocusOutlineChanged(const QString &outline_key);
-  // Author <-> institution binding changed from the graphical panel.
+  // 作者 <-> 机构绑定从图形面板发生变化。
   void AuthorAffiliationToggled(int author_index, const QString &affiliation_id,
                                 bool linked);
-  // Drag-and-drop reorder: put `node_id` directly after `anchor`.
+  // 拖放重排：把 `node_id` 直接放到 `anchor` 之后。
   void MoveBlockToRequested(const QString &node_id, const QString &anchor);
 
-  // Structure ops from "/" menu, "+" between blocks, and block menus.
+  // 来自 "/" 菜单、block 之间的 "+" 以及 block 菜单的结构操作。
   void InsertBlockRequested(const QString &block_type,
                             const QString &after_node);
   void DeleteBlockRequested(const QString &node_id);
   void MoveBlockRequested(const QString &node_id, int direction); // -1 / +1
 
 public:
-  // Semantic citation insertion for one paragraph row, used by the toolbar
-  // picker and by OutlinePanel double-clicks. It goes through the row's
-  // InlineEditor and commits immediately, so the only data path is
+  // 针对某一正文段落的语义化引用插入，供工具栏选择器和 OutlinePanel 双击
+  // 使用。它经由该行的 InlineEditor 立即提交，因此唯一的数据路径是
   // InlineEditor -> ParagraphContentEdited -> EditParagraphRich
-  // (citation plan §4/§5). Returns false when the row is not a Text row.
+  // （引用方案 §4/§5）。当该行不是 Text 行时返回 false。
   bool InsertCitationIntoParagraph(const QString &node_id,
                                    const QString &citation_key,
                                    int insert_offset = -1);
@@ -144,84 +137,80 @@ protected:
 
 private:
   struct Block {
-    QString node_id; // empty for front-matter fields
+    QString node_id; // 对于 front-matter 字段为空
     QString kind;    // Paper Title/Authors/…/Section Title/
                      // Subsection Title/Subsubsection Title/Text/
                      // Equation/Figure/Table
     QWidget *card = nullptr;
-    QPlainTextEdit *editor = nullptr;      // null for figure/table-only blocks
-    InlineEditor *inline_editor = nullptr; // set on Text rows
-    QString commit_role;                   // which signal to emit on commit
-    // Text last known to be in the document for this row. Commits that
-    // would write the same value are dropped, which is what keeps a
-    // programmatic restyle from cycling into edit -> rebuild -> edit.
+    QPlainTextEdit *editor = nullptr;      // 仅 figure/table 的 block 为 null
+    InlineEditor *inline_editor = nullptr; // 在 Text 行上设置
+    QString commit_role;                   // 提交时发出哪个信号
+    // 该行在文档中最后一次已知的文本。会写入相同值的提交被丢弃，正是这样
+    // 才能避免程序化重设样式陷入 edit -> rebuild -> edit 的循环。
     QString committed_text;
-    // What the document holds for a Text row, kept so an unchanged commit
-    // can be skipped without flattening marks/tokens.
+    // 文档为某个 Text 行保存的内容，保留它以便在内容未变时跳过提交，而无需
+    // 把 mark/token 压平。
     pf::InlineContent committed_content;
-    // Equation rows carry the attributes that live next to the source.
+    // Equation 行携带紧邻源文本的属性。
     bool equation_numbered = true;
     QString equation_label;
     bool required = false;
-    // Outline entry that owns this row (heading node id, "front:abstract"
-    // or empty); emitted with FocusOutlineChanged when the row is focused.
+    // 拥有此行的 Outline 条目（标题 node id、"front:abstract" 或空）；
+    // 当该行获得焦点时随 FocusOutlineChanged 一起发出。
     QString outline_key;
   };
 
-  // A Text row: InlineEditor over InlineContent, with the format toolbar.
+  // Text 行：基于 InlineContent 的 InlineEditor，带格式工具栏。
   QWidget *MakeTextCard(const QString &node_id, const InlineContent &content,
                         const QString &outline_key);
-  // An Equation row: LaTeX source + preview + numbered + label (design §4).
+  // Equation 行：LaTeX 源码 + 预览 + 编号 + 标签（设计 §4）。
   QWidget *MakeEquationCard(const QString &node_id,
                             const pf::EquationBlock &equation,
                             const QString &outline_key);
-  // A Figure row: caption editor, image preview and span toggle (P0-05).
+  // Figure 行：题注编辑器、图片预览和跨栏开关（P0-05）。
   QWidget *MakeFigureCard(const pf::Figure &figure,
                           const QString &outline_key);
-  // A Table row: grid preview plus caption editor (P0-05).
+  // Table 行：网格预览加题注编辑器（P0-05）。
   QWidget *MakeTableCard(const pf::Table &table, const QString &outline_key);
-  // P0-05: one block-card factory + one append path for every heading level.
-  // Previously the Section loop knew all four block kinds while the
-  // Subsection/Subsubsection loops only handled Paragraph and Equation, so a
-  // Figure or Table nested below a Section rendered nowhere.
+  // P0-05：为每个标题层级提供唯一的 block 卡片工厂和唯一的追加路径。
+  // 此前 Section 循环知道全部四种 block 类型，而 Subsection/Subsubsection
+  // 循环只处理 Paragraph 和 Equation，因此嵌套在 Section 之下的 Figure 或
+  // Table 根本不会渲染。
   QWidget *CreateBlockCard(const pf::Block &block, const QString &outline_key);
   void AppendBlocks(const std::vector<pf::Block> &blocks,
                     const QString &outline_key);
-  // The [B] [I] [Inline Math] [Citation] [Reference] strip shown while a
-  // text row is focused (plan §4.4).
+  // 文本行聚焦时显示的 [B] [I] [Inline Math] [Citation] [Reference] 条带
+  // （方案 §4.4）。
   QWidget *BuildFormatToolbar(InlineEditor *editor);
-  // Reference pickers behind the Citation / Reference buttons. The picker
-  // commits the row immediately after inserting the object (citation plan
-  // §4) - no "some later focusOut will submit it".
+  // Citation / Reference 按钮背后的引用选择器。选择器在插入对象后立即提交
+  // 该行（引用方案 §4）——而不是「以后某次 focusOut 会提交它」。
   void ShowCitationPicker(InlineEditor *editor);
   void ShowReferencePicker(InlineEditor *editor);
-  // Node id -> display label for cross-reference pills, from the current
-  // "@" reference items.
+  // 交叉引用 pill 的 node id -> 显示标签，来自当前的 "@" 引用条目。
   std::map<QString, QString> CrossReferenceLabels() const;
 
   QWidget *MakeCard(const QString &node_id, const QString &kind,
                     const QString &commit_role, bool header_inline);
-  // Keeps the manuscript column centered and capped at the theme's content
-  // width when the editor pane is wider than the column.
+  // 编辑器窗格宽于正文栏时，使正文栏保持居中并限制在主题的内容宽度内。
   void CenterContentColumn();
   void AddEditorToCard(QWidget *card, QPlainTextEdit *edit);
   QPlainTextEdit *NewEditor(QWidget *card, const QString &text, int min_lines,
                             theme::BlockVisualRole role,
                             bool single_line = false);
-  // Recompose a card's state line / background and header chrome from its
-  // card_hover / card_focus / card_missing / card_flash properties (UI
-  // plan §9: one state machine instead of ad-hoc per-site stylesheets).
+  // 依据卡片的 card_hover / card_focus / card_missing / card_flash 属性重新
+  // 组合其状态线 / 背景和头部装饰（UI 方案 §9：使用统一状态机，而非各处
+  // 临时拼凑的样式表）。
   void UpdateCardState(QWidget *card);
   void CommitBlock(Block &block);
-  // Immediately commit a Text row's rich content (used by the pickers).
+  // 立即提交 Text 行的富内容（供选择器使用）。
   void CommitInlineRow(InlineEditor *editor);
-  // Softens the hard line breaks of a pasted paragraph in one row and
-  // commits the result (used by the block menu's "Reflow Text").
+  // 柔化某一行中粘贴段落的硬换行并提交结果（供 block 菜单的
+  // "Reflow Text" 使用）。
   void ReflowRow(QWidget *card, const QString &node_id);
-  // Hover affordance between blocks: creates the strip and the menu it opens.
+  // block 之间的悬停提示：创建条带及其打开的菜单。
   QWidget *MakeGap(const QString &anchor);
   void ShowInsertMenu(const QString &anchor, QWidget *source);
-  // One row per author under the Authors card: pick the institutions.
+  // Authors 卡片下每位作者一行：选择机构。
   void BuildAuthorBindingPanel(QWidget *card, const FrontMatter &front);
   void OpenSlashMenu(QPlainTextEdit *origin);
   void ApplyHints();
@@ -234,13 +223,13 @@ private:
   std::vector<PopupList::Item> reference_items_;
   std::shared_ptr<const pf::CitationNumberResolver> citation_numbers_;
   std::function<QString(const AssetId &)> asset_path_resolver_;
-  // Document the insert menus consult for the container of an anchor. Only
-  // valid during RebuildFromDocument-driven use; refreshed on each rebuild.
+  // 插入菜单用于查询锚点所在容器的文档。仅在 RebuildFromDocument 驱动的
+  // 使用期间有效；每次重建时刷新。
   const Document *container_document_ = nullptr;
   int max_heading_depth_ = 3;
   bool rebuilding_ = false;
 
-  // Focus preservation across rebuilds.
+  // 跨重建的焦点保持。
   QString focus_node_;
   int focus_pos_ = 0;
 };

@@ -1,12 +1,11 @@
 #pragma once
-// RuntimeManager: locates and verifies the bundled portable TeX Live runtime
-// (plan §17, §18, §21).
+// RuntimeManager：定位并校验随附的便携式 TeX Live runtime
+// （方案 §17、§18、§21）。
 //
-// The runtime is what makes the build environment reproducible: the user's
-// PATH, system TeX Live and MiKTeX are never consulted. If the runtime is
-// incomplete, the application must say "the TeX runtime is unavailable"
-// (an application/environment error) instead of presenting the failure as a
-// LaTeX document error (plan §21, §38).
+// runtime 是 build 环境可复现的关键：绝不查询用户的 PATH、系统 TeX Live
+// 与 MiKTeX。若 runtime 不完整，应用必须报告「TeX runtime 不可用」
+// （应用/环境错误），而不能把该失败呈现为 LaTeX 文档错误
+// （方案 §21、§38）。
 
 #include <filesystem>
 #include <string>
@@ -34,29 +33,29 @@ struct RuntimeInfo {
     std::string texlive_version;
     std::filesystem::path texlive_root;
     RuntimeStatus status = RuntimeStatus::Missing;
-    std::vector<std::string> problems;   // human-readable diagnostics
+    std::vector<std::string> problems;   // 人类可读的诊断信息
 };
 
 class RuntimeManager {
 public:
-    // Runtime layout inside the application (plan §3):
+    // runtime 在应用内的目录布局（方案 §3）：
     //   runtime/texlive/bin/<platform>/{latexmk,pdflatex,...}
-    // `install_root` is the directory that contains `runtime/` (the
-    // repository root for a source build, the app directory for a release).
+    // `install_root` 是包含 `runtime/` 的目录（源码构建时为仓库根目录，
+    // 发布版中为应用目录）。
     explicit RuntimeManager(std::filesystem::path install_root);
 
-    // Locate the runtime and validate its structure + version file.
+    // 定位 runtime，并校验其结构与版本文件。
     RuntimeInfo Initialize();
 
     std::filesystem::path TexLiveRoot() const { return texlive_root_; }
 
-    // Verify that the key executables exist and are runnable (plan §18).
-    // `problems` accumulates a human-readable explanation per finding.
+    // 校验关键可执行文件是否存在且可运行（方案 §18）。
+    // `problems` 会为每项发现累积一条人类可读的说明。
     bool VerifyExecutables(const std::filesystem::path& bin_dir,
                            std::vector<std::string>* problems) const;
 
-    // The real minimum compile test (plan §18, §19): build a tiny document
-    // that exercises bold/italic through the engine the templates use.
+    // 真正的最小编译测试（方案 §18、§19）：用模板所用的引擎
+    // 构建一个小文档，以验证粗体/斜体。
     bool VerifyCompile(const std::filesystem::path& texlive_root,
                        std::vector<std::string>* problems) const;
 

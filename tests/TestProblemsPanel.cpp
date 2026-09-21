@@ -1,5 +1,5 @@
-// ProblemsPanel widget tests (Build Diagnostics plan §20-§24, §30, §42, §49):
-// sorting, counts, empty states, streamed build log, and build isolation.
+// ProblemsPanel widget 测试（Build Diagnostics 方案 §20-§24、§30、§42、§49）：
+// 排序、计数、空状态、流式 build 日志与 build 隔离。
 #include "TestMain.hpp"
 
 #include <QListWidget>
@@ -50,15 +50,15 @@ PF_TEST(ProblemsPanelEmptyStates) {
     ProblemsPanel panel;
     auto* list = ProblemList(panel);
     PF_CHECK(list != nullptr);
-    // Never built (plan §42).
+    // 从未 build 过（方案 §42）。
     PF_CHECK_EQ(list->count(), 1);
     PF_CHECK(list->item(0)->text().contains("No build diagnostics available"));
-    // Building...
+    // build 进行中……
     panel.AppendEvent(MakeEvent(BuildId("b1"), BuildEventType::BuildStarted,
                                 "Build started (snapshot s1)"));
     PF_CHECK_EQ(list->count(), 1);
     PF_CHECK(list->item(0)->text().contains("Building"));
-    // Done with zero problems: the ok-empty state (plan §42).
+    // 完成且零问题：ok-empty 状态（方案 §42）。
     panel.SetDiagnostics({});
     PF_CHECK_EQ(list->count(), 1);
     PF_CHECK(list->item(0)->text().contains("No problems detected"));
@@ -74,16 +74,16 @@ PF_TEST(ProblemsPanelSortsBySeverity) {
     panel.SetDiagnostics(input);
 
     auto* list = ProblemList(panel);
-    // Error, Warning, Info; ties in arrival (document) order (plan §21).
+    // 依次为 Error、Warning、Info；同级按到达（文档）顺序（方案 §21）。
     PF_CHECK_EQ(list->count(), 4);
     PF_CHECK(list->item(0)->text().contains("e1"));
     PF_CHECK(list->item(1)->text().contains("e2"));
     PF_CHECK(list->item(2)->text().contains("w1"));
     PF_CHECK(list->item(3)->text().contains("i1"));
-    // Severity is readable without color: an icon + word per row (plan §23).
+    // 不依赖颜色也能读出严重级别：每行一个图标 + 文字（方案 §23）。
     PF_CHECK(list->item(0)->text().contains("ERROR"));
     PF_CHECK(list->item(2)->text().contains("WARNING"));
-    // Tab header shows the live count (plan §24).
+    // 标签页标题显示实时计数（方案 §24）。
     PF_CHECK(Tabs(panel)->tabText(0).contains("(4)"));
 }
 
@@ -93,11 +93,11 @@ PF_TEST(ProblemsPanelStaleMarker) {
     input.push_back(MakeDiag(DiagnosticSeverity::Error, "boom", "E-1"));
     panel.SetDiagnostics(input);
     PF_CHECK(!Tabs(panel)->tabText(0).contains("Outdated"));
-    // Document moved on without a rebuild: Outdated status text only (§49).
+    // 文档已变更但未重新 build：仅显示 Outdated 状态文字（§49）。
     panel.SetStale(true, 3);
     PF_CHECK(Tabs(panel)->tabText(0).contains("Outdated"));
-    PF_CHECK_EQ(ProblemList(panel)->count(), 1);  // rows untouched
-    // The next build's result clears it (plan §49).
+    PF_CHECK_EQ(ProblemList(panel)->count(), 1);  // 各行保持不变
+    // 下一次 build 的结果会清除该标记（方案 §49）。
     panel.SetDiagnostics({});
     PF_CHECK(!Tabs(panel)->tabText(0).contains("Outdated"));
 }
@@ -120,10 +120,10 @@ PF_TEST(ProblemsPanelStreamedBuildLog) {
                   "Build succeeded (1.662 s)"));
     auto* view = LogView(panel);
     const QString text = view->toPlainText();
-    // Lifecycle events render [HH:mm:ss.zzz] message (plan §7).
+    // 生命周期事件渲染为 [HH:mm:ss.zzz] message（方案 §7）。
     PF_CHECK(text.contains("Build started"));
     PF_CHECK(text.contains("Generating LaTeX"));
-    // Raw compiler output survives unmodified behind stream headers (§7).
+    // 原始编译器输出在流式标头之后原样保留（§7）。
     PF_CHECK(text.contains("[stdout]"));
     PF_CHECK(text.contains("This is pdfTeX\nOutput written"));
     PF_CHECK(text.contains("[stderr]"));
@@ -141,8 +141,8 @@ PF_TEST(ProblemsPanelLogIsolatedPerBuild) {
     panel.AppendEvent(
         MakeEvent(first, BuildEventType::BuildStarted, "Build started"));
     panel.AppendEvent(MakeEvent(first, BuildEventType::StdOut, "old build text"));
-    // A newer build starts: the previous log is cleared, never merged
-    // (plan §8/§30).
+    // 新的 build 开始时清除上一次的日志，绝不合并
+    // （方案 §8/§30）。
     panel.AppendEvent(
         MakeEvent(second, BuildEventType::BuildStarted, "Build started"));
     panel.AppendEvent(

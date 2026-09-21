@@ -1,6 +1,6 @@
 #pragma once
-// LatexRenderer: semantic Document -> LaTeX source (architecture section 20).
-// Produces BuildPackage + SourceMap; knows nothing about the compiler.
+// LatexRenderer：把语义化的 Document 转换为 LaTeX 源码（架构 20）。
+// 产出 BuildPackage + SourceMap；不涉及编译器。
 
 #include <map>
 #include <string>
@@ -14,16 +14,16 @@
 namespace pf {
 
 struct BuildPackageFile {
-  std::string path; // relative, e.g. "main.tex"
+  std::string path; // 相对路径，例如 "main.tex"
   std::string content;
   bool executable = false;
 };
 
 struct BuildPackage {
   std::string entry_file = "main.tex";
-  std::vector<BuildPackageFile> files;      // main.tex + any extras
-  std::vector<std::string> required_assets; // asset relative paths referenced
-  std::vector<std::string> bibliography_files; // e.g. "references.bib"
+  std::vector<BuildPackageFile> files;      // main.tex 及附加文件
+  std::vector<std::string> required_assets; // 被引用的 asset 相对路径
+  std::vector<std::string> bibliography_files; // 例如 "references.bib"
   std::vector<std::string> template_files;
 };
 
@@ -33,9 +33,9 @@ struct RenderRequest {
   ProjectRevision revision;
   const Document *document = nullptr;
   std::string template_id;
-  // Asset resolution: asset id -> file name in build workspace.
+  // Asset 解析：asset id -> build 工作区中的文件名。
   std::map<std::string, std::string> asset_files;
-  // Bibliography: raw .bib content (empty = none).
+  // 参考文献：原始 .bib 内容（为空表示没有）。
   std::string bibliography_bibtex;
 };
 
@@ -58,17 +58,16 @@ private:
   void RenderInline(const InlineContent &content, std::string *out) const;
   void RenderBlock(const Block &block, std::string *out, SourceMap *smap) const;
 
-  // Effective LaTeX label of a node: the user label when set, the node id
-  // otherwise. FillLabelMap() populates it from the equation blocks at the
-  // start of Render() so a \ref always points at the emitted \label.
+  // 节点的有效 LaTeX 标签：用户设置了标签时用用户标签，否则用节点 id。
+  // FillLabelMap() 在 Render() 开头从公式块填充该映射，
+  // 以保证 \ref 始终指向实际生成的 \label。
   std::string LabelFor(const NodeId &node) const;
   void FillLabelMap(const Document &doc) const;
   mutable std::map<std::string, std::string> label_map_;
 
-  // Asset resolution (architecture §17): asset id -> file name inside the
-  // package's assets/ directory. Populated from the RenderRequest at the
-  // start of Render() so \includegraphics points at the imported file
-  // (with its real extension) instead of a synthetic placeholder name.
+  // Asset 解析（架构 17）：asset id -> package 内 assets/ 目录中的文件名。
+  // 在 Render() 开头从 RenderRequest 填充，使 \includegraphics 指向导入的文件
+  // （使用其真实扩展名），而不是合成的占位名。
   std::string AssetPathFor(const AssetId &id) const;
   mutable std::map<std::string, std::string> asset_files_;
 };

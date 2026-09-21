@@ -1,10 +1,8 @@
-// GUI tests for the math-input redesign:
-//   * the Inline Math toolbar action asks for a body instead of inserting a
-//     hard-coded x^{2},
-//   * an inline math object round-trips through the editor, deletes whole and
-//     survives copy/paste,
-//   * the math editor validates and previews without rewriting the source,
-//   * an Equation row exposes source, preview, numbered and label.
+// 数学输入重构的 GUI 测试：
+//   * Inline Math 工具栏动作会要求输入公式体，而不再插入写死的 x^{2}；
+//   * 行内数学对象能在编辑器中往返，整体删除，并在复制/粘贴后存活；
+//   * 数学编辑器只做校验和预览，不改写源内容；
+//   * Equation 行会暴露 source、preview、numbered 和 label。
 #include "TestMain.hpp"
 
 #include <QApplication>
@@ -62,9 +60,8 @@ InlineEditor* FindRich(MainWindow& window, const QString& node_id) {
     return nullptr;
 }
 
-// Poll until `finder` returns non-null or the timeout expires. Rebuilds are
-// deferred through the event queue, so a fixed sleep is not a reliable wait -
-// especially under a sanitizer build, where every step is much slower.
+// 轮询直到 `finder` 返回非空或超时。重建是通过事件队列延迟执行的，
+// 因此固定 sleep 并不可靠——尤其在 sanitizer 构建下，每一步都慢得多。
 template <typename Finder>
 auto WaitFor(Finder finder, int timeout_ms = 2000) -> decltype(finder()) {
     QElapsedTimer timer;
@@ -88,7 +85,7 @@ QToolButton* FindButton(MainWindow& window, const QString& text) {
     return best;
 }
 
-// A project with one Text row, ready for inline math.
+// 一个含单个 Text 行的项目，已为行内数学做好准备。
 struct Fixture {
     MainWindow window;
     QString node_id;
@@ -120,7 +117,7 @@ const Paragraph* StoredParagraph(MainWindow& window) {
     return std::get_if<Paragraph>(&sections[0].blocks[0]);
 }
 
-// Closes the next modal dialog by rejecting it, as a user pressing Esc would.
+// 通过拒绝来关闭下一个模态对话框，等同于用户按下 Esc。
 void RejectNextModalDialog(QObject* owner, int delay_ms = 60) {
     auto* timer = new QTimer(owner);
     timer->setInterval(delay_ms);
@@ -148,7 +145,7 @@ PF_TEST(InlineMathObjectRoundTripsThroughTheEditor) {
     PF_CHECK(math != nullptr);
     if (math) PF_CHECK(math->expression.latex == "\\frac{a}{b}");
 
-    // Reloading must not change the stored body.
+    // 重新加载不得改变已存储的正文。
     InlineEditor reloaded;
     reloaded.SetContent(content);
     const InlineContent again = reloaded.Content();
@@ -183,7 +180,7 @@ PF_TEST(InlineMathObjectIsNotUserEditableText) {
     EnsureQApplication();
     InlineEditor editor;
     editor.InsertInlineMath(QStringLiteral("\\mathcal{L}"));
-    // The visible text is an object placeholder, never the LaTeX body.
+    // 可见文本是对象占位符，绝不是 LaTeX 正文。
     const QString plain = editor.toPlainText();
     PF_CHECK(plain.contains(QChar(0xFFFC)));
     PF_CHECK(!plain.contains(QStringLiteral("\\mathcal{L}")));
@@ -211,8 +208,7 @@ PF_TEST(InlineMathSurvivesCopyPasteInsideTheEditor) {
     cursor.select(QTextCursor::Document);
     editor.setTextCursor(cursor);
 
-    // The editor's own clipboard flavour carries the math object, not just the
-    // object-replacement placeholder.
+    // 编辑器自有的剪贴板格式携带数学对象，而不仅仅是对象替换占位符。
     std::unique_ptr<QMimeData> copied(editor.MimeDataForSelection());
     PF_CHECK(copied != nullptr);
     if (!copied) return;
@@ -234,7 +230,7 @@ PF_TEST(InlineMathSurvivesCopyPasteInsideTheEditor) {
     }
     PF_CHECK(math_count == 2);
 
-    // The same round trip through the real clipboard, as Ctrl+C / Ctrl+V does.
+    // 经由真实剪贴板的相同往返，即 Ctrl+C / Ctrl+V 的流程。
     InlineEditor live;
     live.InsertInlineMath(QStringLiteral("\\beta"));
     QTextCursor live_cursor(live.document());
@@ -258,8 +254,8 @@ PF_TEST(InlineMathObjectIsEditedThroughTheSourceDialog) {
     InlineEditor editor;
     editor.InsertInlineMath(QStringLiteral("\\alpha"));
 
-    // EditMathAt opens the source editor asynchronously; drive the normal
-    // application event loop as a user would (type a new body, then accept).
+    // EditMathAt 会异步打开源编辑器；像用户那样驱动正常的应用事件循环
+    //（输入新的公式体，然后确认）。
     auto* driver = new QTimer(&editor);
     driver->setInterval(40);
     QObject::connect(driver, &QTimer::timeout, &editor, [driver]() {
@@ -283,8 +279,7 @@ PF_TEST(InlineMathObjectIsEditedThroughTheSourceDialog) {
     if (math) PF_CHECK(math->expression.latex == "\\beta + 1");
 }
 
-// The bug this pins: the toolbar used to insert a hard-coded x^{2} without
-// asking the user for a body.
+// 这个测试钉住的 bug：工具栏过去会插入写死的 x^{2}，而不询问用户公式体。
 PF_TEST(InlineMathToolbarAsksForABodyInsteadOfHardcoding) {
     EnsureQApplication();
     Fixture fixture("pf-inline-math-toolbar");
@@ -306,7 +301,7 @@ PF_TEST(InlineMathToolbarAsksForABodyInsteadOfHardcoding) {
     InlineEditor* after = FindRich(fixture.window, fixture.node_id);
     PF_CHECK(after != nullptr);
     if (!after) return;
-    // Cancelling the dialog must leave the row exactly as it was: no x^{2}.
+    // 取消对话框必须让该行保持原样：没有 x^{2}。
     PF_CHECK(after->toPlainText() == QStringLiteral("before after"));
     for (const auto& node : after->Content()) {
         PF_CHECK(!std::holds_alternative<InlineMath>(node));
@@ -319,16 +314,16 @@ PF_TEST(MathEditorDialogValidatesWithoutRewritingTheSource) {
     dialog.SetSourceForTest(QStringLiteral("\\frac{a}{b}"));
     PF_CHECK(dialog.StateText().contains(QStringLiteral("Valid")));
 
-    // Invalid source keeps its text and reports why.
+    // 无效源保留其文本并报告原因。
     dialog.SetSourceForTest(QStringLiteral("\\begin{equation} x \\end{equation}"));
     PF_CHECK(dialog.latex() == QStringLiteral("\\begin{equation} x \\end{equation}"));
     PF_CHECK(dialog.StateText().contains(QStringLiteral("Invalid")));
 
-    // Empty source is Pending, not an error.
+    // 空源是 Pending，而不是错误。
     dialog.SetSourceForTest(QString());
     PF_CHECK(dialog.StateText().contains(QStringLiteral("Type a math body")));
 
-    // A valid body produces a preview pixmap.
+    // 有效的公式体会生成预览 pixmap。
     dialog.SetSourceForTest(QStringLiteral("\\sqrt{x^2 + y^2}"));
     MathRenderStyle style;
     style.font_px = 18;
@@ -373,11 +368,11 @@ PF_TEST(EquationRowExposesPreviewNumberedAndLabel) {
     if (numbered) PF_CHECK(numbered->isChecked());
     if (label) PF_CHECK(label->text() == QStringLiteral("eq:energy"));
     if (source) {
-        // The source field must be the LaTeX body only - never an environment.
+        // 源字段必须只是 LaTeX 公式体——绝不能是环境。
         PF_CHECK(!source->toPlainText().contains(QStringLiteral("\\begin{equation}")));
     }
 
-    // The document stores the attributes separately from the source.
+    // 文档将属性与源分开存储。
     Document& doc = controller->session().mutable_document();
     const NodeId target = inserted.created_node;
     const EquationBlock* found = nullptr;
@@ -461,8 +456,8 @@ PF_TEST(InlineMathRepeatedEditingSurvivesMainWindowRefresh) {
         auto* dialog = editor->findChild<MathEditorDialog*>();
         PF_CHECK(dialog != nullptr);
         if (!dialog) return;
-        // A document notification while focus is in the dialog must defer
-        // rebuilding the row, even when that row was previously clean.
+        // 焦点位于对话框时收到文档通知，必须推迟重建该行，
+        // 即使该行此前是 Clean 的。
         fixture.window.controller()->InsertSection(QStringLiteral("Later"));
         Spin(80);
         PF_CHECK(!guarded.isNull());
@@ -496,13 +491,12 @@ PF_TEST(InlineMathDialogIsDestroyedWithItsEditor) {
     PF_CHECK(dialog.isNull());
 }
 
-// P0-08: the inline-math lifetime stress the review asks for. The reported
-// crash was "double free or corruption (out)" on the second double-click edit.
-// This drives the full lifecycle 100 times - insert, edit twice, delete,
-// undo, redo - inside one editor, then closes the project and destroys the
-// window. Under ASan/UBSan any double-free, use-after-free or invalid free
-// aborts the run; without a sanitizer the test still asserts that every
-// editor pointer stays valid and the document never loses the formula.
+// P0-08：评审要求的行内数学生命周期压力测试。所报告的崩溃是第二次
+// 双击编辑时的 "double free or corruption (out)"。这里在同一编辑器中
+// 完整驱动生命周期 100 次——插入、编辑两次、删除、undo、redo——
+// 然后关闭项目并销毁窗口。在 ASan/UBSan 下，任何 double-free、
+// use-after-free 或非法 free 都会中止运行；没有 sanitizer 时，测试
+// 仍会断言每个编辑器指针始终有效，且文档从不丢失公式。
 PF_TEST(InlineMathLifetimeStressLoop) {
     Fixture fixture("pf-inline-math-stress");
     auto* editor = FindRich(fixture.window, fixture.node_id);
@@ -515,16 +509,15 @@ PF_TEST(InlineMathLifetimeStressLoop) {
         editor = FindRich(fixture.window, fixture.node_id);
         PF_CHECK(editor != nullptr);
         if (!editor) return;
-        // 1-2. Insert an inline formula.
+        // 1-2. 插入一个行内公式。
         editor->setFocus();
         editor->InsertInlineMath(QStringLiteral("x_%1").arg(i));
         Spin(1);
 
-        // 3-4. Double-click style edit, then confirm. The invariant that
-        // matters is that the editor survives while the dialog is OPEN: a
-        // document notification must not tear the row down under the modal.
-        // (Accepting commits, which rebuilds the row - that is the normal
-        // full-rebuild path, so the pointer is re-fetched afterwards.)
+        // 3-4. 双击式编辑，然后确认。关键的不变量是：对话框 OPEN 期间
+        // 编辑器必须存活——文档通知不得在模态框之下拆掉该行。
+        //（接受会提交，从而重建该行——这是正常的完整重建路径，
+        // 因此之后会重新获取指针。）
         editor = FindRich(fixture.window, fixture.node_id);
         if (!editor) return;
         QPointer<InlineEditor> guarded(editor);
@@ -539,20 +532,20 @@ PF_TEST(InlineMathLifetimeStressLoop) {
             dialog->SetSourceForTest(QStringLiteral("a_%1+b").arg(i));
             dialog->accept();
         }
-        // The row must still be reachable after the commit-driven rebuild.
-        // The rebuild is posted to the event queue, so poll instead of
-        // guessing a sleep (sanitizer builds run far slower).
+        // 提交驱动的重建之后，该行必须仍然可达。
+        // 重建被投递到事件队列，因此应轮询而不是猜测睡眠时长
+        //（sanitizer 构建慢得多）。
         editor = WaitFor([&] { return FindRich(fixture.window, fixture.node_id); });
         if (!editor) {
             PF_CHECK(false);
             return;
         }
 
-        // 5-6. Edit the same formula a second time (the historical crash).
+        // 5-6. 对同一公式进行第二次编辑（历史上崩溃之处）。
         editor->EditMathAt(0);
         Spin(1);
         if (!editor->findChild<MathEditorDialog*>()) {
-            // The row was rebuilt again; locate the live editor.
+            // 该行又被重建了；定位存活的编辑器。
             editor = WaitFor([&] { return FindRich(fixture.window, fixture.node_id); });
             if (!editor) return;
             editor->EditMathAt(0);
@@ -565,8 +558,8 @@ PF_TEST(InlineMathLifetimeStressLoop) {
         }
         Spin(2);
 
-        // 7. Delete the formula from the row, then 8-9. undo/redo it.
-        //    (The editor is rebuilt by the refresh these trigger.)
+        // 7. 从该行删除公式，然后 8-9. undo/redo 它。
+        //    （这些操作触发的刷新会重建编辑器。）
         editor = FindRich(fixture.window, fixture.node_id);
         if (!editor) return;
         const auto content_before = editor->Content();
@@ -580,7 +573,7 @@ PF_TEST(InlineMathLifetimeStressLoop) {
         Spin(1);
     }
 
-    // 10. Close the project while a formula is on screen.
+    // 10. 在公式仍显示在屏幕上时关闭项目。
     editor = FindRich(fixture.window, fixture.node_id);
     if (editor) {
         editor->setFocus();
@@ -589,6 +582,6 @@ PF_TEST(InlineMathLifetimeStressLoop) {
     }
     fixture.window.controller()->CloseProject();
     Spin(20);
-    // 11. Destroy the window explicitly: the sanitizer run covers teardown.
+    // 11. 显式销毁窗口：sanitizer 运行覆盖此拆解过程。
     PF_CHECK(true);
 }

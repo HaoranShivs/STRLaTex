@@ -1,7 +1,7 @@
 #pragma once
-// UndoHistory: history coalescing + undo/redo stacks.
-// EditTransaction only merges undo entries; every real mutation still
-// produces a new ProjectRevision immediately (architecture rule 14 / 补充 1-2).
+// UndoHistory：历史合并 + undo/redo 栈。
+// EditTransaction 只合并 undo 条目；每次真实改动仍会立即
+// 产生新的 ProjectRevision（架构规则 14 / 补充 1-2）。
 
 #include <deque>
 #include <optional>
@@ -13,7 +13,7 @@ namespace pf {
 
 class UndoHistory {
 public:
-    // Key used to coalesce consecutive edits (e.g. paragraph id + "typing").
+    // 用于合并连续编辑的键（例如段落 id + "typing"）。
     using TransactionKey = std::string;
 
     void Push(HistoryEntry entry);
@@ -35,8 +35,8 @@ public:
     void Clear();
 
 private:
-    // Coalesce rule: last undo entry merges into the previous one when both
-    // belong to the same transaction key.
+    // 合并规则：当最后一条 undo 条目与前一条属于同一事务键时，
+    // 将其合并进前一条。
     std::deque<HistoryEntry> undo_;
     std::deque<HistoryEntry> redo_;
     bool transaction_active_ = false;

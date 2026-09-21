@@ -1,8 +1,6 @@
-// P0-04 regression tests: project-relative path trust boundary at the I/O
-// points. The deserialization-time validation lives in
-// TestDeserializationSafety.cpp; this file covers the second checkpoint -
-// resolution immediately before a real filesystem access, including the
-// symlink-escape case the review called out.
+// P0-04 回归测试：I/O 处的项目相对路径信任边界。反序列化阶段的校验位于
+// TestDeserializationSafety.cpp；本文件覆盖第二道检查点——紧接真正文件系统
+// 访问之前的解析，包括评审特别指出的符号链接逃逸场景。
 #include "TestMain.hpp"
 #include "ScopedTempDir.hpp"
 
@@ -39,8 +37,8 @@ PF_TEST(ResolveRejectsTraversalThatEscapesRoot) {
     auto root = TempDir("pf-boundary-root");
     std::filesystem::create_directories(root / "assets");
 
-    // A sibling directory whose name shares the root's prefix must not be
-    // reachable: containment is component-wise, not a string prefix test.
+    // 名称与根目录共享前缀的同级目录绝不可达：包含性按路径分量判断，
+    // 而非字符串前缀比较。
     auto sibling = root.parent_path() / (root.filename().string() + "2");
     std::filesystem::create_directories(sibling);
 
@@ -58,9 +56,8 @@ PF_TEST(ResolveRejectsTraversalThatEscapesRoot) {
     std::filesystem::remove_all(sibling);
 }
 
-// A symlink inside the project that points outside must not let a relative
-// path read the target: weakly_canonical resolves the link, the component
-// walk then sees the escape.
+// 项目内指向外部的符号链接，不得让相对路径读取到目标：weakly_canonical
+// 解析该链接，随后的分量遍历即可发现逃逸。
 PF_TEST(ResolveRejectsSymlinkEscape) {
     auto root = TempDir("pf-boundary-symlink");
     std::filesystem::create_directories(root / "assets");
@@ -75,8 +72,8 @@ PF_TEST(ResolveRejectsSymlinkEscape) {
     std::filesystem::create_directory_symlink(outside, root / "assets" / "link",
                                               ec);
     if (ec) {
-        // Filesystem does not support symlinks here: skip explicitly rather
-        // than reporting a pass for a check that never ran.
+        // 此处的文件系统不支持符号链接：显式跳过，而不是
+        // 为一项从未执行的检查报告通过。
         std::cout << "  [SKIP] symlinks unsupported: " << ec.message() << "\n";
         std::filesystem::remove_all(root);
         std::filesystem::remove_all(outside);
@@ -88,15 +85,15 @@ PF_TEST(ResolveRejectsSymlinkEscape) {
     if (!escaped.ok())
         PF_CHECK(escaped.error() == PathError::OutsideProjectRoot);
 
-    // The link itself resolves outside the root and must be rejected too.
+    // 链接本身解析到根目录之外，同样必须被拒绝。
     auto link_itself = ResolveUntrustedProjectPath(root, "assets/link");
     PF_CHECK(!link_itself.ok());
     std::filesystem::remove_all(root);
     std::filesystem::remove_all(outside);
 }
 
-// The compiler snapshot must not hand the build an asset source outside the
-// project, even when the registry holds a hostile relative path.
+// 即使注册表中存有恶意的相对路径，编译器 snapshot 也不得把项目之外的
+// 资源源文件交给 build。
 PF_TEST(BuildSnapshotDropsAssetsThatEscapeTheProject) {
     auto dir = TempDir("pf-boundary-snapshot");
     NullCompiler compiler;
@@ -110,7 +107,7 @@ PF_TEST(BuildSnapshotDropsAssetsThatEscapeTheProject) {
     ProjectSession session(config);
     PF_CHECK(session.NewProject(dir));
 
-    // Register an asset whose stored path tries to leave the assets dir.
+    // 注册一个存储路径试图离开 assets 目录的资源。
     AssetMetadata hostile;
     hostile.id = AssetId("a-evil");
     hostile.relative_path = "../../etc/passwd";
@@ -126,9 +123,9 @@ PF_TEST(BuildSnapshotDropsAssetsThatEscapeTheProject) {
     SnapshotFactory factory(&session.assets());
     const auto snapshot = factory.CreateBuildSnapshot(
         session.state(), std::string{});
-    // The hostile asset is dropped entirely ...
+    // 恶意资源被完全丢弃……
     PF_CHECK(snapshot.asset_files.count("a-evil") == 0);
-    // ... and every surviving source stays inside the assets directory.
+    // ……且每个保留下来的源文件都位于 assets 目录内。
     const std::string assets_root =
         std::filesystem::weakly_canonical(session.paths().assets_dir).string();
     for (const auto& [name, source] : snapshot.asset_sources) {
@@ -140,9 +137,8 @@ PF_TEST(BuildSnapshotDropsAssetsThatEscapeTheProject) {
     std::filesystem::remove_all(dir);
 }
 
-// Save must refuse to write references.bib through a traversal path; the
-// project directory must not gain a sibling file, and the persistence state
-// must not claim the project was fully persisted.
+// Save 必须拒绝通过遍历路径写入 references.bib；项目目录不得多出
+// 同级文件，持久化状态也不得声称项目已完全持久化。
 PF_TEST(SaveRefusesBibliographyPathEscape) {
     auto dir = TempDir("pf-boundary-save");
     NullCompiler compiler;
@@ -156,9 +152,8 @@ PF_TEST(SaveRefusesBibliographyPathEscape) {
     ProjectSession session(config);
     PF_CHECK(session.NewProject(dir));
 
-    // Force a traversal path into the settings, as a hostile project.paper
-    // could have done before the deserialization validator existed, and give
-    // the session a non-empty bibliography so the side-car write is attempted.
+    // 强行把遍历路径写入设置，模拟反序列化校验器出现之前恶意 project.paper
+    // 可能造成的情况，并给 session 设置非空参考文献，以触发 side-car 写入。
     session.state().mutable_settings().bibliography_path = "../../escaped.bib";
     session.ForceBibliographyForTest("% escaped\n");
 
@@ -167,7 +162,7 @@ PF_TEST(SaveRefusesBibliographyPathEscape) {
 
     auto escaped = std::filesystem::temp_directory_path() / "escaped.bib";
     PF_CHECK(!std::filesystem::exists(escaped));
-    // The unsafe side-car is skipped, so the project must not report Clean.
+    // 不安全的 side-car 被跳过，因此项目不得报告为 Clean。
     PF_CHECK(session.persistence_state() != PersistenceState::Clean);
     std::filesystem::remove(escaped);
     std::filesystem::remove_all(dir);

@@ -1,5 +1,5 @@
 #include "project/ProjectState.h"
 
 namespace pf {
-// ProjectState is header-only for V1; anchor TU.
+// ProjectState 在 V1 中为 header-only；本 TU 用于锚定。
 }  // namespace pf

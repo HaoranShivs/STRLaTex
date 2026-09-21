@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-// BibTeX parsing + bibliography service (architecture section 18).
+// BibTeX 解析与参考文献服务（架构 18）。
 
 #include <map>
 #include <optional>
@@ -12,9 +12,9 @@ namespace pf {
 
 struct BibEntry {
     std::string key;
-    std::string entry_type;  // article, inproceedings, ...
+    std::string entry_type;  // article、inproceedings 等
     std::string title;
-    std::vector<std::string> authors;  // parsed from "author" field
+    std::vector<std::string> authors;  // 由 "author" 字段解析而来
     std::string year;
     std::string venue;  // journal / booktitle
     std::map<std::string, std::string> fields;
@@ -34,9 +34,8 @@ struct BibliographyImportResult {
     std::string detail;
     size_t entry_count = 0;
     std::uint64_t bibliography_revision = 0;
-    // Keys that appeared more than once inside the imported file (citation
-    // plan §9). The last definition wins - as it does in BibTeX - but the
-    // importer must surface the conflict instead of silently merging.
+    // 在导入文件内出现多次的键（引用方案 §9）。最后一条定义生效——
+    // 与 BibTeX 的行为一致——但导入方必须暴露该冲突，而不是静默合并。
     std::vector<std::string> duplicate_keys;
 };
 
@@ -57,7 +56,7 @@ class BibliographyService {
 public:
     explicit BibliographyService(BibliographyDatabase& db) : db_(db) {}
 
-    // Parse a .bib file into the database.
+    // 把 .bib 文件解析进数据库。
     BibliographyImportResult ImportFile(const std::string& path);
     BibliographyImportResult ImportText(const std::string& bibtex_text);
 
@@ -70,7 +69,7 @@ private:
     std::uint64_t revision_ = 0;
 };
 
-// Split BibTeX author field into individual author names.
+// 把 BibTeX 的 author 字段拆分为各个作者名。
 std::vector<std::string> SplitBibAuthors(const std::string& authors);
 
 }  // namespace pf

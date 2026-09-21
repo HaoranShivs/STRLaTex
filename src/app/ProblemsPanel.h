@@ -1,10 +1,9 @@
 #pragma once
-// Problems + Build Log panel (Build Diagnostics plan §6-§8, §20-§29, §41-§43).
+// Problems + Build Log 面板（Build Diagnostics 方案 §6-§8、§20-§29、§41-§43）。
 //
-// The panel is a *renderer* over structured data: Problems come from
-// Diagnostic value objects, the Build Log from BuildEvent value objects. It
-// never parses compiler output or log text itself - classification belongs to
-// DiagnosticMapper in the build layer.
+// 该面板是结构化数据之上的 *渲染器*：Problems 来自 Diagnostic 值对象，
+// Build Log 来自 BuildEvent 值对象。它自身从不解析编译器输出或日志文本——
+// 分类工作属于 build 层的 DiagnosticMapper。
 
 #include <QString>
 #include <QWidget>
@@ -29,16 +28,16 @@ class ProblemsPanel : public QWidget {
 public:
     explicit ProblemsPanel(QWidget* parent = nullptr);
 
-    // ---- Problems tab ----
-    // Replaces the whole diagnostic set of one build (plan §30: the panel is
-    // updated once per completed build, not per arriving diagnostic).
+    // ---- Problems 标签页 ----
+    // 整体替换一次 build 的 Diagnostic 集合（方案 §30：面板在每次 build
+    // 完成后更新一次，而不是每到达一条 Diagnostic 就更新）。
     void SetDiagnostics(const std::vector<Diagnostic>& diagnostics);
     void SetStale(bool stale, int behind_by);
     void ShowProblemsTab();
 
-    // ---- Build Log tab ----
-    // Streams one lifecycle event; a BuildStarted event begins a new build
-    // and clears the previous log (plan §8/§30).
+    // ---- Build Log 标签页 ----
+    // 流式接收一个生命周期事件；BuildStarted 事件会开启新的 build
+    // 并清空此前的日志（方案 §8/§30）。
     void AppendEvent(const pf::BuildEvent& event);
     void ShowBuildLog();
 
@@ -66,12 +65,12 @@ private:
     ProblemsState state_ = ProblemsState::NeverBuilt;
     bool stale_ = false;
 
-    // Current build log (plan §6 BuildLogModel): events of the build being
-    // displayed; Clear View only resets the widget, not this model.
+    // 当前 build 日志（方案 §6 BuildLogModel）：正在显示的 build 的事件；
+    // Clear View 只重置控件，不重置此模型。
     BuildId log_build_id_;
     std::vector<pf::BuildEvent> events_;
-    std::string last_stream_;   // "out"/"err" for [stdout]/[stderr] headers
-    bool log_needs_newline_ = false;  // last raw chunk ended mid-line
+    std::string last_stream_;   // [stdout]/[stderr] 头部所用的 "out"/"err"
+    bool log_needs_newline_ = false;  // 上一个原始数据块在一行中途结束
 };
 
 }  // namespace pf::gui

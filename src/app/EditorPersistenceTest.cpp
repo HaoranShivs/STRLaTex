@@ -1,18 +1,16 @@
-// Regression test for the "typing is wiped by a periodic refresh" bug.
+// 针对「周期性刷新会清空正在输入的内容」这一缺陷的回归测试。
 //
-// Reported symptom: roughly once a second every row was rebuilt, which threw
-// away whatever the user was typing. Root cause was a self-sustaining cycle:
-// rebuild -> programmatic restyle fires textChanged -> idle auto-commit timer
-// -> documentChanged -> rebuild, forever.
+// 现象：大约每秒所有行都会被重建一次，用户正在输入的内容随之丢失。根因是一个自我
+// 维持的循环：rebuild -> 程序化重设样式触发 textChanged -> 空闲自动提交定时器
+// -> documentChanged -> rebuild，如此往复。
 //
-// The invariants enforced here:
-//   1. While a row holds uncommitted user input, no rebuild happens at all
-//      (the live editor instance must survive idle time).
-//   2. The typed text is still there after the editor sits idle.
-//   3. Committing on Enter / focus-out lands the text in the document, and a
-//      later rebuild still shows it.
+// 这里要守护的不变量：
+//   1. 只要某一行存在未提交的用户输入，就完全不进行 rebuild
+//      （存活的编辑器实例必须能熬过空闲时间）。
+//   2. 编辑器空闲后，已输入的文本仍然存在。
+//   3. 按 Enter / 失焦提交后，文本进入 document，之后的 rebuild 仍能显示它。
 //
-// Run with: QT_QPA_PLATFORM=offscreen ./build/src/app/paperforge-gui-persistence-test
+// 运行方式：QT_QPA_PLATFORM=offscreen ./build/src/app/paperforge-gui-persistence-test
 #include <QApplication>
 #include <QElapsedTimer>
 
@@ -57,9 +55,8 @@ void Check(bool ok, const char* what) {
     if (!ok) ++failures;
 }
 
-// Wait until no build is running and no application event is queued. A build
-// that completes mid-test hands a new PDF to the preview, and loading a PDF
-// re-fits the zoom; assertions about zoom must not race that.
+// 等待直到没有 build 在运行、也没有排队中的应用事件。若某个 build 在测试中途完成，
+// 会把新的 PDF 交给预览，而加载 PDF 会重新适配缩放；有关缩放的断言不能与此竞争。
 void SettleBuilds(MainWindow& window, int timeout_ms = 30000) {
     auto& session = window.controller()->session();
     QElapsedTimer timer;
@@ -75,8 +72,7 @@ void SettleBuilds(MainWindow& window, int timeout_ms = 30000) {
     }
 }
 
-// Keep the event loop turning for a while, exactly as the GUI would while the
-// user pauses to think mid-sentence.
+// 让事件循环持续运转一段时间，正如用户在句中停顿思考时 GUI 所做的那样。
 void Spin(int ms) {
     QElapsedTimer timer;
     timer.start();
@@ -86,20 +82,18 @@ void Spin(int ms) {
     }
 }
 
-// The visible editor for a row, identified by its stable focus key.
+// 某一行的可见编辑器，由其稳定的 focus key 标识。
 //
-// A rebuild hides the previous rows and creates new ones; both survive until
-// the deferred delete runs, so only visible widgets count, and the last
-// created one wins.
+// rebuild 会隐藏旧行并创建新行；两者都会存活到延迟删除执行，因此只有可见的 widget
+// 才算数，且以最后创建的那个为准。
 //
-// Rows are either QPlainTextEdit (front matter, headings, equations) or
-// InlineEditor (Text rows). The two do not share a widget base beyond
-// QAbstractScrollArea, so the lookup hands back the common editing surface
-// the tests actually need: text get/set, cursor, document, focus.
+// 行要么是 QPlainTextEdit（front matter、标题、公式），要么是 InlineEditor（Text
+// 行）。两者除 QAbstractScrollArea 外没有共同的 widget 基类，因此查找返回的是测试
+// 实际需要的通用编辑界面：文本读写、光标、document、焦点。
 struct RowEditor {
     QWidget* widget = nullptr;
-    QPlainTextEdit* plain = nullptr;  // set when the row is a QPlainTextEdit
-    QTextEdit* rich = nullptr;        // set when the row is an InlineEditor
+    QPlainTextEdit* plain = nullptr;  // 该行是 QPlainTextEdit 时设置
+    QTextEdit* rich = nullptr;        // 该行是 InlineEditor 时设置
 
     QString toPlainText() const {
         return plain ? plain->toPlainText() : rich->toPlainText();
@@ -118,7 +112,7 @@ struct RowEditor {
     void keyClick(Qt::Key key, Qt::KeyboardModifiers mods = Qt::NoModifier) {
         QTest::keyClick(widget, key, mods);
     }
-    // Text-row specifics. Only valid when the row is a rich editor.
+    // Text 行专有。仅当该行是富文本编辑器时有效。
     QTextEdit* AsRich() const { return rich; }
     QPlainTextEdit* AsPlain() const { return plain; }
     int LineSpacing() const {
@@ -164,8 +158,7 @@ RowEditor FindRow(MainWindow& window, const QString& focus_key) {
 
 namespace {
 
-// A minimal N-page PDF, written by hand so the preview can be tested without
-// running a full LaTeX build.
+// 一个最小的 N 页 PDF，手工写出，以便无需运行完整的 LaTeX build 就能测试预览。
 QString WriteMultiPagePdf(const QString& path, int page_count) {
     std::vector<std::string> objects;
     objects.push_back("<< /Type /Catalog /Pages 2 0 R >>");
@@ -221,8 +214,8 @@ int main(int argc, char* argv[]) {
 
     Check(window.controller()->NewProject(QString::fromStdString(dir.string())),
           "create project");
-    // Save is asynchronous (snapshot -> save worker), so flush to make sure
-    // project.paper is on disk before the test reopens the directory.
+    // 保存是异步的（snapshot -> save worker），因此要 flush 以确保测试重新打开该
+    // 目录之前 project.paper 已落盘。
     window.controller()->Save();
     window.controller()->FlushSaves();
     Spin(100);
@@ -230,7 +223,7 @@ int main(int argc, char* argv[]) {
           "open project shows the workspace");
     Spin(200);
 
-    // ---- 1. Single-line row: typing must survive idle time ----
+    // ---- 1. 单行输入行：输入必须能熬过空闲时间 ----
     RowEditor title = FindRow(window, "front:title");
     Check(title != nullptr, "title row exists");
     if (!title) {
@@ -246,7 +239,7 @@ int main(int argc, char* argv[]) {
     title.keyClicks(typed);
     Check(title.toPlainText() == typed, "typing lands in the title row");
 
-    // Sit idle for far longer than the old ~400ms auto-commit / rebuild cycle.
+    // 空闲等待的时间远超旧的约 400ms 自动提交 / rebuild 周期。
     Spin(2000);
 
     RowEditor title_after_idle = FindRow(window, "front:title");
@@ -266,7 +259,7 @@ int main(int argc, char* argv[]) {
     Check(pf::InlineToPlainText(fm_before.title).empty(),
           "no implicit mid-typing commit (design: commit on focus-out)");
 
-    // ---- 2. Commit on Enter, then a rebuild must still show the text ----
+    // ---- 2. 按 Enter 提交，之后的 rebuild 仍须显示该文本 ----
     title.keyClick(Qt::Key_Return);
     Spin(300);
 
@@ -283,7 +276,7 @@ int main(int argc, char* argv[]) {
               title_after_commit.toPlainText() == typed,
           "committed title is shown after the rebuild");
 
-    // ---- 3. Multi-line row (abstract): same guarantees ----
+    // ---- 3. 多行输入行（abstract）：同样的保证 ----
     RowEditor abstract_row = FindRow(window, "front:abstract");
     Check(abstract_row != nullptr, "abstract row exists");
     if (abstract_row) {
@@ -304,7 +297,7 @@ int main(int argc, char* argv[]) {
                   abstract_idle.toPlainText() == abstract_text,
               "multi-line abstract survives idle time");
 
-        // Focus-out commits it (title row takes focus).
+        // 失焦时提交它（title 行取得焦点）。
         RowEditor title_row = FindRow(window, "front:title");
         if (title_row) title_row.setFocus(Qt::MouseFocusReason);
         Spin(400);
@@ -319,7 +312,7 @@ int main(int argc, char* argv[]) {
               "focus-out commits the abstract to the document");
     }
 
-    // ---- 4. Rows fit their text; only the pane scrolls ----
+    // ---- 4. 行高度适应其文本；只有窗格滚动 ----
     auto section = window.controller()->InsertSection(QStringLiteral("Body"));
     auto inserted = window.controller()->InsertParagraph(
         section.created_node, QStringLiteral("seed"));
@@ -354,8 +347,7 @@ int main(int argc, char* argv[]) {
         Check(paragraph.document()->blockCount() == 1,
               "wrapping did not invent extra blocks");
 
-        // The text must actually be visible: the document's laid-out height
-        // has to fit inside the widget.
+        // 文本必须真正可见：document 排布后的高度必须能容纳在 widget 内。
         const QRectF last =
             paragraph.document()
                 ->documentLayout()
@@ -363,9 +355,8 @@ int main(int argc, char* argv[]) {
         Check(last.bottom() <= paragraph.height(),
               "widget is at least as tall as the laid-out text");
 
-        // A pasted multi-line abstract arrives as many explicit blocks; every
-        // one of them has to be visible. Measured independently of the widget:
-        // each block needs at least one line of its own.
+        // 粘贴进来的多行 abstract 会以多个显式 block 的形式到达；其中每一个都必须
+        // 可见。此处独立于 widget 进行测量：每个 block 至少需要占一行。
         {
             QStringList lines;
             for (int i = 0; i < 20; ++i) {
@@ -387,7 +378,7 @@ int main(int argc, char* argv[]) {
                   "row height covers every pasted line");
         }
 
-        // A rebuild may have replaced the row; re-fetch before touching it.
+        // rebuild 可能已替换了该行；操作它之前要重新获取。
         paragraph = FindRow(window, paragraph_key);
         Check(paragraph != nullptr, "paragraph row still present");
         if (paragraph) paragraph.SetPlainText(QStringLiteral("short"));
@@ -395,7 +386,7 @@ int main(int argc, char* argv[]) {
         Check(paragraph && paragraph.height() < tall_height,
               "row height shrinks again when the text is cleared");
 
-        // Exactly one scrollbar serves the whole pane.
+        // 整个窗格恰好由一个滚动条提供服务。
         int visible_pane_scrollbars = 0;
         for (QScrollArea* area : window.findChildren<QScrollArea*>()) {
             if (area->isVisible() &&
@@ -406,14 +397,13 @@ int main(int argc, char* argv[]) {
         Check(visible_pane_scrollbars >= 1, "editor pane provides scrolling");
     }
 
-    // ---- 5. Preview zoom follows the mouse wheel ----
+    // ---- 5. 预览缩放跟随鼠标滚轮 ----
     {
         PdfPreview* preview = window.findChild<PdfPreview*>();
         Check(preview != nullptr, "preview widget exists");
         if (preview) {
-            // Let any in-flight build finish first: loading a PDF resets the
-            // zoom to fit-width and would otherwise land between the wheel
-            // event and the assertion.
+            // 先让任何进行中的 build 结束：加载 PDF 会把缩放重置为适应宽度，否则
+            // 它会插入到滚轮事件与断言之间。
             SettleBuilds(window);
             preview->SetZoom(1.0);
             const double before = preview->zoom();
@@ -447,15 +437,15 @@ int main(int argc, char* argv[]) {
     }
 
 
-        // ---- 6. A hard-wrapped paste re-flows to the block width ----
+        // ---- 6. 硬换行的粘贴内容会按块宽度重新排版 ----
         {
-            // Focusing another row commits the one being left, which can
-            // rebuild every row; always re-fetch the pointer before using it.
+            // 聚焦另一行会提交被离开的那一行，而这可能重建所有行；使用指针前
+            // 始终要重新获取。
             auto abstract_row_fn = [&]() { return FindRow(window, "front:abstract"); };
             Check(abstract_row_fn() != nullptr, "abstract row available");
             if (RowEditor row = abstract_row_fn()) {
-                // Exactly what copying a paragraph out of a PDF produces:
-                // pre-wrapped at a fixed column, breaking mid-sentence.
+                // 正是从 PDF 中复制段落所得到的结果：在固定列宽处预先换行，句子
+                // 中途被断开。
                 const QString hard = QStringLiteral(
                     "The success of deep learning in infrared small\n"
                     "target detection relies on large-scale annotations, "
@@ -470,8 +460,7 @@ int main(int argc, char* argv[]) {
                 Spin(120);
                 if (RowEditor target = abstract_row_fn()) target.SetText(QString());
                 Spin(80);
-                // Real paste path (Ctrl+V): the editor's own paste hook is
-                // what is under test.
+                // 真实的粘贴路径（Ctrl+V）：被测的是编辑器自身的粘贴钩子。
                 if (RowEditor target = abstract_row_fn()) {
                     target.keyClick(Qt::Key_V, Qt::ControlModifier);
                 }
@@ -514,7 +503,7 @@ int main(int argc, char* argv[]) {
                     Spin(300);
                 }
 
-                // Committing stores the softened text, not the hard wraps.
+                // 提交时存储的是被软化的文本，而非硬换行。
                 if (RowEditor target = abstract_row_fn()) {
                     target.widget->clearFocus();
                 }
@@ -536,10 +525,9 @@ int main(int argc, char* argv[]) {
             }
         }
 
-    // ---- 7. Every block carries a hover insert affordance ----
+    // ---- 7. 每个 block 都带有悬停插入入口 ----
     {
-        // Rows from an earlier rebuild may still sit in the deferred-delete
-        // queue, so only live widgets count.
+        // 来自先前 rebuild 的行可能仍在延迟删除队列中，因此只统计存活的 widget。
         auto gaps = [&]() {
             std::vector<QWidget*> found;
             for (QWidget* w : window.findChildren<QWidget*>()) {
@@ -589,18 +577,16 @@ int main(int argc, char* argv[]) {
                                  got_kind = kind;
                                  got_anchor = anchor;
                              });
-            // The click opens a modal menu, so the choice has to be made from
-            // inside its event loop: poll for the popup, then activate its
-            // first entry the way a keyboard user would (so the menu's exec()
-            // returns that action).
+            // 点击会打开模态菜单，因此必须在其事件循环内部做出选择：轮询弹出
+            // 菜单，然后像键盘用户那样激活它的第一个条目（使菜单的 exec() 返回
+            // 该 action）。
             auto* picker = new QTimer(&window);
             QObject::connect(picker, &QTimer::timeout, [&]() {
                 auto* popup =
                     qobject_cast<QMenu*>(QApplication::activePopupWidget());
                 if (!popup) return;
-                // The menu is grouped (Structure / Content) with disabled
-                // group titles, so pick the first *enabled, actionable* entry
-                // rather than literally the first action.
+                // 菜单是分组的（Structure / Content），组标题被禁用，因此要选
+                // 第一个*已启用且可操作*的条目，而不是字面上的第一个 action。
                 QAction* target = nullptr;
                 for (QAction* action : popup->actions()) {
                     if (action->isEnabled() && action->data().isValid()) {
@@ -609,9 +595,8 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 if (target == nullptr) return;
-                // Prefer the "Text" entry when it is offered; that is the
-                // insertion the test then verifies. Fall back to whatever
-                // else is actionable.
+                // 若提供「Text」条目则优先选它；那正是测试随后验证的插入操作。
+                // 否则回退到任何其他可操作的条目。
                 QAction* preferred = nullptr;
                 for (QAction* action : popup->actions()) {
                     if (action->isEnabled() &&
@@ -640,14 +625,14 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ---- 8. The card menu reorders blocks ----
+    // ---- 8. 卡片菜单可重排 block ----
     {
         auto* ctl = window.controller();
         auto sec = ctl->InsertSection(QStringLiteral("Order"));
         auto first = ctl->InsertParagraph(sec.created_node, QStringLiteral("alpha"));
         auto second =
             ctl->InsertParagraph(sec.created_node, QStringLiteral("beta"));
-        // Only the paragraphs of this section matter.
+        // 只有本节内的段落才算数。
         auto order = [&]() {
             QStringList texts;
             const auto& doc = window.controller()->session().state().document();
@@ -666,7 +651,7 @@ int main(int argc, char* argv[]) {
         Check(order() == QStringLiteral("alpha,beta"),
               "paragraphs start in order");
 
-        // The chrome only appears on hover, so hover the second card first.
+        // 界面装饰只在悬停时出现，因此先悬停第二张卡片。
         QWidget* card = nullptr;
         for (QWidget* w : window.findChildren<QWidget*>()) {
             auto* frame = qobject_cast<QFrame*>(w);
@@ -726,7 +711,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ---- 9. The preview shows every page, one after another ----
+    // ---- 9. 预览依次显示每一页 ----
     {
         auto* preview = window.findChild<PdfPreview*>();
         Check(preview != nullptr, "preview widget available");
@@ -734,9 +719,8 @@ int main(int argc, char* argv[]) {
             const QString pdf = WriteMultiPagePdf(
                 QString::fromStdString((dir / "multi.pdf").string()), 3);
 
-            // Editing schedules a debounced build, and every finished build
-            // swaps the preview document. Let that settle first, then never
-            // hold on to a sheet pointer across an event loop turn.
+            // 编辑会调度一次去抖的 build，而每次完成的 build 都会替换预览
+            // document。先让它稳定，之后绝不要跨越事件循环轮次持有 sheet 指针。
             Spin(4000);
             auto sheets_now = [&]() {
                 std::vector<QLabel*> found;
@@ -753,7 +737,7 @@ int main(int argc, char* argv[]) {
             };
             auto load = [&]() {
                 preview->SetDocument(pdf);
-                preview->SetZoom(1.0);  // independent of the pane width
+                preview->SetZoom(1.0);  // 独立于窗格宽度
             };
 
             load();
@@ -777,7 +761,7 @@ int main(int argc, char* argv[]) {
                 Check(preview->visiblePage() == 1, "the view starts on page 1");
             }
 
-            // Scrolling to the end must land on, and render, the last page.
+            // 滚动到末尾必须落到最后一页并渲染它。
             load();
             Spin(700);
             preview->ScrollTo(0.0, 1.0);
@@ -796,15 +780,15 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ---- 10. Authors are linked to institutions in the GUI ----
+    // ---- 10. 在 GUI 中把作者关联到机构 ----
     {
         auto* ctl = window.controller();
-        // Two institutions and two authors, no markers typed.
+        // 两个机构和两位作者，未输入任何标记。
         ctl->SetAffiliationsText(QStringLiteral("GUET; GETU"));
         ctl->SetAuthorsText(QStringLiteral("first, second"));
         Spin(400);
 
-        // The panel lists one row per author and shows the current links.
+        // 面板为每位作者列出一行，并显示当前的关联关系。
         std::vector<QToolButton*> pickers;
         for (QToolButton* button : window.findChildren<QToolButton*>()) {
             if (button->objectName() ==
@@ -822,9 +806,8 @@ int main(int argc, char* argv[]) {
             ctl->session().state().document().front_matter().affiliations;
         Check(affiliations.size() == 2, "two institutions available");
         if (pickers.size() == 2 && affiliations.size() == 2) {
-            // Toggle the second institution for the first author through the
-            // controller call the menu uses, then check both the document and
-            // the refreshed panel.
+            // 通过菜单所用的 controller 调用切换第一位作者的第二个机构，然后
+            // 同时检查 document 和刷新后的面板。
             Check(ctl->SetAuthorAffiliation(0, affiliations[1].id, true)
                       .status == pf::EditStatus::Applied,
                   "link author 1 to institution 2");
@@ -837,7 +820,7 @@ int main(int argc, char* argv[]) {
             Check(authors[1].affiliations.empty(),
                   "other authors are untouched");
 
-            // The Authors row shows the marker, and the panel shows it too.
+            // Authors 行会显示该标记，面板也会显示它。
             RowEditor authors_row = FindRow(window, "front:authors");
             Check(authors_row != nullptr, "authors row present");
             if (authors_row) {
@@ -859,14 +842,14 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ---- 11. Dragging a block onto a gap reorders the document ----
+    // ---- 11. 把 block 拖放到 gap 上可重排 document ----
     {
         auto* ctl = window.controller();
         auto sec = ctl->InsertSection(QStringLiteral("Drag"));
         auto alpha = ctl->InsertParagraph(sec.created_node, QStringLiteral("alpha"));
         auto beta = ctl->InsertParagraph(sec.created_node, QStringLiteral("beta"));
         auto gamma = ctl->InsertParagraph(sec.created_node, QStringLiteral("gamma"));
-        Spin(1200);  // let the debounced build and rebuild settle
+        Spin(1200);  // 让去抖的 build 与 rebuild 稳定下来
 
         auto order = [&]() {
             QStringList texts;
@@ -885,7 +868,7 @@ int main(int argc, char* argv[]) {
         Check(order() == QStringLiteral("alpha,beta,gamma"),
               "blocks start in order");
 
-        // The grip exists and is draggable, and every gap accepts our type.
+        // 拖拽手柄存在且可拖动，每个 gap 都接受我们的类型。
         int grips = 0;
         int drop_targets = 0;
         for (QWidget* w : window.findChildren<QWidget*>()) {
@@ -898,14 +881,14 @@ int main(int argc, char* argv[]) {
             if (child->inherits("QWidget") &&
                 child->property("row_node").toString() ==
                     QString::fromStdString(gamma.created_node.value())) {
-                // The grip is a plain QWidget child of the header.
+                // 拖拽手柄是 header 的普通 QWidget 子对象。
             }
         }
         std::cout << "  drop_targets=" << drop_targets << " grips=" << grips
                   << "\n";
         Check(drop_targets >= 3, "every block has a drop target after it");
 
-        // First the controller on its own, so a failure below is unambiguous.
+        // 先单独测试 controller，这样下面若失败则原因明确。
         Check(ctl->MoveNodeAfter(gamma.created_node, alpha.created_node)
                       .status == pf::EditStatus::Applied,
               "MoveNodeAfter is accepted");
@@ -915,8 +898,8 @@ int main(int argc, char* argv[]) {
         Check(order() == QStringLiteral("alpha,gamma,beta"),
               "MoveNodeAfter reorders the document");
 
-        // Then the same thing through a real drop on the gap after "beta":
-        // gamma has to come back to the end.
+        // 然后通过对「beta」之后的 gap 执行真实拖放来做同样的事：gamma 必须回到
+        // 末尾。
         QWidget* target_gap = nullptr;
         for (QWidget* w : window.findChildren<QWidget*>()) {
             if (w->property("gap_anchor").toString() ==
@@ -927,9 +910,8 @@ int main(int argc, char* argv[]) {
         }
         Check(target_gap != nullptr, "the gap after beta exists");
         if (target_gap) {
-            // The drop itself is delivered by Qt's drag manager, which needs a
-            // real pointer device; the gap's action is invoked through the
-            // meta-object so the reorder wiring below is still covered.
+            // 拖放本身由 Qt 的拖拽管理器投递，它需要真实的指针设备；这里通过
+            // meta-object 调用 gap 的 action，从而仍能覆盖下面的重排接线。
             const QString gamma_id =
                 QString::fromStdString(gamma.created_node.value());
             const bool invoked = QMetaObject::invokeMethod(

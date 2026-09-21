@@ -1,16 +1,15 @@
 #pragma once
-// MathValidator: the LaTeX input boundary (math-input design §5).
+// MathValidator：LaTeX 输入边界（math-input 设计 §5）。
 //
-// A math body may use math commands and math-internal structures
-// (\frac, \sqrt, \sum, \left...\right, \begin{aligned}, \begin{cases}, ...).
-// It may NOT control the document or the outer formula environment:
+// 数学体可以使用数学命令与数学内部结构
+// （\frac、\sqrt、\sum、\left...\right、\begin{aligned}、\begin{cases} 等）。
+// 但它不得控制文档或外层公式环境：
 //
-//   forbidden commands     \documentclass \usepackage \section \input \def ...
-//   forbidden environments \begin{document} \begin{equation} \begin{figure} ...
-//   delimiters             $...$  \(...\)  \[...\]   (the generator adds them)
+//   禁止的命令     \documentclass \usepackage \section \input \def ...
+//   禁止的环境     \begin{document} \begin{equation} \begin{figure} ...
+//   定界符         $...$  \(...\)  \[...\]   （由生成器添加）
 //
-// The validator only inspects the source; it never rewrites it. An invalid
-// expression keeps its original LaTeX (design §8).
+// 校验器只检查源码，从不改写它。无效表达式保留其原始 LaTeX（设计 §8）。
 
 #include <string>
 
@@ -20,13 +19,12 @@ namespace pf {
 
 MathValidation ValidateMath(const std::string& latex, MathFlavor flavor);
 
-// True when `command` (without the leading backslash, e.g. "section") is a
-// document-level command that math input must not use.
+// 当 `command`（不含前导反斜杠，例如 "section"）是数学输入不得使用的
+// 文档级命令时返回 true。
 bool IsForbiddenMathCommand(const std::string& command);
 
-// True when `environment` (e.g. "equation", "figure") is an outer environment
-// math input must not open. Math-internal ones ("aligned", "cases", "matrix")
-// are allowed.
+// 当 `environment`（例如 "equation"、"figure"）是数学输入不得打开的外层
+// 环境时返回 true。数学内部环境（"aligned"、"cases"、"matrix"）则允许使用。
 bool IsForbiddenMathEnvironment(const std::string& environment);
 
 }  // namespace pf

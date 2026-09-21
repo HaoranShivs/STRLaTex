@@ -1,18 +1,17 @@
 #pragma once
-// P0-04: typed, validated project-relative paths.
+// P0-04：带类型、经校验的项目相对路径。
 //
-// A project file stores asset/bibliography locations as relative paths. Those
-// bytes are untrusted input: a hand-edited or corrupted .paper file must not
-// be able to make the app read, copy or overwrite anything outside the
-// project root. This module is the single boundary for such paths:
+// 项目文件以相对路径存储 asset/bibliography 位置。这些字节属于不可信输入：
+// 手工编辑过或损坏的 .paper 文件绝不能使应用读取、复制或覆盖项目根之外的任何
+// 内容。本模块是这类路径的唯一边界：
 //
-//   * ProjectRelativePath - a string that has passed Parse() and is known to
-//     be relative, in-bounds and free of traversal components.
-//   * ResolveProjectRelativePath - the only sanctioned root-relative
-//     resolution, using component-wise comparison (never string prefixes).
+//   * ProjectRelativePath——已通过 Parse()、确知为相对、在界内且不含穿越组件
+//     的字符串。
+//   * ResolveProjectRelativePath——唯一被认可的根相对解析，采用逐组件比较
+//     （绝不使用字符串前缀）。
 //
-// Serialization may only round-trip ProjectRelativePath values; business code
-// must not write raw std::string paths back into project files.
+// 序列化只允许对 ProjectRelativePath 值做往返；业务代码不得把原始 std::string
+// 路径写回项目文件。
 
 #include <filesystem>
 #include <string>
@@ -26,44 +25,42 @@ enum class PathError : std::uint8_t {
     Empty,
     Absolute,
     OutsideProjectRoot,
-    InvalidComponent,   // "." / ".." / empty component / NUL
+    InvalidComponent,   // "." / ".." / 空组件 / NUL
     TooLong,
-    NotResolved,        // resolution-time failure (root missing, symlink out)
+    NotResolved,        // 解析期失败（root 缺失、符号链接指向外部）
 };
 
-// Human-readable message for UI/log surfaces.
+// 供 UI/日志界面使用的人类可读消息。
 std::string PathErrorMessage(PathError error);
 
 class ProjectRelativePath {
 public:
-    // Parse an untrusted string into a validated project-relative path.
-    // Rejects: empty, absolute paths, drive/UNC prefixes, "." and ".."
-    // components, empty components, NUL bytes and overlong paths.
+    // 将不可信字符串解析为经校验的项目相对路径。
+    // 拒绝：空路径、绝对路径、驱动器/UNC 前缀、"." 与 ".." 组件、空组件、
+    // NUL 字节以及超长路径。
     static Result<ProjectRelativePath, PathError> Parse(std::string_view raw);
 
-    // Normalized, portable form (forward slashes, no redundant separators) as
-    // it should be stored in a project file.
+    // 规范化、可移植的形式（正斜杠、无冗余分隔符），项目文件中应存储这种形式。
     const std::string& value() const noexcept { return value_; }
-    // Filesystem path form for joining with a project root.
+    // 文件系统路径形式，用于与项目根拼接。
     const std::filesystem::path& path() const noexcept { return path_; }
 
 private:
     explicit ProjectRelativePath(std::string value, std::filesystem::path path)
         : value_(std::move(value)), path_(std::move(path)) {}
 
-    std::string value_;               // normalized textual form
-    std::filesystem::path path_;      // same path in fs form
+    std::string value_;               // 规范化文本形式
+    std::filesystem::path path_;      // 同一路径的 fs 形式
 };
 
-// The only sanctioned root-relative resolution. Both root and target are
-// canonicalized with weakly_canonical (the target may not exist yet) and
-// containment is compared component-wise, so "..", symlinks and
-// look-alike-prefix names ("project2") cannot escape the root.
+// 唯一被认可的根相对解析。root 与 target 都用 weakly_canonical 规范化（target
+// 可能尚不存在），包含关系按组件逐一比较，因此 ".."、符号链接以及前缀相似的
+// 名称（"project2"）都无法逃出 root。
 Result<std::filesystem::path, PathError> ResolveProjectRelativePath(
     const std::filesystem::path& project_root,
     const ProjectRelativePath& relative);
 
-// Convenience: validate + resolve in one step for an untrusted string.
+// 便捷函数：对不可信字符串一步完成校验与解析。
 Result<std::filesystem::path, PathError> ResolveUntrustedProjectPath(
     const std::filesystem::path& project_root, std::string_view raw);
 

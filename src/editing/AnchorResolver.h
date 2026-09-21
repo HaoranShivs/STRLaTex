@@ -1,7 +1,7 @@
 #pragma once
-// StableNodeAnchor resolution (architecture section 十).
-// Used to re-resolve insertion points against the *current* document state,
-// e.g. after an async asset import (architecture 补充 rule 4).
+// StableNodeAnchor 解析（架构 十）。
+// 用于针对*当前*文档状态重新解析插入点，
+// 例如异步资源导入之后（架构补充 4）。
 
 #include <optional>
 
@@ -13,11 +13,11 @@ namespace pf {
 
 struct ResolvedInsertionPoint {
     NodeId parent;
-    std::optional<size_t> index;  // nullopt = append
+    std::optional<size_t> index;  // nullopt = 追加
 };
 
 enum class AnchorResolveError {
-    ReferenceNodeMissing,  // reference node no longer exists
+    ReferenceNodeMissing,  // 参考节点已不存在
 };
 
 const char* ToString(AnchorResolveError error);

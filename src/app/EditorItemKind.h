@@ -1,11 +1,10 @@
 #pragma once
-// EditorItemKind: how the GUI classifies a row in the editor (plan §2.2).
+// EditorItemKind：GUI 如何对编辑器中的一行进行分类（方案 §2.2）。
 //
-// The domain model keeps the Structure/Block distinction it always had
-// (Section/Subsection/Subsubsection are structure nodes; Paragraph/Figure/
-// Table/EquationBlock are blocks). The GUI used to flatten both into the
-// same "kind" string, which is why a heading row and a text row were hard to
-// tell apart and why the insert menu could not be filtered by where you are.
+// 领域模型始终保留 Structure/Block 的区分
+// （Section/Subsection/Subsubsection 是结构节点；Paragraph/Figure/
+// Table/EquationBlock 是块）。GUI 过去把二者压平为同一个 "kind" 字符串，
+// 这正是标题行与正文行难以区分、插入菜单无法按当前所处位置过滤的原因。
 
 #include <QString>
 
@@ -14,36 +13,36 @@
 namespace pf::gui {
 
 enum class EditorItemKind {
-    // Front matter
+    // 前置部分
     PaperTitle,
     Authors,
     Affiliations,
     Abstract,
     Keywords,
 
-    // Structure
+    // 结构
     SectionTitle,
     SubsectionTitle,
     SubsubsectionTitle,
 
-    // Content
+    // 内容
     Text,
     Equation,
     Figure,
     Table,
 };
 
-// Human-facing label, e.g. "Section Title", "Text".
+// 面向用户的标签，例如 "Section Title"、"Text"。
 QString EditorItemLabel(EditorItemKind kind);
 
-// Stable machine name used by the insert menu / "/" command payload.
+// 插入菜单 / "/" 命令载荷使用的稳定机器名。
 QString EditorItemKindName(EditorItemKind kind);
 
-// Parse back. Returns false for unknown names.
+// 反向解析。名称未知时返回 false。
 bool EditorItemKindFromName(const QString& name, EditorItemKind* out);
 
-// Classify a document node. Front matter has its own kinds and is not derived
-// from NodeKind.
+// 对文档节点进行分类。前置部分有自己的 kind，并非派生
+// 自 NodeKind。
 EditorItemKind EditorItemKindOfNode(NodeKind kind);
 
 }  // namespace pf::gui

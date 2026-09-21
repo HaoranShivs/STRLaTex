@@ -1,4 +1,4 @@
-// Bibliography tests: BibTeX parsing, search.
+// Bibliography 测试：BibTeX 解析、搜索。
 #include "TestMain.hpp"
 
 #include "bibliography/BibliographyService.h"
@@ -95,7 +95,7 @@ PF_TEST(BibliographyReimportUpdates) {
     BibliographyDatabase db;
     BibliographyService service(db);
     service.ImportText(kSampleBib);
-    // Same key, different title: should replace, not duplicate.
+    // 相同 key、不同 title：应替换，而不是重复添加。
     std::string updated =
         "@article{einstein1905, author={Albert Einstein}, title={Updated Title}, year={1905}}";
     auto r = service.ImportText(updated);

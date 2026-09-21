@@ -1,11 +1,9 @@
-// Stage B follow-up: the rich editor must hand the document exactly the marks
-// the user sees, and the renderer must turn them into the LaTeX the PDF shows.
+// Stage B 后续：富文本编辑器必须把用户看到的标记原样交给 document，
+// 渲染器再将其转换为 PDF 中呈现的 LaTeX。
 //
-// These tests reproduce the bug that shipped first: Content() read charFormat()
-// at every caret position, but charFormat() reports the format of the character
-// *before* the caret, so every run came back shifted by one character - bold
-// survived by luck on long runs, italic lost its first character and never made
-// it into the PDF.
+// 这些测试复现了最初发布的 bug：Content() 在每个光标位置读取 charFormat()，
+// 但 charFormat() 报告的是光标「之前」那个字符的格式，于是每个 run 都错位了
+// 一个字符——bold 在长 run 中侥幸存活，italic 丢失了首字符，始终进不了 PDF。
 #include "TestMain.hpp"
 
 #include <QApplication>
@@ -26,14 +24,14 @@ using namespace pf::gui;
 
 namespace {
 
-// QApplication is created once for the whole binary by the GUI test driver;
-// these tests only build widgets, so a local one is safe when absent.
+// QApplication 由 GUI 测试驱动为整个二进制只创建一次；
+// 这些测试只构建 widget，因此在它不存在时创建局部实例是安全的。
 QApplication* EnsureApp() { return qApp; }
 
-// Type `text` into `editor` applying `marks`, as a user with Ctrl+B/I would.
+// 向 `editor` 输入 `text` 并施加 `marks`，如同用户按下 Ctrl+B/I 一样。
 void TypeRun(InlineEditor* editor, const QString& text, std::uint8_t marks) {
-    // A fresh cursor positioned at the end: the editor's cached textCursor()
-    // copy does not track document replacements made by SetContent.
+    // 新建一个定位到末尾的 cursor：编辑器缓存的 textCursor()
+    // 副本不会跟踪 SetContent 对 document 所做的替换。
     QTextCursor cursor(editor->document());
     cursor.movePosition(QTextCursor::End);
     QTextCharFormat format;
@@ -66,8 +64,8 @@ PF_TEST(InlineEditorReturnsExactRuns) {
     }
     std::cout << "\n";
 
-    // The unformatted separator between the two marked runs is its own run;
-    // what matters is that no character drifts into its neighbour.
+    // 两个带标记 run 之间未格式化的分隔符自成一段 run；
+    // 关键是没有任何字符漂移到相邻的 run 里。
     PF_CHECK(content.size() == 4);
     const auto* first = std::get_if<TextRun>(&content[0]);
     const auto* second = std::get_if<TextRun>(&content[1]);
@@ -95,8 +93,8 @@ PF_TEST(InlineEditorItalicReachesTheLatexAndStaysWhole) {
 
     const InlineContent content = editor.Content();
 
-    // Render through the real pipeline and check the LaTeX the PDF is built
-    // from: one \emph covering the whole word, not a fragment of it.
+    // 走真实管线进行渲染，并检查 PDF 据以构建的 LaTeX：
+    // 一个 \emph 覆盖整个单词，而不是只覆盖它的一部分。
     Document doc;
     DocumentEditor editor_doc(doc);
     (void)editor_doc.SetTitle(InlineFromText("t"));
@@ -113,7 +111,7 @@ PF_TEST(InlineEditorItalicReachesTheLatexAndStaysWhole) {
     PF_CHECK(rendered.status == RenderResult::Status::Ok);
     const std::string& tex = rendered.package.files[0].content;
     PF_CHECK(tex.find("plain \\emph{italic}") != std::string::npos);
-    // The old bug produced "\emph{talic}" with a stray leading "i".
+    // 旧 bug 会产生 "\emph{talic}"，多出一个开头的 "i"。
     PF_CHECK(tex.find("\\emph{talic}") == std::string::npos);
 }
 
@@ -160,8 +158,8 @@ PF_TEST(InlineEditorRoundTripsThroughTheModel) {
 
     const InlineContent committed = editor.Content();
     editor.SetContent(committed);
-    // Reloading the committed content must not change what would be committed
-    // next, otherwise every rebuild corrupts the paragraph a little more.
+    // 重新加载已提交的内容不得改变下次将要提交的内容，
+    // 否则每次 rebuild 都会让该段落多损坏一点。
     const InlineContent reloaded = editor.Content();
     PF_CHECK(reloaded == committed);
     const auto* bold = std::get_if<TextRun>(&reloaded[1]);
@@ -176,8 +174,8 @@ PF_TEST(InlineEditorItalicSurvivesAProgrammaticReload) {
     TypeRun(&editor, QStringLiteral("slanted"), static_cast<std::uint8_t>(TextMark::Emphasis));
     const InlineContent committed = editor.Content();
 
-    // What a rebuild does: SetContent with the stored content, then commit
-    // again (the user clicks away). The italic must still be there.
+    // rebuild 的流程：用已存储的内容调用 SetContent，然后再次提交
+    // （用户点击别处）。italic 必须仍然存在。
     InlineEditor reloaded;
     reloaded.SetContent(committed);
     const InlineContent again = reloaded.Content();
@@ -218,8 +216,8 @@ PF_TEST(InlineEditorKeepsTokensAcrossAReload) {
     PF_CHECK(citations == 1);
     PF_CHECK(references == 1);
 
-    // Citation plan §1/§2: both are real renderable objects - exactly one
-    // object replacement character each, no stray U+E000 pseudo text.
+    // Citation 方案 §1/§2：两者都是真正可渲染的对象——各自恰好对应一个
+    // 对象替换字符，没有多余的 U+E000 伪文本。
     const QString as_text = editor.toPlainText();
     PF_CHECK(!as_text.contains(QChar(0xE000)));
     int object_chars = 0;
@@ -228,7 +226,7 @@ PF_TEST(InlineEditorKeepsTokensAcrossAReload) {
     }
     PF_CHECK(object_chars == 2);
 
-    // A reload must keep both tokens, with the same payload.
+    // 重新加载必须保留这两个 token，且 payload 相同。
     InlineEditor reloaded;
     reloaded.SetContent(committed);
     const InlineContent again = reloaded.Content();
@@ -243,7 +241,7 @@ PF_TEST(InlineEditorToolbarToggleMarksTheSelection) {
     EnsureApp();
     InlineEditor editor;
     editor.SetContent(InlineFromText("select me"));
-    // Select the word "select".
+    // 选中单词 "select"。
     QTextCursor cursor(editor.document());
     cursor.setPosition(0);
     cursor.setPosition(6, QTextCursor::KeepAnchor);
@@ -271,8 +269,8 @@ PF_TEST(InlineEditorDirtyFlagGuardsTheRebuild) {
     editor.SetContent(InlineFromText("hello"));
     PF_CHECK(!editor.IsDirty());
 
-    // Formatting alone (no text change) must still protect the row from a
-    // rebuild tearing it down mid-edit.
+    // 仅做格式调整（不改变文本）也必须保护该行，
+    // 避免 rebuild 在编辑过程中把它拆掉。
     editor.ToggleBold();
     PF_CHECK(editor.IsDirty());
 
@@ -291,11 +289,10 @@ PF_TEST(InlineEditorHeightDoesNotBlowUpWhenUnlaid) {
     editor.ResizeToContent();
     const int laid_out = editor.height();
 
-    // The toolbar-click case: the editor has a widget width but its viewport
-    // collapses to nothing while it is not on screen. The height must still
-    // be measured against the widget width, not against the viewport.
+    // 点击工具栏的情形：编辑器有 widget 宽度，但它不在屏幕上时 viewport
+    // 会塌缩为零。此时高度仍必须依据 widget 宽度测量，而不是依据 viewport。
     const int widget_width = editor.width();
-    // Simulate a zero-width viewport without shrinking the widget itself.
+    // 在不缩小 widget 本身的前提下，模拟零宽 viewport。
     const int viewport_width = editor.viewport()->width();
     (void)viewport_width;
     editor.ResizeToContent();
@@ -304,16 +301,16 @@ PF_TEST(InlineEditorHeightDoesNotBlowUpWhenUnlaid) {
     std::cout << "    height: laid_out=" << laid_out
               << " remeasured=" << remeasured
               << " widget_width=" << widget_width << "\n";
-    // Re-measuring at the same widget width must not change the height. The
-    // old code measured against viewport()->width(), which collapses during a
-    // rebuild, and produced one line per word.
+    // 在相同 widget 宽度下重新测量不得改变高度。旧代码依据
+    // viewport()->width() 测量，而该值在 rebuild 期间会塌缩，
+    // 结果每个单词各占一行。
     PF_CHECK(remeasured == laid_out);
 }
 
-// The row is created *before* the layout gives it its final width. Measuring
-// against the not-yet-laid-out width (or against a collapsed viewport) wraps
-// every word onto its own line and pins a huge fixed height - the "a big blank
-// area appears, Delete restores it" report.
+// 该行是在 layout 赋给它最终宽度「之前」创建的。依据尚未完成 layout
+// 的宽度（或依据已塌缩的 viewport）测量，会让每个单词各自换行，
+// 并固定出一个巨大的高度——也就是「出现大片空白区域，
+// Delete 又能恢复」的报告。
 PF_TEST(FreshlyBuiltRowIsNotPinnedToAGiantHeight) {
     EnsureApp();
     const QString text = QStringLiteral(
@@ -333,19 +330,19 @@ PF_TEST(FreshlyBuiltRowIsNotPinnedToAGiantHeight) {
 
     std::cout << "    height: fresh=" << unlaid_height
               << " laid_out=" << target_height << "\n";
-    // The not-yet-laid-out row must not be several times taller than the same
-    // text once the width is known.
+    // 尚未完成 layout 的行，其高度不得比已知宽度后同样文本的
+    // 高度高出数倍。
     PF_CHECK(unlaid_height <= target_height * 3);
 
-    // Once the layout assigns the real width, the row must settle on the
-    // correct height (this is what makes Delete "restore" it today).
+    // 一旦 layout 赋予真实宽度，该行必须稳定在正确的高度
+    // （这正是如今 Delete 能「恢复」它的原因）。
     fresh.resize(700, unlaid_height);
     fresh.ResizeToContent();
     PF_CHECK(fresh.height() == target_height);
 }
 
-// Widening a narrow row must re-flow and shrink the height on its own - the
-// user should not have to press Delete to get the blank area back.
+// 把窄行加宽必须自行重新排版并缩小高度——
+// 用户不应该为了恢复空白区域而按 Delete。
 PF_TEST(WideningARowReflowsWithoutUserInput) {
     EnsureApp();
     const QString text = QStringLiteral(
@@ -354,16 +351,16 @@ PF_TEST(WideningARowReflowsWithoutUserInput) {
         "the surrounding layout.");
 
     InlineEditor editor;
-    // A top-level widget must be shown for resize events to be delivered.
+    // 必须显示顶层 widget，resize 事件才会被投递。
     editor.show();
     editor.resize(220, 40);
     editor.SetContent(InlineFromText(text.toStdString()));
     editor.ResizeToContent();
     const int narrow = editor.height();
 
-    // The layout hands the row its real width: no typing, no Delete.
+    // layout 把真实宽度交给该行：无需输入，无需 Delete。
     editor.resize(760, narrow);
-    // resize() only queues the event; deliver it like the real event loop does.
+    // resize() 只是把事件排队；要像真实事件循环那样投递它。
     QApplication::processEvents();
     const int wide = editor.height();
 

@@ -1,6 +1,6 @@
-// P0-02 regression tests: JSON/Project deserialization safety boundary.
-// Every hostile or malformed .paper payload must come back as a structured
-// error - never as an uncaught exception, abort or crash.
+// P0-02 回归测试：JSON/Project 反序列化的安全边界。
+// 任何恶意或畸形的 .paper 载荷都必须以结构化错误返回——
+// 绝不能以未捕获异常、abort 或崩溃收场。
 #include "TestMain.hpp"
 
 #include <fstream>
@@ -15,7 +15,7 @@ using namespace pf;
 
 namespace {
 
-// A serialized project used as the base for mutations.
+// 用作变异基准的已序列化 project。
 std::string MinimalProjectJson() {
     return R"({
         "schemaVersion": "3",
@@ -42,8 +42,8 @@ std::string MinimalProjectJson() {
 
 }  // namespace
 
-// The crash reported in review: a bare std::stod threw std::out_of_range out
-// of the parser and terminated the process.
+// 审查中报告的崩溃：直接调用 std::stod 抛出的 std::out_of_range
+// 逃出解析器并终止了进程。
 PF_TEST(JsonParseRejectsNumberOverflowAsError) {
     for (const char* input : {"{\"a\": 1e999}", "{\"a\": -1e999}",
                               "{\"a\": 1e-999}", "[1e999]"}) {
@@ -52,14 +52,14 @@ PF_TEST(JsonParseRejectsNumberOverflowAsError) {
         PF_CHECK(value == nullptr);
         PF_CHECK(!error.empty());
     }
-    // Well-formed large-but-finite numbers still parse.
+    // 格式合法的大但有限的数字仍然可以解析。
     std::string ok_error;
     auto ok = JsonParse("{\"a\": 1e308}", &ok_error);
     PF_CHECK(ok != nullptr);
 }
 
 PF_TEST(JsonParseRejectsDeepNestingWithoutCrashing) {
-    // 100k open brackets used to overflow the native stack (SIGSEGV).
+    // 10 万个左括号曾导致原生栈溢出（SIGSEGV）。
     const std::size_t depth = 100000;
     std::string input(depth, '[');
     std::string error;
@@ -121,11 +121,11 @@ PF_TEST(JsonParseStillAcceptsValidDocuments) {
     PF_CHECK(value->find("f")->as_double() == 3.25);
 }
 
-// --- Project-level validation ---
+// --- Project 级校验 ---
 
 PF_TEST(DeserializeRejectsFutureSchemaVersion) {
-    // A file written by a newer version must hard-fail, not load as-is:
-    // unknown fields could be silently dropped on the next save.
+    // 由更新版本写入的文件必须硬失败，而不能原样加载：
+    // 未知字段可能在下次保存时被静默丢弃。
     std::string json = MinimalProjectJson();
     json.replace(json.find("\"3\""), 3, "\"99\"");
     auto project = ProjectSerializer::Deserialize(json);
@@ -142,7 +142,7 @@ PF_TEST(DeserializeAcceptsKnownSchemaVersions) {
 }
 
 PF_TEST(DeserializeRejectsBadTableShape) {
-    // cells claim 3 columns per row but the table declares 2.
+    // cells 声称每行 3 列，但 table 声明的是 2 列。
     const std::string json = R"({
         "schemaVersion": "3",
         "projectId": "p-tbl",
@@ -160,7 +160,7 @@ PF_TEST(DeserializeRejectsBadTableShape) {
 }
 
 PF_TEST(DeserializeRejectsOversizedTable) {
-    // 101 rows x 1 column: beyond the table row limit.
+    // 101 行 x 1 列：超出 table 行数上限。
     std::string cells;
     for (std::size_t i = 0; i < 101; ++i) {
         if (i) cells += ",";
@@ -232,18 +232,17 @@ PF_TEST(LoadReportsTooLargeInsteadOfReading) {
     auto file = tmp / "project.paper";
     {
         std::ofstream out(file);
-        // A sparse-ish oversized header: exceed the limit without writing
-        // 32 MiB - the size gate triggers on file_size before reading.
+        // 一个近似稀疏的超大头：在不写入 32 MiB 的前提下超过上限——
+        // 大小门禁会在读取前根据 file_size 触发。
         std::string junk(1024, 'x');
         out << junk;
     }
-    // Shrink the limit via a smaller-than-limit real file check: use the
-    // public constant to prove the gate exists and rejects oversized files.
+    // 通过一个小于上限的真实文件来间接确认限制：使用公开常量
+    // 证明该门禁存在且会拒绝超大文件。
     PF_CHECK(ProjectPersistence::kMaxProjectFileBytes > 0);
-    // Directly exercise the gate by writing a file larger than the limit is
-    // impractical here; instead verify a normal file loads and a missing file
-    // reports FileMissing (the size gate path is covered by Deserialize
-    // limits above).
+    // 在此处写一个大于限制的文件来直接触发该门禁并不现实；
+    // 改为验证正常文件能加载、缺失文件会报告 FileMissing
+    // （大小门禁路径已由上面的 Deserialize 限制覆盖）。
     LoadRequest load;
     load.project_file = file;
     auto result = ProjectPersistence::Load(load);
@@ -251,7 +250,7 @@ PF_TEST(LoadReportsTooLargeInsteadOfReading) {
     std::filesystem::remove_all(tmp);
 }
 
-// --- ProjectRelativePath (P0-04 boundary, exercised here for load path) ---
+// --- ProjectRelativePath（P0-04 边界，此处针对加载路径进行验证）---
 
 PF_TEST(ProjectRelativePathRejectsTraversalAndAbsolute) {
     struct Case {
@@ -296,7 +295,7 @@ PF_TEST(ResolveProjectRelativePathStaysInsideRoot) {
     auto resolved = ResolveProjectRelativePath(tmp, parsed.value());
     PF_CHECK(resolved.ok());
     if (resolved.ok()) {
-        // Containment: the resolved path starts with the canonical root.
+        // 包含性：解析后的路径以规范化根路径开头。
         auto root = std::filesystem::weakly_canonical(tmp);
         const std::string r = resolved.value().string();
         const std::string p = root.string();

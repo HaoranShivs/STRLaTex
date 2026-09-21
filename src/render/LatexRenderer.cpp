@@ -12,9 +12,8 @@ namespace pf {
 
 namespace {
 
-// A LaTeX label must survive \label{} and \ref{} verbatim; user labels are
-// sanitised to [A-Za-z0-9:._-] so a stray space or brace cannot break the
-// generated document.
+// LaTeX 标签必须能原样通过 \label{} 和 \ref{}；用户标签会被清洗为
+// [A-Za-z0-9:._-]，以免多余的空格或花括号破坏生成的文档。
 std::string SanitizeLabel(const std::string &label) {
   std::string out;
   out.reserve(label.size());
@@ -53,10 +52,9 @@ void LatexRenderer::FillLabelMap(const Document &doc) const {
 
 std::string LatexRenderer::AssetPathFor(const AssetId &id) const {
   const auto it = asset_files_.find(id.value());
-  // Fall back to the legacy placeholder name only when the request carried
-  // no mapping (e.g. an asset-less render in a unit test); a mapped asset
-  // always uses its real file name so the extension survives to the
-  // compiler.
+  // 仅当请求未携带映射时（例如单元测试中不涉及 asset 的渲染）才回退到
+  // 旧的占位名；已建立映射的 asset 始终使用其真实文件名，
+  // 以便扩展名能传递给编译器。
   const std::string file =
       it != asset_files_.end() ? it->second : id.value() + ".img";
   return "assets/" + file;
@@ -109,8 +107,7 @@ void LatexRenderer::RenderInline(const InlineContent &content,
   for (const auto &node : content) {
     if (const auto *run = std::get_if<TextRun>(&node)) {
       std::string escaped = EscapeLatex(run->text);
-      // Composite rendering (plan §4.3): Strong + Emphasis nests, one
-      // does not override the other.
+      // 复合渲染（方案 §4.3）：Strong + Emphasis 嵌套，两者互不覆盖。
       const bool strong = HasMark(run->marks, TextMark::Strong);
       const bool emphasis = HasMark(run->marks, TextMark::Emphasis);
       if (strong && emphasis) {
@@ -123,7 +120,7 @@ void LatexRenderer::RenderInline(const InlineContent &content,
         *out += escaped;
       }
     } else if (const auto *eq = std::get_if<InlineMath>(&node)) {
-      // Delimiters are generated, never stored (design §6).
+      // 定界符由生成器产生，从不存储（设计 §6）。
       *out += GenerateInlineMath(eq->expression);
     } else if (const auto *cit = std::get_if<Citation>(&node)) {
       std::string keys;
@@ -174,17 +171,15 @@ void LatexRenderer::RenderBlock(const Block &block, std::string *out,
     std::string caption;
     RenderInline(fig->caption, &caption);
     std::string alt = EscapeLatex(fig->alt_text);
-    // Point at the imported asset's real relative path inside the build
-    // package (assets/<file>.<ext>), never a synthetic `.img` name: the
-    // compiler stages the file under exactly this name and pdfLaTeX needs
-    // the real extension to pick the graphics driver.
+    // 指向导入的 asset 在 build package 内的真实相对路径
+    // （assets/<file>.<ext>），绝不使用合成的 `.img` 名称：编译器按此名称
+    // 暂存文件，且 pdfLaTeX 需要真实扩展名来选择图形驱动。
     std::string asset_file = AssetPathFor(fig->asset_id);
     char buf[128];
     std::snprintf(buf, sizeof(buf), "%s", width);
-    // A double-column figure is the starred float: it spans both columns of a
-    // two-column class. In a single-column template `figure*` behaves exactly
-    // like `figure`, so the same source is correct for both - which is what
-    // lets the attribute be set before a two-column template is chosen.
+    // 双栏图使用带星号的浮动体：它横跨双栏文档类的两栏。在单栏模板中
+    // `figure*` 的行为与 `figure` 完全相同，因此同一份源码对两者都适用——
+    // 这也使得该属性可以在选定双栏模板之前就设置好。
     const bool spans_columns = fig->span == FigureSpan::DoubleColumn;
     const char *open_env = spans_columns ? "figure*" : "figure";
     *out += std::string("\\begin{") + open_env + "}[htbp]\n\\centering\n" +
@@ -244,8 +239,7 @@ void LatexRenderer::RenderBlock(const Block &block, std::string *out,
     }
     *out += "\\end{tabular}\n\\end{table}\n\n";
   } else if (const auto *eq = std::get_if<EquationBlock>(&block)) {
-    // The outer environment and the label are generated from the block's
-    // attributes; the user's source is only the body (design §4/§6).
+    // 外层环境和标签由块的属性生成；用户源码只是正文部分（设计 §4/§6）。
     *out +=
         GenerateDisplayMath(eq->expression, eq->numbered,
                             eq->numbered ? LabelFor(eq->id) : std::string());
@@ -254,8 +248,8 @@ void LatexRenderer::RenderBlock(const Block &block, std::string *out,
   auto end_line = static_cast<std::uint32_t>(
       1 + std::count(out->begin(), out->end(), '\n'));
   NodeId node_id = std::visit([](const auto &b) { return b.id; }, block);
-  // The block kind travels with the mapping (Build Diagnostics plan §10):
-  // Problems displays it as the location of a mapped compiler error.
+  // 块类型随映射一同保存（Build Diagnostics 方案 §10）：
+  // Problems 会将其显示为映射到的编译器错误的位置。
   const std::string block_label = std::visit(
       [](const auto &b) -> std::string {
         using T = std::decay_t<decltype(b)>;
@@ -304,12 +298,12 @@ RenderResult LatexRenderer::Render(const RenderRequest &request) const {
   std::string tex;
   SourceMap &smap = result.source_map;
   smap.Clear();
-  // Resolve equation labels before any \ref is emitted.
+  // 在生成任何 \ref 之前先解析公式标签。
   FillLabelMap(doc);
-  // Resolve asset ids before any \includegraphics is emitted.
+  // 在生成任何 \includegraphics 之前先解析 asset id。
   asset_files_ = request.asset_files;
 
-  // --- Preamble ---
+  // --- 导言区 ---
   std::string options;
   for (size_t i = 0; i < tpl->class_options.size(); ++i) {
     if (i)
@@ -325,17 +319,16 @@ RenderResult LatexRenderer::Render(const RenderRequest &request) const {
   }
   tex += "\n\\begin{document}\n\n";
 
-  // --- FrontMatter ---
+  // --- FrontMatter（前置信息）---
   const auto &fm = doc.front_matter();
   std::string title;
   RenderInline(fm.title, &title);
   if (!title.empty())
     tex += "\\title{" + title + "}\n";
 
-  // Author / institution block: each institution is listed exactly once,
-  // numbered by position, and authors carry the matching superscripts.
-  // (Emitting one \thanks per author repeated shared institutions and let
-  // the footnote markers drift away from the list.)
+  // 作者 / 机构块：每个机构只列出一次，按位置编号，作者带上对应的上标。
+  // （为每个作者各发一个 \thanks 会重复共享机构，
+  // 还会让脚注标记与列表脱节。）
   if (!fm.authors.empty()) {
     const auto ordinal = [](size_t index) -> std::string {
       static const char *kSupers[] = {"1", "2", "3", "4", "5",
@@ -362,7 +355,7 @@ RenderResult LatexRenderer::Render(const RenderRequest &request) const {
       if (i)
         authors += " \\and ";
       authors += EscapeLatex(author.name);
-      // Numbers in institution order, duplicates collapsed.
+      // 按机构顺序编号，重复项合并。
       std::vector<int> slots;
       for (const auto &aff_id : author.affiliations) {
         const int slot = slot_of(aff_id);
@@ -415,7 +408,7 @@ RenderResult LatexRenderer::Render(const RenderRequest &request) const {
     tex += "\\noindent\\textbf{Keywords:} " + kw + "\n\n";
   }
 
-  // --- Body ---
+  // --- 正文 ---
   for (const auto &section : doc.body().sections) {
     std::string stitle;
     RenderInline(section.title, &stitle);
@@ -443,7 +436,7 @@ RenderResult LatexRenderer::Render(const RenderRequest &request) const {
     }
   }
 
-  // --- BackMatter / Bibliography ---
+  // --- 后置部分 / 参考文献 ---
   if (!request.bibliography_bibtex.empty()) {
     BuildPackageFile bib_file;
     bib_file.path = "references.bib";
@@ -460,16 +453,16 @@ RenderResult LatexRenderer::Render(const RenderRequest &request) const {
 
   tex += "\n\\end{document}\n";
 
-  // --- Package assembly ---
+  // --- 打包 ---
   BuildPackageFile main_file;
   main_file.path = "main.tex";
   main_file.content = std::move(tex);
   result.package.files.push_back(std::move(main_file));
   result.package.entry_file = "main.tex";
 
-  // Assets: record the relative path each referenced figure resolves to
-  // (assets/<file>.<ext>), matching what \includegraphics emits and what the
-  // compiler stages into the build workspace.
+  // Assets：记录每个被引用图片解析到的相对路径
+  // （assets/<file>.<ext>），与 \includegraphics 生成的内容以及
+  // 编译器暂存到 build 工作区的路径一致。
   for (const auto &section : doc.body().sections) {
     auto collect = [&](const std::vector<Block> &blocks) {
       for (const auto &block : blocks) {

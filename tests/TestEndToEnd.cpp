@@ -1,4 +1,4 @@
-// End-to-end tests: ProjectSession workflow + real tectonic build.
+// 端到端测试：ProjectSession 工作流 + 真实的 tectonic build。
 #include "TestMain.hpp"
 #include "ScopedTempDir.hpp"
 
@@ -20,16 +20,16 @@ namespace {
 ProjectSession::Config TestConfig() {
   ProjectSession::Config config;
   config.tectonic_path = PF_TECTONIC_BIN;
-  // E-08: unique per process; this file and TestCitationNumbering.cpp used to
-  // share "pf-e2e-workspaces" and could delete each other's build directories.
+  // E-08：每个进程独有；本文件与 TestCitationNumbering.cpp 过去共用
+  // "pf-e2e-workspaces"，会互相删除对方的 build 目录。
   static pf::test::ScopedTempDir workspace("pf-e2e-workspaces");
   config.workspace_root = workspace.path();
   config.debounce = std::chrono::milliseconds{0};
   return config;
 }
 
-// Build/save results are applied on the application thread, so a non-Qt driver
-// has to be that thread: pump the session's event queue until `done` holds.
+// build/save 结果在应用线程上生效，因此非 Qt 的驱动必须充当该线程：
+// 泵送 session 的事件队列，直到 `done` 成立。
 bool PumpUntil(ProjectSession &session, const std::function<bool()> &done,
                int timeout_ms) {
   auto deadline =
@@ -45,8 +45,7 @@ bool WaitForBuild(ProjectSession &session, const std::function<bool()> &done,
   return PumpUntil(session, done, timeout_ms);
 }
 
-// Enqueue + drain: keeps the tests reading one line while the write itself
-// happens on the save worker.
+// 入队 + 排空：让测试始终只读一行，而真正的写入发生在 save worker 上。
 SaveResult SaveAndFlush(ProjectSession &session) {
   session.Save();
   return session.FlushSaves();
@@ -61,7 +60,7 @@ PF_TEST(SessionNewProjectWorkflow) {
   PF_CHECK(session.NewProject(dir));
   PF_CHECK(session.lifecycle_state() == LifecycleState::Open);
 
-  // Edit via protocol
+  // 通过协议进行编辑
   EditCommand title_cmd;
   title_cmd.operation_id = OperationId(IdGenerator::NewOperationId());
   title_cmd.project_id = session.state().id();
@@ -78,7 +77,7 @@ PF_TEST(SessionNewProjectWorkflow) {
   PF_CHECK(session.persistence_state() == PersistenceState::Clean);
   PF_CHECK(std::filesystem::exists(dir / "project.paper"));
 
-  // Reopen and verify.
+  // 重新打开并校验。
   ProjectSession session2(TestConfig());
   std::string error;
   PF_CHECK(session2.OpenProject(dir, &error));
@@ -112,7 +111,7 @@ PF_TEST(SessionUndoRedoAndRevisionMonotonicity) {
   session.Undo();
   PF_CHECK(InlineToPlainText(session.state().document().front_matter().title) ==
            "A");
-  // Undo produced a new revision, never went backwards.
+  // Undo 产生了一个新的 revision，绝不会回退。
   PF_CHECK(session.current_revision().value > max_rev);
   session.Redo();
   PF_CHECK(InlineToPlainText(session.state().document().front_matter().title) ==
@@ -134,7 +133,7 @@ PF_TEST(SessionBibliographyImportAndSearch) {
   PF_CHECK(search.entries.size() == 1);
   PF_CHECK(search.entries[0].key == "k1");
 
-  // Bibliography change bumps ProjectRevision.
+  // 参考文献变更会提升 ProjectRevision。
   std::uint64_t before = session.current_revision().value;
   session.ImportBibliography(bib + "\n@article{k2, title={Second}}");
   PF_CHECK(session.current_revision().value > before);
@@ -163,7 +162,7 @@ PF_TEST(SessionAssetImportFigure) {
   ProjectSession session(TestConfig());
   session.NewProject(dir);
 
-  // Create a real section to hold the figure.
+  // 创建一个真实的 section 来承载该图。
   EditCommand sec_cmd;
   sec_cmd.operation_id = OperationId(IdGenerator::NewOperationId());
   sec_cmd.project_id = session.state().id();
@@ -176,13 +175,13 @@ PF_TEST(SessionAssetImportFigure) {
   PF_CHECK(sec_result.status == EditStatus::Applied);
   NodeId section_id = sec_result.created_node;
 
-  // Make a tiny valid PNG (1x1 pixel).
+  // 构造一个极小的合法 PNG（1x1 像素）。
   pf::test::ScopedTempDir png_dir("pf-test-image");
   auto png_path = png_dir.path() / "image.png";
   {
     static const unsigned char png[] = {
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // signature
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR len+type
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // 文件签名
+        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR 长度+类型
         0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1
         0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00,
         0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01,
@@ -202,11 +201,11 @@ PF_TEST(SessionAssetImportFigure) {
     PF_CHECK(fig != nullptr);
     PF_CHECK(fig->asset_id != AssetId());
   }
-  // Asset file was copied into project assets dir.
+  // asset 文件已被复制到项目的 assets 目录。
   PF_CHECK(!session.assets().registry().All().empty());
 }
 
-// Real tectonic build (network may be needed on first run for bundles).
+// 真实的 tectonic build（首次运行可能需要联网下载 bundles）。
 #ifndef PF_SKIP_TECTONIC_TESTS
 PF_TEST(EndToEndTectonicBuild) {
   pf::test::ScopedTempDir dir("pf-e2e-tectonic");
@@ -258,21 +257,21 @@ PF_TEST(EndToEndTectonicBuild) {
   PF_CHECK(WaitForBuild(session, [&] { return completed; }));
 
   PF_CHECK(last_result.has_value());
-  // The result carries the identity of the exact ask.
+  // 结果携带了该次确切请求的身份信息。
   PF_CHECK(last_result->project_id == session.state().id());
   PF_CHECK(!last_result->build_id.empty());
   PF_CHECK(last_result->snapshot_id == session.latest_snapshot_id());
   if (last_result->outcome == BuildResult::Outcome::Success) {
     PF_CHECK(session.preview_state() == PreviewState::Fresh);
     PF_CHECK(std::filesystem::exists(last_result->pdf_path));
-    // PDF magic number
+    // PDF 魔数
     std::ifstream pdf(last_result->pdf_path, std::ios::binary);
     char header[4] = {0};
     pdf.read(header, 4);
     PF_CHECK(std::string(header, 4) == "%PDF");
     std::cout << "    (PDF built: " << last_result->pdf_path << ")\n";
   } else {
-    // If tectonic cannot download its bundle (offline), skip gracefully.
+    // 若 tectonic 无法下载其 bundle（离线），则优雅跳过。
     std::cout << "    (tectonic build failed - likely offline bundle "
                  "download; skipping)\n";
     for (const auto &d : last_result->diagnostics) {
@@ -305,23 +304,23 @@ PF_TEST(SessionAutosaveAndCrashRecovery) {
     auto save = SaveAndFlush(session);
     PF_CHECK(save.status == SaveResult::Status::Ok);
 
-    // Edit but do not save; then autosave.
+    // 编辑但不保存；随后执行 autosave。
     session.Execute(make_title_cmd("Unsaved Title"));
     PF_CHECK(session.persistence_state() == PersistenceState::Dirty);
 
-    // Manual autosave tick: capture on this thread, write on the worker.
+    // 手动触发一次 autosave tick：在本线程捕获，在 worker 上写入。
     auto autosave = session.Autosave();
     PF_CHECK(autosave.status == SaveResult::Status::Queued);
     PF_CHECK(session.FlushSaves().status == SaveResult::Status::Ok);
     PF_CHECK(session.HasRecoverySnapshot());
-    // Autosave must NOT change Clean/Dirty (architecture 32).
+    // autosave 绝不可改变 Clean/Dirty（架构 32）。
     PF_CHECK(session.persistence_state() == PersistenceState::Dirty);
   }
-  // "Crash": reopen without saving.
+  // 「崩溃」：不保存直接重新打开。
   {
     ProjectSession session(TestConfig());
     std::string error;
-    // Recovery snapshot file exists on disk (fresh instance, not opened).
+    // 磁盘上存在恢复 snapshot 文件（全新实例，尚未打开）。
     PF_CHECK(std::filesystem::exists(dir / ".paperforge" / "autosave" /
                                      "autosave.paper"));
     bool recovered = false;
@@ -332,7 +331,7 @@ PF_TEST(SessionAutosaveAndCrashRecovery) {
         "Unsaved Title");
     PF_CHECK(session.persistence_state() == PersistenceState::Dirty);
   }
-  // Reopen WITHOUT recovery: shows the last user save.
+  // 不带恢复地重新打开：显示用户最后一次保存的内容。
   {
     ProjectSession session(TestConfig());
     std::string error;
@@ -357,8 +356,8 @@ PF_TEST(SessionAutosaveTimer) {
   cmd.payload = p;
   session.Execute(cmd);
 
-  // Short interval: 300ms. The timer thread only posts a tick; this loop is
-  // the application thread that turns it into a snapshot.
+  // 短间隔：300ms。定时器线程只投递一个 tick；本循环即应用线程，
+  // 负责把它转成 snapshot。
   session.StartAutosaveTimer(std::chrono::milliseconds{300});
   auto deadline =
       std::chrono::steady_clock::now() + std::chrono::milliseconds{900};
@@ -370,24 +369,22 @@ PF_TEST(SessionAutosaveTimer) {
 
   PF_CHECK(std::filesystem::exists(dir / ".paperforge" / "autosave" /
                                    "autosave.paper"));
-  // Dirty state unchanged by autosave (architecture 32).
+  // autosave 不改变 Dirty 状态（架构 32）。
   PF_CHECK(session.persistence_state() == PersistenceState::Dirty);
 }
 
-// Regression: inserting several figures into a project that was loaded from
-// disk used to make the earlier figure show the newest image, and to scatter
-// the insert order. Cause: the id generator started at zero in every process,
-// so after opening a project whose nodes were "n1..nN" the first inserted
-// block reused an id already on disk. Two nodes sharing an id make
-// LocateNode/ResolveInsertionPoint (which return the *first* match) point at
-// the wrong block. This drives the real user path - open, insert image, insert
-// a second image - and checks every inserted figure keeps its own node id,
-// its own staged asset file, and its own place in the document.
+// 回归：向一个从磁盘加载的 project 中插入多张图时，先前插入的图过去会显示
+// 最新的图片，且插入顺序会错乱。原因：id 生成器在每个进程中从零开始，因此
+// 打开一个节点为 "n1..nN" 的 project 后，第一个插入的 block 会复用一个磁盘上
+// 已存在的 id。两个节点共用一个 id 会使 LocateNode/ResolveInsertionPoint
+// （它们返回「第一个」匹配项）指向错误的 block。本测试走真实用户路径——打开、
+// 插入图片、再插入第二张图片——并校验每个插入的 figure 都保留自己的 node id、
+// 自己暂存的 asset 文件，以及自己在文档中的位置。
 PF_TEST(SessionInsertingMultipleFiguresKeepsIdsAssetsAndOrder) {
   pf::test::ScopedTempDir dir("pf-e2e-multi-image");
 
-  // Ids far above anything this process allocates, so a collision can only
-  // be avoided by the load-time observe/heal path.
+  // id 远高于本进程会分配的任何值，因此只能靠加载时的 observe/heal 路径
+  // 来避免冲突。
   {
     std::ofstream out(dir / "project.paper", std::ios::binary);
     out << R"({
@@ -411,7 +408,7 @@ PF_TEST(SessionInsertingMultipleFiguresKeepsIdsAssetsAndOrder) {
         })";
   }
 
-  // Two distinct 1x1 PNGs, so the staged files can be told apart.
+  // 两个不同的 1x1 PNG，以便区分暂存的文件。
   static const unsigned char png_a[] = {
       0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
       0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
@@ -428,7 +425,7 @@ PF_TEST(SessionInsertingMultipleFiguresKeepsIdsAssetsAndOrder) {
   {
     std::ofstream out(src_b, std::ios::binary);
     out.write(reinterpret_cast<const char *>(png_a), sizeof(png_a));
-    out.put('\n'); // makes the two files differ
+    out.put('\n'); // 使两个文件不同
   }
 
   ProjectSession session(TestConfig());
@@ -445,16 +442,15 @@ PF_TEST(SessionInsertingMultipleFiguresKeepsIdsAssetsAndOrder) {
     return;
   }
 
-  // Each insert minted its own id - the old bug made them collide.
+  // 每次插入都生成了自己的 id——旧 bug 会让它们发生冲突。
   PF_CHECK(first.created_node != second.created_node);
-  // And the ids sit *above* everything the file already used: loading pushed
-  // the generator past the stored ids, which is exactly what stops a new
-  // insert from reusing an id that is already on disk.
+  // 而且这些 id 都「高于」文件已用过的所有 id：加载过程把生成器推进到
+  // 已存储的 id 之后，这正是阻止新插入复用磁盘上已有 id 的原因。
   PF_CHECK(std::stoull(first.created_node.value().substr(1)) > 800001);
   PF_CHECK(std::stoull(second.created_node.value().substr(1)) > 800001);
 
-  // Walk the document: both figures present, in insertion order, each with a
-  // distinct asset. The first one must still be the first one.
+  // 遍历文档：两张图都在，按插入顺序排列，各自拥有不同的 asset。
+  // 第一张必须仍是第一张。
   std::vector<std::string> figure_nodes;
   std::vector<AssetId> figure_assets;
   VisitBlocks(session.state().document(),
@@ -473,8 +469,8 @@ PF_TEST(SessionInsertingMultipleFiguresKeepsIdsAssetsAndOrder) {
   PF_CHECK_EQ(figure_nodes[1], second.created_node.value());
   PF_CHECK(figure_assets[0] != figure_assets[1]);
 
-  // Both images were copied into the project-local assets directory and are
-  // reachable through a relative path (issue: path must point at the file).
+  // 两张图片都被复制到 project 本地的 assets 目录，并可通过相对路径访问
+  // （问题：路径必须指向该文件）。
   for (const auto &asset : figure_assets) {
     const auto *meta = session.assets().registry().Find(asset);
     PF_CHECK(meta != nullptr);
@@ -484,14 +480,14 @@ PF_TEST(SessionInsertingMultipleFiguresKeepsIdsAssetsAndOrder) {
     PF_CHECK(std::filesystem::exists(dir / "assets" / meta->relative_path));
   }
 
-  // No duplicate node ids anywhere, so later edits cannot hit the wrong block.
+  // 任何地方都没有重复的 node id，因此后续编辑不会命中错误的 block。
   std::set<std::string> unique;
   for (const auto &id : CollectAllNodeIds(session.state().document()))
     unique.insert(id.value());
   PF_CHECK_EQ(unique.size(),
               CollectAllNodeIds(session.state().document()).size());
 
-  // Round-trip: the healed ids and both assets survive a save + reopen.
+  // 往返回环：修复后的 id 和两个 asset 在 save + 重新打开后依然存在。
   PF_CHECK(SaveAndFlush(session).status == SaveResult::Status::Ok);
   ProjectSession reopened(TestConfig());
   PF_CHECK(reopened.OpenProject(dir, &error));

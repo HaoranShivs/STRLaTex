@@ -1,14 +1,14 @@
 #pragma once
-// E-08: unique temporary directories for tests.
+// E-08：为测试提供唯一的临时目录。
 //
-// Tests used fixed names such as /tmp/pf-e2e-workspaces. Two consequences:
-//   * two test binaries running under `ctest -j` clobbered each other's
-//     directories (a flaky failure that hid real results);
-//   * a stale directory from a previous run could make a test pass on
-//     leftover state instead of on what it just created.
+// 此前测试使用固定名称，例如 /tmp/pf-e2e-workspaces。由此产生两个后果：
+//   * 在 `ctest -j` 下并行运行的两个测试二进制会互相覆盖对方的目录
+//     （这种偶发失败掩盖了真实结果）；
+//   * 上一次运行遗留的陈旧目录可能让测试基于残留状态通过，
+//     而非基于它本次新建的状态。
 //
-// ScopedTempDir gives every test instance its own directory named
-// "<prefix>-<pid>-<counter>-<random>", removed on destruction.
+// ScopedTempDir 让每个测试实例拥有自己的目录，命名为
+// "<prefix>-<pid>-<counter>-<random>"，并在析构时删除。
 
 #include <atomic>
 #include <chrono>
@@ -27,8 +27,7 @@
 
 namespace pf::test {
 
-// RAII temporary directory. Creates the directory on construction and removes
-// it (recursively) on destruction; the removal never throws.
+// RAII 临时目录。构造时创建目录，析构时（递归地）删除；删除操作绝不抛异常。
 class ScopedTempDir {
 public:
     explicit ScopedTempDir(std::string_view prefix) {

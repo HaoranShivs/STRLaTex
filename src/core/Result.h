@@ -1,5 +1,5 @@
 #pragma once
-// Result<T, E>: lightweight value-or-error type (C++20, no external deps).
+// Result<T, E>：轻量的值或错误类型（C++20，无外部依赖）。
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -14,17 +14,17 @@ struct Unexpected2 {
     E reason;
 };
 
-// Convenience: StringError("...") converts to any error type via ToStringError.
+// 便捷机制：StringError("...") 通过 ToStringError 转换为任意错误类型。
 struct StringError {
     StringError(std::string s) : value(std::move(s)) {}
     StringError(const char* s) : value(s) {}
     std::string value;
 };
 
-// Alias kept for call-site brevity: Unexpected("...") == StringError("...").
+// 为调用处简洁而保留的别名：Unexpected("...") == StringError("...")。
 using Unexpected = StringError;
 
-// Default: construct E from string (works for std::string).
+// 默认实现：由字符串构造 E（对 std::string 适用）。
 template <typename E>
 E ToStringError(const std::string& value) {
     if constexpr (std::is_constructible_v<E, const std::string&>) {
@@ -59,7 +59,7 @@ private:
     std::variant<T, E> data_;
 };
 
-// Void specialization
+// void 特化
 template <typename E>
 class Result<void, E> {
 public:

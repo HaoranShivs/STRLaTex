@@ -1,7 +1,7 @@
 #pragma once
-// Document Core: semantic document model (architecture sections 3-13).
-// Closed schema: FrontMatter / Body(Section->Subsection->Block) / Inline.
-// No LaTeX knowledge lives here (architecture rule 52).
+// Document Core：语义文档模型（架构 3-13）。
+// 封闭 schema：FrontMatter / Body(Section->Subsection->Block) / Inline。
+// 此处不包含任何 LaTeX 知识（架构规则 52）。
 
 #include <cstdint>
 #include <optional>
@@ -14,7 +14,7 @@
 
 namespace pf {
 
-// ---------------- Inline model (section 7) ----------------
+// ---------------- Inline 模型（架构 7） ----------------
 
 enum class TextMark : std::uint8_t {
   None = 0,
@@ -32,7 +32,7 @@ inline void SetMark(std::uint8_t &marks, TextMark mark, bool on) {
     marks &= ~static_cast<std::uint8_t>(mark);
   }
 }
-// Mark composition, so Strong | Emphasis reads the way it is rendered.
+// Mark 组合，使 Strong | Emphasis 的写法与渲染结果一致。
 inline constexpr std::uint8_t operator|(TextMark a, TextMark b) noexcept {
   return static_cast<std::uint8_t>(a) | static_cast<std::uint8_t>(b);
 }
@@ -49,9 +49,8 @@ struct TextRun {
   bool operator==(const TextRun &) const = default;
 };
 
-// Inline math (design §3): a semantic inline object inside a TextBlock, never
-// a standalone block. Only the math body is stored; the \(...\) delimiters are
-// added by MathGenerator at render time.
+// 行内数学（设计 §3）：TextBlock 内部的语义行内对象，绝不是独立的 block。
+// 只存储数学主体；\(...\) 定界符由 MathGenerator 在渲染时添加。
 struct InlineMath {
   MathExpression expression;
   bool operator==(const InlineMath &) const = default;
@@ -63,20 +62,20 @@ enum class CitationMode : std::uint8_t {
 };
 
 struct Citation {
-  std::vector<std::string> keys; // one or more citation keys
+  std::vector<std::string> keys; // 一个或多个引用 key
   CitationMode mode = CitationMode::Parenthetical;
   bool operator==(const Citation &) const = default;
 };
 
 struct CrossReference {
-  NodeId target; // semantic NodeId only; numbering is the renderer's job
+  NodeId target; // 仅语义 NodeId；编号由 renderer 负责
   bool operator==(const CrossReference &) const = default;
 };
 
 using InlineNode = std::variant<TextRun, InlineMath, Citation, CrossReference>;
 using InlineContent = std::vector<InlineNode>;
 
-// ---------------- Block model (section 6) ----------------
+// ---------------- Block 模型（架构 6） ----------------
 
 struct Paragraph {
   NodeId id;
@@ -90,13 +89,12 @@ enum class FigureWidth : std::uint8_t {
   Percent100,
 };
 
-// How much of the text block a figure claims when the template sets two
-// columns (design: single- vs double-column figures).
-//  SingleColumn - the ordinary in-column float.
-//  DoubleColumn - a float that spans both columns (LaTeX \begin{figure*}).
-// The distinction is meaningless for a single-column template and is therefore
-// rendered as SingleColumn there; storing it on the figure anyway means the
-// choice is made once and survives a template switch.
+// 当模板设置为双栏时，figure 占用文本块的比例
+// （设计：单栏与双栏 figure）。
+//  SingleColumn - 普通的栏内浮动体。
+//  DoubleColumn - 横跨两栏的浮动体（LaTeX \begin{figure*}）。
+// 该区分对单栏模板没有意义，因此在单栏模板中按 SingleColumn 渲染；
+// 但仍然将它存到 figure 上，意味着只需选择一次，且能经受模板切换。
 enum class FigureSpan : std::uint8_t {
   SingleColumn,
   DoubleColumn,
@@ -130,7 +128,7 @@ struct Table {
   InlineContent caption;
   bool has_header_row = false;
   std::vector<TableColumn> columns;
-  // row-major; invariant: cells.size() == rows, each row size == columns.size()
+  // 行优先；不变式：cells.size() == 行数，每行 size == columns.size()
   std::vector<std::vector<TableCell>> cells;
 
   size_t RowCount() const noexcept { return cells.size(); }
@@ -144,9 +142,8 @@ struct Table {
   }
 };
 
-// EquationBlock (design §4): a standalone display formula. `label` is the
-// user-visible LaTeX label ("eq:example"); an empty label falls back to the
-// node id so cross references keep resolving.
+// EquationBlock（设计 §4）：独立的行间公式。`label` 是用户可见的 LaTeX
+// label（"eq:example"）；label 为空时回退到 node id，使交叉引用仍能解析。
 struct EquationBlock {
   NodeId id;
   MathExpression expression;
@@ -157,9 +154,9 @@ struct EquationBlock {
 
 using Block = std::variant<Paragraph, Figure, Table, EquationBlock>;
 
-// ---------------- Section model (section 5) ----------------
+// ---------------- Section 模型（架构 5） ----------------
 
-// Third heading level. Lives inside a Subsection, owns its own blocks.
+// 第三级标题。位于 Subsection 内部，拥有自己的 blocks。
 struct Subsubsection {
   NodeId id;
   InlineContent title;
@@ -184,12 +181,12 @@ struct Body {
   std::vector<Section> sections;
 };
 
-// ---------------- FrontMatter (section 4) ----------------
+// ---------------- FrontMatter（架构 4） ----------------
 
 struct Author {
   std::string name;
   std::optional<std::string> email;
-  std::vector<AffiliationId> affiliations; // references Affiliation by id
+  std::vector<AffiliationId> affiliations; // 按 id 引用 Affiliation
 };
 
 struct Affiliation {
@@ -198,7 +195,7 @@ struct Affiliation {
 };
 
 struct FrontMatter {
-  InlineContent title; // may be empty temporarily
+  InlineContent title; // 可能暂时为空
   std::vector<Author> authors;
   std::vector<Affiliation> affiliations;
   std::optional<InlineContent> abstract_text;
@@ -208,7 +205,7 @@ struct FrontMatter {
 // ---------------- BackMatter ----------------
 
 struct BackMatter {
-  // References section is system generated - no user-editable content here.
+  // References 章节由系统生成——此处没有用户可编辑的内容。
   bool bibliography_enabled = true;
 };
 
@@ -226,13 +223,13 @@ enum class NodeKind : std::uint8_t {
 
 const char *ToString(NodeKind kind);
 
-// True for the three heading kinds.
+// 三种 heading 类型返回 true。
 inline bool IsHeadingKind(NodeKind kind) noexcept {
   return kind == NodeKind::Section || kind == NodeKind::Subsection ||
          kind == NodeKind::Subsubsection;
 }
 
-// Section = 1, Subsection = 2, Subsubsection = 3; 0 for non-headings.
+// Section = 1，Subsection = 2，Subsubsection = 3；非 heading 为 0。
 inline int HeadingDepth(NodeKind kind) noexcept {
   switch (kind) {
   case NodeKind::Section:
@@ -246,9 +243,8 @@ inline int HeadingDepth(NodeKind kind) noexcept {
   }
 }
 
-// Defined in DocumentTraversal.cpp. Grants the traversal layer the same
-// mutable container access DocumentEditor has: its job is to hand the editor
-// the exact blocks vector a node lives in.
+// 定义在 DocumentTraversal.cpp。赋予遍历层与 DocumentEditor 相同的可变容器
+// 访问权限：它的职责是把节点所在的精确 blocks vector 交给 editor。
 class DocumentMutableAccess;
 
 class Document {
@@ -258,10 +254,10 @@ public:
   const BackMatter &back_matter() const noexcept { return back_matter_; }
   DocumentVersion version() const noexcept { return version_; }
 
-  // Structural queries
+  // 结构查询
   bool ContainsNode(const NodeId &id) const;
   std::optional<NodeKind> GetNodeKind(const NodeId &id) const;
-  // Collect all node ids in document order.
+  // 按文档顺序收集所有 node id。
   std::vector<NodeId> CollectNodeIds() const;
 
 private:

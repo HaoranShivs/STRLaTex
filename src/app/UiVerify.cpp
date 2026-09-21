@@ -1,5 +1,5 @@
-// UI verification: open a real project, populate content, take screenshots
-// of the main window states (welcome, workspace, slash menu, problems).
+// UI 验证：打开一个真实项目、填充内容，并对主窗口的各个状态
+// （欢迎页、工作区、斜杠菜单、问题面板）截图。
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QFileDialog>
@@ -29,12 +29,12 @@ int main(int argc, char *argv[]) {
   window.show();
 
   QTimer::singleShot(300, [&]() {
-    // 1. Create + populate a project through the controller.
+    // 1. 通过 controller 创建并填充一个项目。
     ProjectController *controller = window.controller();
     check(controller != nullptr, "controller reachable");
 
-    // PF_UI_PROJECT opens an existing project instead of building the
-    // demo one, so a real manuscript can be inspected as it renders.
+    // PF_UI_PROJECT 会打开一个已有项目而非构建演示项目，
+    // 以便在真实稿件渲染时对其进行检查。
     const QString existing = qEnvironmentVariable("PF_UI_PROJECT");
     QString dir =
         existing.isEmpty() ? QStringLiteral("/tmp/pf-ui-demo") : existing;
@@ -43,15 +43,15 @@ int main(int argc, char *argv[]) {
     } else {
       check(controller->NewProject(dir), "new project");
       controller->StartAutosave();
-      // Switch the main window into workspace view programmatically.
-      // (NewProject via dialog calls ShowWorkspace; direct controller use
-      // bypasses it, so open through the window API.)
+      // 以编程方式把主窗口切换到工作区视图。
+      // （通过对话框调用 NewProject 会调用 ShowWorkspace；直接使用 controller
+      // 会绕过它，因此要通过窗口 API 打开。）
       controller->session().Save();
       controller->CloseProject();
       bool opened = window.OpenProjectDir(dir);
       if (!opened) {
-        // Recovery open can fail only if project.paper is missing; retry
-        // direct to surface the error.
+        // 恢复式打开只会在 project.paper 缺失时失败；直接重试一次
+        // 以便把错误暴露出来。
         std::string err;
         opened = controller->session().OpenProject(dir.toStdString(), &err);
         std::cout << "  open error: " << err << "\n";
@@ -60,9 +60,8 @@ int main(int argc, char *argv[]) {
     }
 
     if (!existing.isEmpty()) {
-      // Existing project: capture it as opened, then show what the
-      // re-flow and the hover insert affordance look like on real
-      // content.
+      // 已有项目：先按打开时的状态截图，再展示重排（re-flow）
+      // 与悬停插入提示在真实内容上的效果。
       QTimer::singleShot(1800, [&window]() {
         window.grab().save("/tmp/pf-ui-workspace.png");
         std::cout << "[ SAVE ] workspace (as opened)\n";
@@ -84,8 +83,8 @@ int main(int argc, char *argv[]) {
           return nullptr;
         };
 
-        // Clicking into the abstract and leaving it commits the row,
-        // which is the path that softens a hard-wrapped paste.
+        // 点入摘要再离开会提交该行，
+        // 这条路径可以柔化硬换行粘贴的内容。
         if (QPlainTextEdit *abstract = find_row("front:abstract")) {
           abstract->setFocus(Qt::MouseFocusReason);
           pump(150);
@@ -97,7 +96,7 @@ int main(int argc, char *argv[]) {
           std::cout << "[ SAVE ] abstract after commit (re-flowed)\n";
         }
 
-        // Hover the insert strip after the last block.
+        // 悬停到最后一个块之后的插入条上。
         std::vector<QWidget *> gaps;
         for (QWidget *w : window.findChildren<QWidget *>()) {
           if (w->property("gap_anchor").isValid() && w->isVisible()) {
@@ -134,8 +133,8 @@ int main(int argc, char *argv[]) {
         "Tanran Shi\u00b9\u00b2 · Author B\u00b9 · Author C\u00b2");
     controller->SetKeywordsText("infrared, small target, deep learning");
     auto sec = controller->InsertSection("Introduction");
-    // Long enough to reach a second page, so the preview shows the seam
-    // between sheet 1 and sheet 2.
+    // 长度足以到达第二页，这样预览就能显示
+    // 第 1 张与第 2 张纸之间的接缝。
     for (int i = 0; i < 26; ++i) {
       controller->InsertParagraph(
           sec.created_node,
@@ -163,8 +162,8 @@ int main(int argc, char *argv[]) {
         "hand-crafted baselines while reducing annotation cost.");
     controller->InsertEquation(sec.created_node,
                                "L = L_{seg} + \\lambda L_{aux}", true);
-    // A rich paragraph with inline math: the 12pt body font must keep the
-    // formulas on the text baseline and inside the line box (UI plan §6).
+    // 带行内数学公式的富文本段落：12pt 正文字体必须让公式
+    // 保持在文本基线上并处于行框内（UI 方案 §6）。
     {
       const pf::EditResult rich_para =
           controller->InsertParagraphAfter(sec.created_node, QString());
@@ -190,8 +189,8 @@ int main(int argc, char *argv[]) {
                 "@article{li2024, author={L. Li}, title={Small Target Survey}, "
                 "year={2024}}"));
 
-    // Trigger the view refresh (documentChanged fires on each edit; give
-    // the loop a moment).
+    // 触发视图刷新（每次编辑都会发出 documentChanged；
+    // 给事件循环一点时间）。
     QTimer::singleShot(400, [&window, controller, &failures]() {
       window.grab().save("/tmp/pf-ui-workspace.png");
       std::cout << "[ SAVE ] workspace screenshot\n";
@@ -204,9 +203,9 @@ int main(int argc, char *argv[]) {
         }
       };
 
-      // Focus chrome (UI plan §2/§9/§10): focusing a Text row reveals
-      // the accent line, the hover-only "Text" label, the format strip,
-      // and highlights the owning section in the outline.
+      // 聚焦外观（UI 方案 §2/§9/§10）：聚焦某个 Text 行会显示
+      // 强调线、仅悬停时出现的「Text」标签、格式栏，
+      // 并在大纲中高亮其所属章节。
       for (InlineEditor *rich : window.findChildren<InlineEditor *>()) {
         if (!rich->isVisible())
           continue;
@@ -217,7 +216,7 @@ int main(int argc, char *argv[]) {
         break;
       }
 
-      // Focus editing mode (UI plan §11): side panels collapse.
+      // 焦点编辑模式（UI 方案 §11）：侧边面板收起。
       for (QPushButton *button : window.findChildren<QPushButton *>()) {
         if (!button->text().contains("Focus"))
           continue;
@@ -230,11 +229,11 @@ int main(int argc, char *argv[]) {
         break;
       }
 
-      // 3. Build; the controller emits the typed previewUpdated event
-      // (already on the application thread) when a build is accepted.
-      // Setup edits drain through debounced auto-builds and can
-      // supersede the first request (latest-wins), so retry a few
-      // times until a build for the current revision succeeds.
+      // 3. 构建；当一次 build 被接受时，controller 会发出带类型的
+      // previewUpdated 事件（已在应用线程上）。
+      // 初始化阶段的编辑会经由防抖的自动构建逐步排空，并可能
+      // 取代第一次请求（最新者胜），因此重试若干次，
+      // 直到当前 revision 的 build 成功为止。
       static int build_attempts = 0;
       ProjectController *ctl = controller;
       QObject::connect(controller, &ProjectController::previewUpdated,
@@ -249,10 +248,10 @@ int main(int argc, char *argv[]) {
                                    window.grab().save("/tmp/pf-ui-built.png");
                                    std::cout << "[ SAVE ] built "
                                                 "screenshot\n";
-                                   // Zoom the preview and
-                                   // capture the result.
-                                   // Show the pages as a
-                                   // continuous column.
+                                   // 缩放预览并
+                                   // 截取结果。
+                                   // 把各页显示为
+                                   // 连续的纵向排列。
                                    window.ZoomPreviewForTest(0.0, 0.0, 0.45);
                                    QTimer::singleShot(600, [&window]() {
                                      window.grab().save("/tmp/"

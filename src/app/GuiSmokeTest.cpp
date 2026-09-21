@@ -1,6 +1,6 @@
-// GUI end-to-end smoke test: drive the controller directly (no display
-// needed) - new project, edit via the same code paths the UI uses, build,
-// and verify the PDF exists. Run under any QPA platform.
+// GUI 端到端冒烟测试：直接驱动控制器（无需显示器）——新建项目、沿 UI
+// 所用的同一条代码路径编辑、build，并校验 PDF 是否存在。可在任意 QPA
+// 平台上运行。
 #include <QCoreApplication>
 #include <QTimer>
 #include <chrono>
@@ -32,12 +32,12 @@ int main(int argc, char* argv[]) {
     };
 
     QTimer::singleShot(0, [&]() {
-        // 1. New project
+        // 1. 新建项目
         check(controller.NewProject(QString(dir.string().c_str())),
               "new project");
         controller.StartAutosave();
 
-        // 2. Edit exactly as the UI would
+        // 2. 完全按照 UI 的方式编辑
         check(controller.SetTitle("GUI E2E Paper").status ==
                   pf::EditStatus::Applied, "set title");
         check(controller.SetAbstract("Written through the GUI controller.")
@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) {
         check(controller
                   .InsertEquation(sec.created_node, "e^{i\\pi} + 1 = 0", true)
                   .status == pf::EditStatus::Applied, "insert equation");
-        // 2b. Author metadata (new flow-editor path)
+        // 2b. 作者元数据（新的 flow-editor 路径）
         check(controller.SetAuthorsText("Alice · Bob, Carol").status ==
                   pf::EditStatus::Applied, "set authors (flow row)");
         check(controller.SetAffiliationsText("University One; Institute Two")
@@ -71,8 +71,8 @@ int main(int argc, char* argv[]) {
             check(fm.keywords.size() == 3, "keywords parsed (3)");
         }
 
-        // Superscript markers in the author row bind an author to the
-        // institution with that number; the marker is stripped from the name.
+        // 作者行中的上标标记把作者绑定到该编号对应的机构；
+        // 该标记会从姓名中剥离。
         check(controller
                   .SetAuthorsText(QString::fromUtf8(
                       "Alice\u00b9 \u00b7 Bob\u00b2, Carol"))
@@ -93,8 +93,7 @@ int main(int argc, char* argv[]) {
             check(fm.authors[0].name == "Alice",
                   "the marker is removed from the author name");
         }
-        // More than one institution has to be supported: the row used to keep
-        // only the first one.
+        // 必须支持多个机构：此前该行只保留第一个。
         check(controller.SetAffiliationsText(
                   "School of Computing, University One\n"
                   "Institute of Optics, Institute Two\n"
@@ -111,7 +110,7 @@ int main(int argc, char* argv[]) {
             check(fm.affiliations[2].name ==
                       "National Key Lab, Institute Three",
                   "third institution kept");
-            // Editing the list keeps ids stable, so author links survive.
+            // 编辑该列表会保持 id 稳定，因此作者关联不会丢失。
             check(fm.authors[0].affiliations.size() == 1 &&
                       fm.authors[0].affiliations[0] == fm.affiliations[0].id,
                   "institution ids are stable across edits");
@@ -121,7 +120,7 @@ int main(int argc, char* argv[]) {
                   "year={2024}}"))
                   .status == pf::BibliographyImportResult::Status::Ok,
               "import bibliography");
-        // Citations target a Paragraph block (find the one we inserted).
+        // 引用指向 Paragraph 块（找到我们插入的那个）。
         pf::NodeId paragraph;
         {
             const auto& blocks = controller.session()
@@ -138,11 +137,10 @@ int main(int argc, char* argv[]) {
             }
         }
         check(!paragraph.empty(), "found paragraph for citation");
-        // Citation plan §5: the only body-text path is the rich commit. The
-        // widget-level insertion (InlineEditor::InsertCitationObject) is
-        // covered by paperforge-inline-editor-test; here (no QApplication)
-        // drive the same commit with the InlineContent the editor would have
-        // produced.
+        // 引用方案 §5：正文文本唯一的路径是 rich commit。控件层的插入
+        // （InlineEditor::InsertCitationObject）由 paperforge-inline-editor-test
+        // 覆盖；这里（没有 QApplication）用编辑器本会生成的 InlineContent
+        // 驱动同一个 commit。
         {
             pf::InlineContent content;
             content.push_back(pf::TextRun{"Prior work ", 0});
@@ -172,11 +170,11 @@ int main(int argc, char* argv[]) {
                   pf::EditStatus::Applied,
               "insert table after visual anchor");
 
-        // 3. Undo/redo through the GUI path
+        // 3. 经由 GUI 路径的撤销/重做
         controller.Undo();
         controller.Redo();
 
-        // 4b. Reordering and subsection placement.
+        // 4b. 重排序与子节放置。
         {
             auto move_sec = controller.InsertSection("MoveTest");
             auto p1 = controller.InsertParagraph(move_sec.created_node, "one");
@@ -206,8 +204,8 @@ int main(int argc, char* argv[]) {
                       pf::EditStatus::Applied, "move a block down is accepted");
             check(order() == "one,two,three", "block moved down one place");
 
-            // A subsection inserted after the first paragraph has to land
-            // between "one" and "two": the blocks below it become its body.
+            // 插入到第一个段落之后的子节必须落在「one」与「two」之间：
+            // 位于其下方的块会成为它的正文。
             check(controller.InsertSubsectionAfter(p1.created_node, "Sub")
                       .status == pf::EditStatus::Applied,
                   "insert subsection after a paragraph");
@@ -240,7 +238,7 @@ int main(int argc, char* argv[]) {
                   "subsection lands where it was inserted");
         }
 
-        // 4. Build and wait for the typed preview event
+        // 4. build 并等待类型化的 preview 事件
         QObject::connect(&controller, &ProjectController::previewUpdated,
                          [&](const pf::PreviewUpdate& update) {
                              check(update.success, "build via GUI controller");
@@ -256,7 +254,7 @@ int main(int argc, char* argv[]) {
         controller.RequestBuild(true);
     });
 
-    // Global timeout
+    // 全局超时
     QTimer::singleShot(240000, [&]() {
         std::cout << "[FAIL] timeout\n";
         finished(1);

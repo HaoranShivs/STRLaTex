@@ -1,12 +1,10 @@
-// P0-01 regression tests: unsaved-changes protection and the autosave
-// recovery closure.
+// P0-01 回归测试：未保存更改的保护与自动保存恢复闭环。
 //
-// The release blockers under test:
-//   * a brand-new project that was never saved but WAS autosaved must be
-//     recoverable - the old OpenProjectWithRecovery() required project.paper
-//     to exist first, so that work was unreachable and lost;
-//   * recovery must prefer the newer of project.paper / autosave.paper;
-//   * EnsureDirectories failures must not let a project enter Open.
+// 被测的发布阻塞项：
+//   * 一个从未保存但确实执行过自动保存的全新项目必须可恢复——旧的 OpenProjectWithRecovery() 要求
+//     project.paper 先存在，导致这部分工作无法触达并丢失；
+//   * 恢复必须优先选择 project.paper / autosave.paper 中较新的一个；
+//   * EnsureDirectories 失败时不得让项目进入 Open。
 #include "TestMain.hpp"
 #include "ScopedTempDir.hpp"
 
@@ -46,8 +44,8 @@ ProjectSession::Config MakeConfig() {
         return std::make_unique<NullCompiler>();
     };
     config.debounce = std::chrono::milliseconds{0};
-    // Unique per test process: `ctest -j` runs several binaries at once and a
-    // fixed workspace root made them clobber each other.
+    // 每个测试进程独享：`ctest -j` 会同时运行多个二进制，固定的 workspace 根目录
+    // 会让它们互相覆盖。
     static pf::test::ScopedTempDir workspace("pf-p01-workspaces");
     config.workspace_root = workspace.path();
     return config;
@@ -84,15 +82,14 @@ void Settle(ProjectSession& session, int timeout_ms = 5000) {
 
 } // namespace
 
-// Case B of the rectification plan: the project was never saved, only the
-// autosave holds the work. Recovery must produce an open, Dirty project with
-// the recovered content - not NotFound.
+// 整改方案的 Case B：项目从未保存，只有自动保存持有这些工作。恢复必须产生一个
+// 已打开的、Dirty 的项目，并带有恢复出的内容——而不是 NotFound。
 PF_TEST(RecoveryFromAutosaveOnlyNewProject) {
     auto dir = TempDir("pf-p01-autosave-only");
     ProjectSession writer(MakeConfig());
     PF_CHECK(writer.NewProject(dir));
     writer.Execute(TitleCmd(writer, "Unsaved Draft"));
-    // Autosave writes only the snapshot; project.paper is never created.
+    // 自动保存只写入 snapshot；project.paper 永远不会被创建。
     auto autosave = writer.Autosave();
     PF_CHECK(autosave.status == SaveResult::Status::Queued);
     writer.FlushSaves();
@@ -100,7 +97,7 @@ PF_TEST(RecoveryFromAutosaveOnlyNewProject) {
     PF_CHECK(std::filesystem::exists(dir / ".paperforge" / "autosave" /
                                      "autosave.paper"));
 
-    // A fresh session opens the directory with recovery.
+    // 一个新会话以恢复方式打开该目录。
     ProjectSession reader(MakeConfig());
     std::string error;
     bool recovered = false;
@@ -118,8 +115,8 @@ PF_TEST(RecoveryFromAutosaveOnlyNewProject) {
     std::filesystem::remove_all(dir);
 }
 
-// Case C: neither file exists -> the open must fail, and the failure must be
-// reported rather than leaving a half-open project.
+// Case C：两个文件都不存在 -> 打开必须失败，且必须报告该失败，而不是留下一个
+// 半打开的项目。
 PF_TEST(RecoveryFailsWhenNeitherFileExists) {
     auto dir = TempDir("pf-p01-nothing");
     std::filesystem::create_directories(dir);
@@ -134,7 +131,7 @@ PF_TEST(RecoveryFailsWhenNeitherFileExists) {
     std::filesystem::remove_all(dir);
 }
 
-// Case A: project.paper exists and the autosave is newer -> recovery wins.
+// Case A：project.paper 存在且自动保存更新 -> 恢复胜出。
 PF_TEST(RecoveryPrefersNewerAutosave) {
     auto dir = TempDir("pf-p01-newer-autosave");
     ProjectSession writer(MakeConfig());
@@ -144,7 +141,7 @@ PF_TEST(RecoveryPrefersNewerAutosave) {
     writer.FlushSaves();
     PF_CHECK(writer.persistence_state() == PersistenceState::Clean);
 
-    // Edit and autosave: the autosave is now the newer snapshot.
+    // 编辑并自动保存：此时自动保存是更新的 snapshot。
     std::this_thread::sleep_for(std::chrono::milliseconds{1100});
     writer.Execute(TitleCmd(writer, "Newer Autosaved Version"));
     PF_CHECK(writer.Autosave().status == SaveResult::Status::Queued);
@@ -160,8 +157,8 @@ PF_TEST(RecoveryPrefersNewerAutosave) {
     std::filesystem::remove_all(dir);
 }
 
-// Case A (no recovery needed): project.paper is newer than the autosave, so
-// the on-disk save wins and the project opens Clean.
+// Case A（无需恢复）：project.paper 比自动保存更新，因此磁盘上的保存胜出，
+// 项目以 Clean 打开。
 PF_TEST(RecoveryKeepsProjectFileWhenItIsNewer) {
     auto dir = TempDir("pf-p01-newer-project");
     ProjectSession writer(MakeConfig());
@@ -185,13 +182,13 @@ PF_TEST(RecoveryKeepsProjectFileWhenItIsNewer) {
     std::filesystem::remove_all(dir);
 }
 
-// P0-03 closure: a directory that cannot be created must fail the project
-// open instead of entering LifecycleState::Open with a broken layout.
+// P0-03 闭环：无法创建的目录必须使项目打开失败，而不是带着损坏的目录布局
+// 进入 LifecycleState::Open。
 PF_TEST(NewProjectFailsWhenDirectoryCannotBeCreated) {
     auto base = TempDir("pf-p01-bad-dir");
     std::filesystem::create_directories(base);
-    // A regular FILE where the project directory is expected: every
-    // create_directories under it must fail.
+    // 在本应是项目目录的位置放一个普通文件：其下所有 create_directories
+    // 都必须失败。
     auto blocker = base / "blocker";
     {
         std::ofstream out(blocker);
@@ -206,17 +203,17 @@ PF_TEST(NewProjectFailsWhenDirectoryCannotBeCreated) {
     std::filesystem::remove_all(base);
 }
 
-// A dirty project must be recoverable through the SAME guard the UI uses;
-// this asserts the state the guard branches on is observable and correct.
+// Dirty 项目必须能通过 UI 所用的同一个 guard 恢复；这里断言 guard 据以分支的
+// 状态可观测且正确。
 PF_TEST(DirtyStateIsObservableForTheNavigationGuard) {
     auto dir = TempDir("pf-p01-dirty-state");
     ProjectSession session(MakeConfig());
     PF_CHECK(session.NewProject(dir));
-    // A new project starts Dirty: the guard must ask before discarding it.
+    // 新项目初始为 Dirty：guard 在丢弃它之前必须先询问。
     PF_CHECK(session.persistence_state() == PersistenceState::Dirty);
     session.Execute(TitleCmd(session, "T"));
     PF_CHECK(session.persistence_state() == PersistenceState::Dirty);
-    // Saving clears it, which is what lets the guard proceed silently.
+    // 保存会清除该状态，这正是 guard 能够静默继续的原因。
     PF_CHECK(session.Save().status == SaveResult::Status::Queued);
     session.FlushSaves();
     PF_CHECK(session.persistence_state() == PersistenceState::Clean);

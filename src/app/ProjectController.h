@@ -1,7 +1,7 @@
 #pragma once
-// ProjectController: Qt-side adapter between the UI and the domain layer.
-// Owns the ProjectSession and re-emits domain events as Qt signals.
-// (Qt isolation rule: domain layer knows nothing about this file.)
+// ProjectController：UI 与领域层之间的 Qt 侧适配器。
+// 持有 ProjectSession，把领域事件重新发出为 Qt 信号。
+// （Qt 隔离规则：领域层对本文件一无所知。）
 
 #include <QObject>
 #include <QString>
@@ -37,29 +37,29 @@ public:
     return session_ ? session_->preview_state() : PreviewState::NoPreview;
   }
 
-  // Lifecycle actions (async work stays inside the session).
+  // 生命周期操作（异步工作留在 session 内部）。
   bool NewProject(const QString &dir, std::string *error = nullptr);
   bool OpenProject(const QString &dir);
   bool OpenProjectWithRecovery(const QString &dir, bool *recovered);
   void CloseProject();
 
   void Save();
-  // Block until queued saves are written (tests/tools only).
+  // 阻塞直到排队的保存全部写入（仅供测试／工具使用）。
   void FlushSaves();
   void StartAutosave();
   void StopAutosave();
 
-  // Editing actions - build EditCommands from UI inputs.
+  // 编辑操作——根据 UI 输入构造 EditCommand。
   EditResult SetTitle(const QString &text);
   EditResult SetAbstract(const QString &text);
-  // "Alice, Bob" -> authors; empty string clears.
+  // "Alice, Bob" -> 作者；空字符串表示清空。
   EditResult SetAuthorsText(const QString &comma_separated);
-  // "University A; University B" -> affiliations; re-links existing authors
-  // by their inline ¹²³ markers order (authors keep prior links where valid).
+  // "University A; University B" -> 单位；按作者行内 ¹²³ 标记的顺序
+  // 重新关联已有作者（作者原有的有效关联保持不变）。
   EditResult SetAffiliationsText(const QString &semicolon_separated);
 
-  // Graphical author <-> institution binding: link or unlink one author
-  // from one institution, keeping the document's institution order.
+  // 图形化的作者 <-> 机构绑定：关联或取消关联某位作者与某个机构，
+  // 同时保持文档的机构顺序。
   EditResult SetAuthorAffiliation(size_t author_index,
                                   const AffiliationId &affiliation,
                                   bool linked);
@@ -85,9 +85,9 @@ public:
   EditResult InsertFigure(const NodeId &parent, const QString &image_path);
   EditResult InsertFigureAfter(const NodeId &anchor, const QString &image_path);
   EditResult InsertTableAfter(const NodeId &anchor);
-  // Structured commit used by InlineEditor: bold/italic runs, citations,
-  // cross references and inline equations survive the round trip. Body
-  // text has exactly one data path into the document (citation plan §5).
+  // InlineEditor 使用的结构化提交：粗体／斜体片段、引文、
+  // 交叉引用和行内公式都能完整往返。正文进入文档的数据路径
+  // 有且仅有一条（引用方案 §5）。
   EditResult EditParagraphRich(const NodeId &paragraph,
                                const InlineContent &content);
   EditResult EditEquation(const NodeId &equation, const QString &math,
@@ -95,15 +95,15 @@ public:
   EditResult RenameSection(const NodeId &section, const QString &title);
   EditResult RenameSubsection(const NodeId &subsection, const QString &title);
   EditResult EditCaption(const NodeId &block, const QString &caption);
-  // Single- vs double-column figure. Stored regardless of the template; only
-  // a two-column template renders the difference (full-width float).
+  // 单栏与双栏图。无论使用哪种模板都会保存；只有双栏模板
+  // 才会体现差异（通栏浮动体）。
   EditResult EditFigureSpan(const NodeId &figure, bool double_column);
   EditResult DeleteBlock(const NodeId &block);
   EditResult DeleteNode(const NodeId &node);
   EditResult MoveNode(const NodeId &node, int direction);
 
-  // Drag-and-drop reordering: put `node` directly after `anchor` (a block, a
-  // subsection or a section). Keeps the document order everywhere else.
+  // 拖放重排：把 `node` 直接放到 `anchor` 之后（`anchor` 可以是块、
+  // 子节或节）。其他位置的文档顺序保持不变。
   EditResult MoveNodeAfter(const NodeId &node, const NodeId &anchor);
   EditResult DeleteSection(size_t index);
   void Undo();
@@ -112,37 +112,35 @@ public:
   void RequestBuild(bool manual = true);
   void CancelBuild();
 
-  // Citation plan §3: the document-wide citation key -> display number map
-  // the editor pills are painted from. Rebuilt from the live document plus
-  // the imported bibliography; nullptr without an open project.
+  // 引用方案 §3：编辑器 pill 绘制所依据的全文档 citation key -> 显示编号
+  // 映射。根据实时文档与导入的参考文献重建；没有打开项目时为
+  // nullptr。
   std::shared_ptr<const pf::CitationNumberResolver> CitationNumbers() const;
 
-  // Bibliography. The import result (entry count, duplicate keys) is
-  // surfaced to the UI so a duplicate never disappears silently.
+  // 参考文献。导入结果（条目数、重复 key）会暴露给 UI，
+  // 因此重复项绝不会无声无息地消失。
   BibliographyImportResult ImportBibliographyText(const QString &bibtex);
   CitationSearchResult SearchCitations(const QString &query) const;
 
 signals:
   void documentChanged();
   void buildStatusChanged(QString phase_text);
-  // Typed replacement for buildFinished(bool, pdf_path): carries the
-  // project/build/revision identity of the PDF so the view can reject
-  // anything that no longer belongs to the current document.
+  // buildFinished(bool, pdf_path) 的类型化替代：携带 PDF 的
+  // project/build/revision 身份标识，使视图能够拒绝任何
+  // 不再属于当前文档的内容。
   void previewUpdated(const pf::PreviewUpdate &update);
-  // Structured build diagnostics (Build Diagnostics plan §36-§37): the
-  // accepted, final BuildResult for the current build. The GUI never parses
-  // log text; ProblemsPanel consumes these value objects directly.
+  // 结构化的 build 诊断（Build 诊断方案 §36-§37）：当前 build
+  // 被接受且最终的 BuildResult。GUI 绝不解析日志文本；
+  // ProblemsPanel 直接消费这些值对象。
   void buildCompleted(const pf::BuildResult &result);
-  // One build-log event of the current build, streamed while it runs (§4).
+  // 当前 build 的一条 build 日志事件，在它运行期间流式发出（§4）。
   void buildEvent(const pf::BuildEvent &event);
-  // P0-06: structured save outcome - revision that was written, whether it
-  // actually landed (Saved), was replaced by a newer save (Superseded) or
-  // failed. The view renders state from persistence_state(), never from this
-  // signal's bool.
+  // P0-06：结构化的保存结果——写入的 revision、它是否真正落地
+  //（Saved）、是否被更新的保存取代（Superseded）或者失败。视图
+  // 始终从 persistence_state() 渲染状态，绝不依据本信号的 bool。
   void saveFinished(bool success, QString detail);
-  // P0-06: authoritative state projection - emitted after every domain
-  // transition that can change persistence/preview/revision. The view
-  // renders exactly these values.
+  // P0-06：权威状态投影——在每次可能改变 persistence/preview/revision
+  // 的领域状态转换之后发出。视图渲染的正是这些值。
   void stateChanged(QString persistence, QString preview, QString revision);
   void templateChanged(QString template_id);
 
@@ -153,11 +151,11 @@ private:
   };
 
   void EmitDocumentChanged();
-  // P0-06: single funnel that emits stateChanged from the authoritative
-  // session state. Every save-completion / edit / lifecycle change goes
-  // through here; no listener maintains a second dirty flag.
+  // P0-06：唯一出口，依据权威的 session 状态发出 stateChanged。
+  // 每次保存完成／编辑／生命周期变更都经过这里；
+  // 任何监听者都不再维护第二个 dirty 标志。
   void EmitProjectStateChanged();
-  // Application-thread drain of ProjectSession's event queue.
+  // 在应用线程上排空 ProjectSession 的事件队列。
   void PumpEvents();
   EditCommand MakeCmd(FullEditPayload payload) const;
   std::optional<InsertionPoint>
@@ -173,8 +171,7 @@ private:
 } // namespace pf::gui
 
 Q_DECLARE_METATYPE(pf::PreviewUpdate)
-// Value objects crossing the async boundary into the GUI (plan §36). They are
-// copied by queued connections, which is exactly the isolation the plan asks
-// for: the worker never touches a widget.
+// 跨越异步边界进入 GUI 的值对象（方案 §36）。它们由队列连接
+// 复制传递，这正是方案所要求的隔离：worker 绝不触碰任何 widget。
 Q_DECLARE_METATYPE(pf::BuildResult)
 Q_DECLARE_METATYPE(pf::BuildEvent)

@@ -1,16 +1,15 @@
 #pragma once
-// SaveCoordinator: serializes saves on a dedicated worker.
+// SaveCoordinator：在专用 worker 上串行化保存。
 //
-// M1 (immutable async pipeline): the coordinator only ever sees an immutable
-// SaveTask - a deep copy of the project taken on the application thread. The
-// worker never touches ProjectState, the Document or any UI type. Completions
-// are handed back through a callback that ProjectSession turns into an
-// application event; the revision that was written travels with the result so
-// the application thread can decide whether the project is still Clean.
+// M1（不可变异步流水线）：coordinator 只会看到不可变的 SaveTask——
+// 在应用线程上对项目所做的深拷贝。worker 绝不触碰 ProjectState、
+// Document 或任何 UI 类型。完成结果通过回调交回，由 ProjectSession
+// 转换为应用事件；被写入的 revision 随结果一同传递，
+// 以便应用线程判断项目是否仍为 Clean。
 //
-// Ordering rule (architecture 补充 rule 5): saves are processed in FIFO order
-// by a single worker, and a snapshot older than the last user save is rejected,
-// so an older snapshot can never overwrite a newer one.
+// 排序规则（架构补充规则 5）：保存由单个 worker 按 FIFO 顺序处理，
+// 早于最近一次用户保存的 snapshot 会被拒绝，
+// 因此较旧的 snapshot 绝不会覆盖较新的。
 
 #include <condition_variable>
 #include <cstdint>
@@ -27,15 +26,15 @@
 namespace pf {
 
 enum class SaveKind : std::uint8_t {
-    User,      // explicit save to project.paper
-    Autosave,  // crash-recovery snapshot, never clears Dirty
+    User,      // 显式保存到 project.paper
+    Autosave,  // 崩溃恢复 snapshot，绝不清除 Dirty
 };
 
 const char* ToString(SaveKind kind);
 
-// P0-03: the outcome of one save task. Superseded is distinct from IoError -
-// an old snapshot replaced by a newer save is normal latest-wins behaviour,
-// not a disk failure, and the UI must not show a scary error for it.
+// P0-03：单个保存任务的结果。Superseded 与 IoError 不同——
+// 旧 snapshot 被更新的保存取代属于正常的「最新者胜」行为，
+// 并非磁盘故障，UI 不得为此显示吓人的错误。
 enum class SaveOutcome : std::uint8_t {
     Saved,
     Superseded,
@@ -47,7 +46,7 @@ enum class SaveOutcome : std::uint8_t {
 SaveOutcome OutcomeFromResult(const SaveResult& result, bool superseded);
 const char* ToString(SaveOutcome outcome);
 
-// An immutable, self-contained save job. Owned by the worker once enqueued.
+// 不可变、自包含的保存作业。入队后由 worker 持有。
 struct SaveTask {
     SaveId save_id;
     ProjectId project_id;
@@ -57,9 +56,8 @@ struct SaveTask {
     SerializedProject snapshot;
 };
 
-// Result of one save task, delivered on the worker thread. `outcome` is the
-// structured verdict; `result` carries the legacy status + detail for
-// diagnostics. `error` is set only when outcome == IoError.
+// 单个保存任务的结果，在 worker 线程上投递。`outcome` 是结构化的判定；
+// `result` 携带旧式 status + detail 用于诊断。`error` 仅在 outcome == IoError 时设置。
 struct SaveCompletion {
     SaveId save_id;
     ProjectId project_id;
@@ -72,8 +70,8 @@ struct SaveCompletion {
 
 class SaveCoordinator {
 public:
-    // `on_completed` is invoked on the save worker thread and must therefore be
-    // thread-safe. Empty callback is allowed (result is then dropped).
+    // `on_completed` 在 save worker 线程上调用，因此必须线程安全。
+    // 允许传入空回调（此时结果会被丢弃）。
     explicit SaveCoordinator(
         std::function<void(const SaveCompletion&)> on_completed = {});
     ~SaveCoordinator();
@@ -81,25 +79,24 @@ public:
     SaveCoordinator(const SaveCoordinator&) = delete;
     SaveCoordinator& operator=(const SaveCoordinator&) = delete;
 
-    // Application thread: hand the worker an immutable snapshot. Non-blocking.
-    // Returns nullopt when the coordinator is stopping (or stopped): the
-    // caller must not report a save as queued when it never entered the
-    // queue (P0-03: no fake "Queued" during shutdown).
+    // 应用线程：把不可变 snapshot 交给 worker。非阻塞。
+    // 当 coordinator 正在 stopping（或已 stopped）时返回 nullopt：
+    // 若任务从未进入队列，调用方不得将其报告为已排队
+    // （P0-03：关闭期间不得谎报 "Queued"）。
     std::optional<SaveId> Enqueue(SerializedProject snapshot,
                                   const std::filesystem::path& destination,
                                   SaveKind kind);
 
-    // Application thread: block until every enqueued task has been written,
-    // or the timeout expires (P0-03: production code must never wait
-    // unboundedly for a worker). Returns false on timeout.
+    // 应用线程：阻塞直到所有已入队任务写入完成，或超时到期
+    // （P0-03：生产代码绝不无界等待 worker）。超时时返回 false。
     bool Flush(std::chrono::milliseconds timeout =
                    std::chrono::milliseconds{10000});
 
-    // Application thread: stop accepting work, drain the queue, join.
-    // Idempotent; called by the destructor.
+    // 应用线程：停止接受新工作、排空队列、join。
+    // 幂等；由析构函数调用。
     void Shutdown();
 
-    // Tasks enqueued but not yet written (diagnostics/tests).
+    // 已入队但尚未写入的任务（诊断/测试用）。
     size_t pending() const;
 
 private:
@@ -113,7 +110,7 @@ private:
     std::thread worker_;
     bool stopping_ = false;
     size_t in_flight_ = 0;
-    // Worker-thread-only: last revision successfully written by a user save.
+    // 仅限 worker 线程：最近一次由用户保存成功写入的 revision。
     std::optional<ProjectRevision> last_user_saved_revision_;
     bool stopped_ = false;
 };

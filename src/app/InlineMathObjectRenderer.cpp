@@ -14,9 +14,9 @@ QSizeF InlineMathObjectRenderer::intrinsicSize(QTextDocument*, int,
     const qreal baseline =
         qMax<qreal>(1.0, format.property(inline_math_format::kBaselineProperty)
                              .toDouble());
-    // For an AlignNormal inline object Qt treats its height as ascent.
-    // The renderer deliberately paints the (already bounded) descent below
-    // rect.bottom(), into the normal text line's descent area.
+    // 对于 AlignNormal 的行内对象，Qt 会把它的高度当作 ascent。renderer 特意
+    // 把（已做限定的）下沉部分绘制到 rect.bottom() 之下，即普通文本行的下沉
+    // 区域中。
     return QSizeF(width, baseline);
 }
 

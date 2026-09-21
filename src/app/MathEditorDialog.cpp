@@ -76,9 +76,8 @@ MathEditorDialog::MathEditorDialog(const QString& latex, QWidget* parent)
     debounce_->setInterval(kDebounceMs);
     connect(debounce_, &QTimer::timeout, this,
             [this]() { RefreshPreview(); });
-    // P0-07: the preview renders on the shared worker thread. Closing the
-    // dialog destroys this object, and the service's QPointer guard then
-    // discards any reply that was still in flight.
+    // P0-07：预览在共享 worker 线程上渲染。关闭对话框会销毁本对象，
+    // 服务的 QPointer 守卫随即丢弃任何仍在途的回复。
     static std::atomic<std::uint64_t> next_dialog_id{0};
     const QString dialog_id =
         QStringLiteral("math-dialog-%1").arg(next_dialog_id.fetch_add(1));
@@ -89,7 +88,7 @@ MathEditorDialog::MathEditorDialog(const QString& latex, QWidget* parent)
             [this](const MathRenderResponse& response) {
                 if (response.editor_id != objectName())
                     return;
-                // The dialog re-validates on its own; only apply the pixels.
+                // 对话框自行重新校验；此处只应用像素。
                 ApplyRenderedPreview(
                     response.latex, response.result.image,
                     response.result.width, response.result.height,
@@ -97,7 +96,7 @@ MathEditorDialog::MathEditorDialog(const QString& latex, QWidget* parent)
                     response.result.device_pixel_ratio, response.result.note,
                     response.result.exact);
             });
-    // Live (debounced) preview: source changed -> validation -> render.
+    // 实时（防抖）预览：源码变化 -> 校验 -> 渲染。
     connect(source_, &QPlainTextEdit::textChanged, this,
             [this]() { debounce_->start(); });
 
@@ -145,13 +144,13 @@ void MathEditorDialog::RefreshPreview() {
 
     MathRenderStyle style;
     style.font_px = kPreviewFontPx;
-    // Invalid/incomplete source is kept visible through the bounded fallback;
-    // only a valid body is sent to the real TeX renderer.
+    // 无效/不完整的源码通过有界回退保持可见；
+    // 只有有效的 body 才交给真正的 TeX 渲染器。
     if (!validation.valid()) {
         style.backend = MathRenderBackend::ApproximateOnly;
     }
-    // P0-07: enqueue instead of blocking the GUI thread on TeX. The debounce
-    // above only limits how many requests are issued; it no longer runs TeX.
+    // P0-07：改为入队，避免在 TeX 上阻塞 GUI 线程。上方的防抖
+    // 仅限制发出的请求数量，不再运行 TeX。
     preview_->setText(QStringLiteral("…"));
     preview_->setPixmap(QPixmap());
     ++preview_generation_;
@@ -167,11 +166,11 @@ void MathEditorDialog::ApplyRenderedPreview(const QString& latex,
                                             const QString& note, bool exact) {
     if (!preview_ || !status_ || image.isNull())
         return;
-    // The dialog scales the pixmap through the label, so the logical metrics
-    // are only needed to reject an empty render.
+    // 对话框通过标签缩放 pixmap，因此逻辑尺寸仅用于
+    // 拒绝空渲染。
     if (width <= 0 || height <= 0 || baseline < 0)
         return;
-    // A reply for a stale body must not replace the current one.
+    // 过期 body 的回复不得替换当前回复。
     if (source_ && latex != source_->toPlainText())
         return;
     MathRenderResult partial;

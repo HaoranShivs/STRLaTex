@@ -1,9 +1,9 @@
-// Math-input redesign tests (equation.txt):
-//   * MathExpression is the single math content type
-//   * MathGenerator owns the delimiters and the outer environment
-//   * MathValidator enforces the LaTeX input boundary
-//   * persistence stores the bare body (never the generated environment)
-//   * the renderer resolves cross references to the effective label
+// 数学输入重设计测试（equation.txt）：
+//   * MathExpression 是唯一的数学内容类型
+//   * MathGenerator 掌管定界符与外层环境
+//   * MathValidator 强制约束 LaTeX 输入边界
+//   * persistence 只存储裸 body（绝不存储生成的环境）
+//   * 渲染器把交叉引用解析为生效的 label
 #include "TestMain.hpp"
 
 #include "document/DocumentEditor.h"
@@ -32,7 +32,7 @@ std::string RenderTex(const Document& doc,
     return rendered.package.files[0].content;
 }
 
-// A document with one numbered equation and one paragraph that refers to it.
+// 一个包含一个带编号公式以及一个引用该公式的段落的文档。
 struct EquationFixture {
     Document doc;
     NodeId equation;
@@ -55,14 +55,14 @@ EquationFixture MakeEquationDoc(const std::string& body,
 
 }  // namespace
 
-// ---------------- Generator ----------------
+// ---------------- 生成器 ----------------
 
 PF_TEST(MathGeneratorWrapsInlineBodyInParenDelimiters) {
     MathExpression expression;
     expression.latex = "\\frac{a}{b}";
     const std::string tex = GenerateInlineMath(expression);
     PF_CHECK(tex == "\\(\\frac{a}{b}\\)");
-    // The user body never contains the delimiter.
+    // 用户 body 中绝不包含定界符。
     PF_CHECK(expression.latex.find('$') == std::string::npos);
 }
 
@@ -74,7 +74,7 @@ PF_TEST(MathGeneratorBuildsNumberedEnvironmentWithLabel) {
     PF_CHECK(tex.find("\\label{eq:energy}") != std::string::npos);
     PF_CHECK(tex.find("E = mc^2") != std::string::npos);
     PF_CHECK(tex.find("\\end{equation}") != std::string::npos);
-    // The environment is not part of the user's source.
+    // 环境不属于用户的源码内容。
     PF_CHECK(expression.latex.find("begin{equation}") == std::string::npos);
 }
 
@@ -88,7 +88,7 @@ PF_TEST(MathGeneratorBuildsUnnumberedDisplayEnvironment) {
     PF_CHECK(tex.find("\\label") == std::string::npos);
 }
 
-// ---------------- Validator ----------------
+// ---------------- 校验器 ----------------
 
 PF_TEST(MathValidatorAcceptsMathInternalStructures) {
     const char* accepted[] = {
@@ -173,14 +173,14 @@ PF_TEST(MathValidatorTreatsEmptyAsPendingNotInvalid) {
 }
 
 PF_TEST(InvalidMathKeepsTheOriginalSource) {
-    // Validation is read-only: the body survives untouched (design §8).
+    // 校验是只读的：body 保持不变（设计 §8）。
     MathExpression expression;
     expression.latex = "\\begin{equation} x";
     (void)ValidateMath(expression.latex, MathFlavor::Display);
     PF_CHECK(expression.latex == "\\begin{equation} x");
 }
 
-// ---------------- Renderer ----------------
+// ---------------- 渲染器 ----------------
 
 PF_TEST(RendererEmitsNumberedEnvironmentWithUserLabel) {
     EquationFixture fixture = MakeEquationDoc("E = mc^2", "eq:energy", true);
@@ -234,7 +234,7 @@ PF_TEST(CrossReferenceFallsBackToTheNodeId) {
              std::string::npos);
 }
 
-// ---------------- Validator over the document ----------------
+// ---------------- 面向文档的校验器 ----------------
 
 PF_TEST(DocumentValidatorReportsInvalidMathBoundary) {
     EquationFixture fixture =
@@ -251,7 +251,7 @@ PF_TEST(DocumentValidatorReportsInvalidMathBoundary) {
     PF_CHECK(found);
 }
 
-// ---------------- Persistence ----------------
+// ---------------- 持久化 ----------------
 
 PF_TEST(MathPersistenceStoresBareLatexFields) {
     Document doc;
@@ -279,7 +279,7 @@ PF_TEST(MathPersistenceStoresBareLatexFields) {
     project.document = doc;
     const std::string json = ProjectSerializer::Serialize(project);
 
-    // The generated environment must never be written to disk.
+    // 生成的环境绝不得写入磁盘。
     PF_CHECK(json.find("\"inline_math\"") != std::string::npos);
     PF_CHECK(json.find("\"latex\"") != std::string::npos);
     PF_CHECK(json.find("\"type\": \"equation\"") != std::string::npos);
@@ -309,7 +309,7 @@ PF_TEST(MathPersistenceStoresBareLatexFields) {
 }
 
 PF_TEST(LegacyMathJsonStillLoads) {
-    // A pre-redesign file: "inlineEquation"/"displayEquation" with "math".
+    // 重设计之前的文件：使用 "math" 的 "inlineEquation"/"displayEquation"。
     const std::string legacy = R"({
       "schemaVersion": "2",
       "projectId": "p-legacy",

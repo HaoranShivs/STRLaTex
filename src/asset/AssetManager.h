@@ -1,6 +1,6 @@
 #pragma once
-// Asset management (architecture section 17): import -> staging -> register.
-// Document only stores AssetId; physical files live in project/assets/.
+// 资源管理（架构 17）：导入 -> 暂存 -> 注册。
+// Document 只保存 AssetId；物理文件存放在 project/assets/ 下。
 
 #include <cstdint>
 #include <filesystem>
@@ -14,12 +14,12 @@ namespace pf {
 
 struct AssetMetadata {
     AssetId id;
-    std::string relative_path;  // inside project assets/ dir
-    std::string media_type;     // "image/png", "image/jpeg", ...
+    std::string relative_path;  // 位于项目的 assets/ 目录内
+    std::string media_type;     // "image/png"、"image/jpeg" 等
     std::string original_name;
     std::uint64_t file_size = 0;
-    std::string content_hash;   // sha256-ish hex (FNV fallback in V1)
-    // image dimensions (0 if unknown)
+    std::string content_hash;   // 类似 sha256 的十六进制串（V1 中回退为 FNV）
+    // 图像尺寸（未知时为 0）
     std::uint64_t width = 0;
     std::uint64_t height = 0;
 };
@@ -37,11 +37,11 @@ struct AssetImportResult {
     AssetMetadata metadata;
 };
 
-// ImportedAssetCandidate: staged but not yet registered (architecture 补充 3).
+// ImportedAssetCandidate：已暂存但尚未注册（架构补充 3）。
 struct ImportedAssetCandidate {
     AssetId id;
     AssetMetadata metadata;
-    std::filesystem::path staged_path;  // file already inside assets/ dir
+    std::filesystem::path staged_path;  // 文件已在 assets/ 目录内
 };
 
 class AssetRegistry {
@@ -60,12 +60,12 @@ class AssetManager {
 public:
     explicit AssetManager(std::filesystem::path assets_dir);
 
-    // Stage: copy file into assets dir (or report it is already there),
-    // compute metadata + hash. Does NOT register (import/registration split).
+    // Stage：把文件复制到 assets 目录（或报告其已存在），
+    // 计算元数据与哈希。不执行注册（导入与注册分离）。
     AssetImportResult Stage(const AssetImportRequest& request);
     ImportedAssetCandidate ToCandidate(const AssetImportResult& result) const;
 
-    // Registration into the registry (formal project resource).
+    // 注册到 registry（成为正式的项目资源）。
     void Register(ImportedAssetCandidate candidate);
     AssetRegistry& registry() noexcept { return registry_; }
     const std::filesystem::path& assets_dir() const noexcept { return assets_dir_; }

@@ -1,4 +1,4 @@
-// Persistence tests: serialize/load round-trip, atomic save, stale-save guard.
+// 持久化测试：序列化/加载往返、原子保存、陈旧保存防护。
 #include "TestMain.hpp"
 
 #include "core/IdGenerator.h"
@@ -74,7 +74,7 @@ PF_TEST(SerializeDeserializeRoundTrip) {
   PF_CHECK(back.assets.size() == 1);
   PF_CHECK(back.assets[0].content_hash == "deadbeef");
 
-  // Table integrity
+  // 表格完整性
   const Document &cdoc = back.document;
   const auto &blocks = cdoc.body().sections[0].blocks;
   const auto *table = std::get_if<Table>(&blocks[1]);
@@ -97,13 +97,13 @@ PF_TEST(SaveIsAtomicAndReloadable) {
   req.revision = ProjectRevision{10};
   req.destination = file;
   auto snapshot = MakeProject();
-  snapshot.revision = ProjectRevision{10}; // saved revision must match
+  snapshot.revision = ProjectRevision{10}; // 保存的 revision 必须匹配
   req.snapshot = std::move(snapshot);
 
   auto save = ProjectPersistence::Save(req);
   PF_CHECK(save.status == SaveResult::Status::Ok);
   PF_CHECK(std::filesystem::exists(file));
-  // No temp residue
+  // 无临时文件残留
   PF_CHECK(!std::filesystem::exists(file.string() + ".tmp-" + req.save_id));
 
   LoadRequest load;
@@ -143,17 +143,16 @@ PF_TEST(LoadBadJsonReportsError) {
   std::filesystem::remove_all(tmp);
 }
 
-// Regression: a project written while the id generator was not load-aware can
-// contain duplicate node ids - the counter restarted at zero after every open,
-// so the first inserted block reused an id already on disk (two nodes both
-// "n1"). Duplicate ids made an edit hit the wrong block and scrambled insert
-// order. Loading must (a) heal the duplicates and (b) lift the generator past
-// the stored ids so the next insert cannot collide either.
+// 回归：在 id 生成器尚未感知加载状态时写入的项目可能包含重复的节点 id——
+// 每次打开后计数器都从零重新开始，因此首个插入的块会复用一个已存在于磁盘上的
+// id（两个节点都叫 "n1"）。重复 id 会让编辑命中错误的块并打乱插入顺序。
+// 加载必须 (a) 修复重复 id，且 (b) 把生成器推进到所有已存储 id 之后，
+// 使下一次插入也不会冲突。
 PF_TEST(LoadHealsDuplicateNodeIdsAndAdvancesGenerator) {
-  // Deliberately far above anything this process has allocated, so the
-  // assertions below hold no matter which tests ran first.
+  // 刻意远高于本进程已分配的任何值，这样无论先运行了哪些测试，
+  // 下面的断言都成立。
   constexpr std::uint64_t kHigh = 700000;
-  // The figure and the paragraph share "n700000"; the section is "n699999".
+  // figure 与 paragraph 共用 "n700000"；section 是 "n699999"。
   const std::string json = R"({
       "schemaVersion": "3",
       "projectId": "p-dup",
@@ -181,26 +180,25 @@ PF_TEST(LoadHealsDuplicateNodeIdsAndAdvancesGenerator) {
   if (!project.ok())
     return;
 
-  // (a) The duplicate must be healed: every node id unique.
+  // (a) 必须修复重复项：每个节点 id 唯一。
   const auto ids = project.value().document.CollectNodeIds();
   std::set<std::string> unique;
   for (const auto &id : ids)
     unique.insert(id.value());
   PF_CHECK_EQ(unique.size(), ids.size());
-  // The first occurrence kept its id (figure is stored first).
+  // 首次出现者保留其 id（figure 先被存储）。
   PF_CHECK(unique.count("n700000") == 1);
 
-  // (b) The generator must now be past every stored id, so a freshly minted id
-  // cannot clash with one already in the document.
+  // (b) 此时生成器必须已越过所有已存储的 id，因此新生成的 id
+  // 不会与文档中已有的 id 冲突。
   const std::string fresh = IdGenerator::NewNodeId();
   for (const auto &id : ids)
     PF_CHECK(id.value() != fresh);
   PF_CHECK(std::stoull(fresh.substr(1)) > kHigh);
 }
 
-// The figure's single-/double-column attribute must survive a save/load cycle,
-// and a file written before the attribute existed must read as single-column
-// (the old behaviour), never as an uninitialised value.
+// figure 的单栏/双栏属性必须在一次保存/加载周期后保持不变，且在属性存在之前
+// 写入的文件必须读取为单栏（旧行为），绝不能读取为未初始化的值。
 PF_TEST(FigureSpanPersistsAndDefaultsToSingleColumn) {
   const std::string json = R"({
       "schemaVersion": "3",
@@ -228,7 +226,7 @@ PF_TEST(FigureSpanPersistsAndDefaultsToSingleColumn) {
   PF_CHECK(project.ok());
   if (!project.ok())
     return;
-  // A const Document: the non-const body() is deliberately editor-only.
+  // 使用 const Document：非 const 的 body() 被刻意限定为仅编辑器可用。
   const Document &loaded = project.value().document;
   const auto &blocks = loaded.body().sections[0].blocks;
   PF_CHECK_EQ(blocks.size(), std::size_t{2});
@@ -237,11 +235,11 @@ PF_TEST(FigureSpanPersistsAndDefaultsToSingleColumn) {
   const auto *wide = std::get_if<Figure>(&blocks[0]);
   const auto *legacy = std::get_if<Figure>(&blocks[1]);
   PF_CHECK(wide && wide->span == FigureSpan::DoubleColumn);
-  // No "span" key at all: the pre-attribute default.
+  // 完全没有 "span" 键：属性引入前的默认值。
   PF_CHECK(legacy && legacy->span == FigureSpan::SingleColumn);
   PF_CHECK(legacy && legacy->width == FigureWidth::Percent50);
 
-  // Serialize + reparse: the choice is written explicitly, so it comes back.
+  // 序列化并重新解析：该选择被显式写出，因此能够还原。
   const std::string out = ProjectSerializer::Serialize(project.value());
   auto again = ProjectSerializer::Deserialize(out);
   PF_CHECK(again.ok());

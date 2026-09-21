@@ -1,11 +1,9 @@
 #pragma once
-// Structured filesystem errors (P0-03).
+// 结构化文件系统错误（P0-03）。
 //
-// Persistence entry points return Result<T, IoError> instead of
-// bool + std::string*: the UI and the log need to tell "the disk is full"
-// from "the path is a directory" from "permission denied", and a plain
-// string cannot be branched on. IoError carries the code, a user-readable
-// message, a diagnostic detail and the path involved.
+// 持久化入口返回 Result<T, IoError>，而不是 bool + std::string*：UI 和日志
+// 需要区分「磁盘已满」「路径是目录」「权限被拒绝」，而普通字符串无法据此
+// 分支处理。IoError 携带错误码、面向用户的消息、诊断细节以及涉及的路径。
 
 #include <cstdint>
 #include <filesystem>
@@ -34,12 +32,12 @@ enum class IoErrorCode : std::uint8_t {
 
 struct IoError {
     IoErrorCode code = IoErrorCode::Unknown;
-    std::string user_message;   // safe to show in the UI
-    std::string detail;         // for the log: errno text, path, context
-    std::filesystem::path path; // what the operation was touching
+    std::string user_message;   // 可以安全地在 UI 中显示
+    std::string detail;         // 供日志使用：errno 文本、路径、上下文
+    std::filesystem::path path; // 该操作所涉及的路径
     bool retryable = false;
 
-    // "detail" plus the path, for a one-line log entry.
+    // 「detail」加上路径，用于单行日志条目。
     std::string ToString() const {
         std::string out = detail.empty() ? user_message : detail;
         if (!path.empty()) {
@@ -51,11 +49,11 @@ struct IoError {
     }
 };
 
-// Map a std::error_code onto the closest IoErrorCode, so a full disk and a
-// denied permission are distinguishable instead of both reading "failed".
+// 将 std::error_code 映射到最接近的 IoErrorCode，使磁盘已满与权限被拒绝
+// 可以被区分，而不是都显示为「failed」。
 IoErrorCode IoCodeFromErrorCode(const std::error_code& ec);
 
-// Build an IoError from a std::error_code with a user-facing sentence.
+// 根据 std::error_code 构造 IoError，并附带一句面向用户的说明。
 IoError MakeIoError(std::error_code ec, IoErrorCode fallback,
                     std::string user_message, std::filesystem::path path);
 

@@ -1,4 +1,4 @@
-// Editing protocol tests: revisions, undo/redo, anchors.
+// 编辑协议测试：revision、撤销/重做、锚点。
 #include "TestMain.hpp"
 
 #include "core/IdGenerator.h"
@@ -75,7 +75,7 @@ PF_TEST(EditingSystemUndoRedoTitle) {
   auto undo = h.editing->Undo();
   PF_CHECK(undo.status == EditStatus::Applied);
   PF_CHECK(InlineToPlainText(h.state.document().front_matter().title) == "V1");
-  // Undo produced a NEW revision (monotonic).
+  // 撤销会生成一个「新」的 revision（单调递增）。
   PF_CHECK(h.state.revision().value == 3);
 
   auto redo = h.editing->Redo();
@@ -126,7 +126,7 @@ PF_TEST(EditingSystemTemplateChangeKeepsDocumentVersion) {
   auto r = h.editing->Apply(h.Cmd(tpl));
   PF_CHECK(r.status == EditStatus::Applied);
 
-  // DocumentVersion unchanged, ProjectRevision +1 (rule 补充 8).
+  // DocumentVersion 不变，ProjectRevision +1（架构补充 8）。
   PF_CHECK(h.state.document().version() == v_before);
   PF_CHECK(h.state.revision().value == r_before.value + 1);
 }
@@ -156,10 +156,10 @@ PF_TEST(AnchorResolverAfterBlock) {
   PF_CHECK(resolved.ok());
   PF_CHECK(resolved.value().parent == sid);
   PF_CHECK(resolved.value().index.has_value());
-  // Inserted after first => index 1
+  // 插入到 first 之后 => 索引 1
   PF_CHECK(*resolved.value().index == 1);
 
-  // Missing reference node
+  // 引用节点缺失
   StableNodeAnchor bad;
   bad.reference_node = NodeId("ghost");
   auto failed = resolver.Resolve(h.state.document(), bad);
@@ -180,7 +180,7 @@ PF_TEST(UndoHistoryCanRedo) {
 
 PF_TEST(EditingSystemSnapshotUndoRestoresDeletion) {
   TestHost h;
-  // Build two sections with paragraphs.
+  // 构建两个带段落的 section。
   auto s1 =
       h.editing->Apply(h.Cmd(InsertSectionPayload{0, InlineFromText("One")}));
   auto p1 = h.editing->Apply(h.Cmd(InsertParagraphPayload{
@@ -188,7 +188,7 @@ PF_TEST(EditingSystemSnapshotUndoRestoresDeletion) {
   auto s2 =
       h.editing->Apply(h.Cmd(InsertSectionPayload{1, InlineFromText("Two")}));
 
-  // Delete section 0 (historically non-invertible; snapshot undo fixes it).
+  // 删除 section 0（历史上不可逆；snapshot 撤销修复了该问题）。
   auto del = h.editing->Apply(h.Cmd(DeleteSectionPayload{0}));
   PF_CHECK(del.status == EditStatus::Applied);
   {
@@ -197,14 +197,14 @@ PF_TEST(EditingSystemSnapshotUndoRestoresDeletion) {
     PF_CHECK(doc.body().sections[0].title.size() > 0);
   }
 
-  // Undo restores the deleted section AND its content.
+  // 撤销会恢复被删除的 section 及其内容。
   auto undo = h.editing->Undo();
   PF_CHECK(undo.status == EditStatus::Applied);
   {
     const Document &doc = h.state.document();
     PF_CHECK(doc.body().sections.size() == 2);
     PF_CHECK(InlineToPlainText(doc.body().sections[0].title) == "One");
-    // Paragraph content preserved.
+    // 段落内容得到保留。
     PF_CHECK(doc.body().sections[0].blocks.size() == 1);
     const auto *para =
         std::get_if<Paragraph>(&doc.body().sections[0].blocks[0]);
@@ -212,12 +212,12 @@ PF_TEST(EditingSystemSnapshotUndoRestoresDeletion) {
     PF_CHECK(InlineToPlainText(para->content) == "first");
   }
 
-  // Redo re-deletes.
+  // 重做会再次删除。
   auto redo = h.editing->Redo();
   PF_CHECK(redo.status == EditStatus::Applied);
   PF_CHECK(h.state.document().body().sections.size() == 1);
 
-  // NodeId stability across undo: the restored section keeps its id.
+  // 撤销过程中 NodeId 保持稳定：恢复的 section 保留其 id。
   auto undo2 = h.editing->Undo();
   PF_CHECK(undo2.status == EditStatus::Applied);
   PF_CHECK(h.state.document().body().sections[0].id == s1.created_node);
@@ -225,7 +225,7 @@ PF_TEST(EditingSystemSnapshotUndoRestoresDeletion) {
   const auto *para =
       std::get_if<Paragraph>(&h.state.document().body().sections[0].blocks[0]);
   PF_CHECK(para != nullptr);
-  PF_CHECK(para->id == p1.created_node); // NodeId stable through undo
+  PF_CHECK(para->id == p1.created_node); // NodeId 在撤销过程中保持稳定
 }
 
 PF_TEST(EditingSystemEquationEditUndo) {
@@ -251,8 +251,8 @@ PF_TEST(EditingSystemEquationEditUndo) {
   }
 }
 
-// The single-/double-column attribute is part of the document model, so it is
-// set through the ordinary edit protocol and is undone like any other change.
+// 单栏/双栏属性是文档模型的一部分，因此通过普通编辑协议设置，
+// 并像其他任何变更一样可被撤销。
 PF_TEST(EditingSystemFigureSpanIsEditableAndUndoable) {
   TestHost h;
   auto s =
@@ -267,7 +267,7 @@ PF_TEST(EditingSystemFigureSpanIsEditableAndUndoable) {
   if (fig.status != EditStatus::Applied)
     return;
 
-  // A freshly inserted figure is single-column.
+  // 新插入的 figure 为单栏。
   {
     const auto &block = h.state.document().body().sections[0].blocks[0];
     const auto *stored = std::get_if<Figure>(&block);
@@ -287,7 +287,7 @@ PF_TEST(EditingSystemFigureSpanIsEditableAndUndoable) {
     PF_CHECK(stored != nullptr && stored->span == FigureSpan::DoubleColumn);
   }
 
-  // A layout change is a normal, undoable edit.
+  // 布局变更是普通且可撤销的编辑操作。
   PF_CHECK(h.editing->Undo().status == EditStatus::Applied);
   {
     const auto &block = h.state.document().body().sections[0].blocks[0];
@@ -295,7 +295,7 @@ PF_TEST(EditingSystemFigureSpanIsEditableAndUndoable) {
     PF_CHECK(stored != nullptr && stored->span == FigureSpan::SingleColumn);
   }
 
-  // A non-figure target is rejected, so a bad command cannot corrupt a block.
+  // 非 figure 目标会被拒绝，因此错误的 command 无法破坏 block。
   EditFigureSpanPayload on_section;
   on_section.figure = s.created_node;
   auto rejected = h.editing->Apply(h.Cmd(on_section));

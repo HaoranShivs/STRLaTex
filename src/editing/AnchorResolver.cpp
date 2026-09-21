@@ -16,7 +16,7 @@ Result<ResolvedInsertionPoint, AnchorResolveError> AnchorResolver::Resolve(
     const Document& document, const StableNodeAnchor& anchor) const {
     const NodeId& ref = anchor.reference_node;
 
-    // Locate the reference node's logical position with a read-only walk.
+    // 通过只读遍历定位引用节点的逻辑位置。
     const auto& sections = document.body().sections;
     for (size_t si = 0; si < sections.size(); ++si) {
         const auto& section = sections[si];

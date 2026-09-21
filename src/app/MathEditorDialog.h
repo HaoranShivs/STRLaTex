@@ -1,12 +1,12 @@
 #pragma once
-// MathEditorDialog: the math source editor shared by the Inline Math toolbar
-// action and the double-click edit on an inline math object.
+// MathEditorDialog：Inline Math 工具栏动作与内联数学对象双击编辑
+// 共用的数学源码编辑器。
 //
-// It shows exactly the boundary the design asks for:
-//   * the user edits the math BODY (never the delimiters/environment),
-//   * the preview updates as the source changes,
-//   * validation never rewrites the source; an invalid body keeps its text
-//     and shows its error (design §7/§8).
+// 它严格呈现设计所要求的边界：
+//   * 用户只编辑数学 BODY（绝不编辑定界符/环境），
+//   * 预览随源码变化而更新，
+//   * 校验绝不改写源码；无效 body 保留其文本并显示其错误
+//     （设计 §7/§8）。
 
 #include <QDialog>
 #include <QImage>
@@ -26,10 +26,10 @@ class MathEditorDialog : public QDialog {
 public:
     explicit MathEditorDialog(const QString& latex, QWidget* parent = nullptr);
 
-    // The edited math body.
+    // 编辑后的数学 body。
     QString latex() const;
 
-    // Test/embedding hooks.
+    // 测试/嵌入钩子。
     QPlainTextEdit* SourceEdit() const { return source_; }
     void SetSourceForTest(const QString& latex);
     void RefreshPreviewNow();
@@ -37,7 +37,7 @@ public:
 
 private:
     void RefreshPreview();
-    // P0-07: apply an asynchronously rendered preview (GUI thread).
+    // P0-07：应用异步渲染出的预览（GUI 线程）。
     void ApplyRenderedPreview(const QString& latex, const QImage& image,
                               int width, int height, int baseline,
                               qreal device_pixel_ratio, const QString& note,
@@ -47,8 +47,8 @@ private:
     QLabel* preview_ = nullptr;
     QLabel* status_ = nullptr;
     QTimer* debounce_ = nullptr;
-    // P0-07: the dialog renders through the shared worker; only the debounce
-    // stays on the GUI thread, and it merely reduces request volume.
+    // P0-07：对话框通过共享 worker 渲染；只有防抖留在 GUI 线程，
+    // 且它仅用于降低请求量。
     std::uint64_t preview_generation_ = 0;
 };
 

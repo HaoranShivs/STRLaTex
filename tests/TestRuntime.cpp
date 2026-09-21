@@ -1,8 +1,7 @@
-// Portable TeX Live runtime tests (plan §19, §20).
+// 可移植 TeX Live 运行时测试（方案 §19、§20）。
 //
-// These are the runtime's own regression tests: they exercise the bundled
-// TeX Live directly (not the document pipeline) so a broken runtime is caught
-// independently of the renderer and the editor.
+// 这些是运行时自身的回归测试：直接针对随附的 TeX Live 运行（而非 document
+// 流水线），因此运行时故障可以脱离渲染器和编辑器被独立捕获。
 
 #include "TestMain.hpp"
 
@@ -17,15 +16,15 @@ using namespace pf;
 
 namespace {
 
-// The runtime lives in <repo>/runtime/texlive; this file is <repo>/tests/, so
-// the repo root is one level up from this file's directory.
+// 运行时位于 <repo>/runtime/texlive；本文件位于 <repo>/tests/，
+// 因此仓库根目录就是本文件所在目录的上一级。
 std::filesystem::path RepoRoot() {
     return std::filesystem::path(__FILE__).parent_path().parent_path();
 }
 
 std::filesystem::path RuntimeRoot() { return RepoRoot() / "runtime" / "texlive"; }
 
-// A single document body line: how the renderer spells one marked run.
+// 单行文档正文：渲染器如何生成一段带标记的文本。
 std::string MarkedLine(const char* text, std::uint8_t marks) {
     std::string latex;
     const bool strong = HasMark(marks, TextMark::Strong);
@@ -64,7 +63,7 @@ PF_TEST(RuntimeIsHealthy) {
     PF_CHECK(info.status == RuntimeStatus::Healthy);
     if (info.status != RuntimeStatus::Healthy) return;
 
-    // Runtime errors must be distinguishable from document errors (plan §21).
+    // 运行时错误必须能与文档错误区分开（方案 §21）。
     TexLiveCompiler missing{CompilerConfig{}};
     CompileRequest request;
     request.workspace = std::filesystem::temp_directory_path() / "pf-runtime-missing";
@@ -79,8 +78,8 @@ PF_TEST(RuntimeIsHealthy) {
 }
 
 PF_TEST(FontTestBuildsWithoutSubstitution) {
-    // plan §19: a minimum document covering regular/bold/italic/bold-italic
-    // must compile through pdfLaTeX without a font substitution warning.
+    // 方案 §19：一份覆盖 regular/bold/italic/bold-italic 的最简文档
+    // 必须能通过 pdfLaTeX 编译，且不出现字体替换警告。
     if (RuntimeManager(RepoRoot()).Initialize().status != RuntimeStatus::Healthy) {
         std::cout << "    (runtime not healthy; skipping)\n";
         return;
@@ -89,8 +88,8 @@ PF_TEST(FontTestBuildsWithoutSubstitution) {
         std::filesystem::temp_directory_path() / "pf-font-test";
     std::filesystem::remove_all(workspace);
     std::filesystem::create_directories(workspace);
-    // The package is what the compiler stages; it is the single source of the
-    // document (the same path a real build takes).
+    // package 就是编译器所暂存的内容；它是文档的唯一来源
+    //（与真实 build 走的路径相同）。
     BuildPackageFile file;
     file.path = "main.tex";
     file.content =
@@ -122,9 +121,9 @@ PF_TEST(FontTestBuildsWithoutSubstitution) {
         return;
     }
     PF_CHECK(std::filesystem::exists(result.pdf_path));
-    // plan §19: no *substitution*. Informational "Font shape ... not
-    // available" lines are normal (IEEEtran maps bx to b); a substitution
-    // warning is not.
+    // 方案 §19：不允许出现 *substitution*。信息性的「Font shape ... not
+    // available」行是正常的（IEEEtran 会把 bx 映射为 b）；
+    // 替换警告则不正常。
     for (const auto& message : result.messages) {
         const bool substitution =
             message.text.find("Font Warning") != std::string::npos ||
@@ -134,9 +133,9 @@ PF_TEST(FontTestBuildsWithoutSubstitution) {
 }
 
 PF_TEST(IeeeMarksReachPdfLatex) {
-    // plan §39: the reported IEEE bold/italic bug, pinned for good. The
-    // renderer spells the four mark combinations, pdfLaTeX builds them through
-    // the bundled runtime, and IEEEtran's ptm font selection must hold.
+    // 方案 §39：已报告的 IEEE 粗体/斜体 bug，在此永久固定。
+    // 渲染器生成四种标记组合的写法，pdfLaTeX 通过随附的运行时构建它们，
+    // IEEEtran 的 ptm 字体选择必须保持正确。
     if (RuntimeManager(RepoRoot()).Initialize().status != RuntimeStatus::Healthy) {
         std::cout << "    (runtime not healthy; skipping)\n";
         return;
@@ -179,8 +178,8 @@ PF_TEST(IeeeMarksReachPdfLatex) {
     }
     PF_CHECK(std::filesystem::exists(result.pdf_path));
 
-    // The LaTeX must contain all four combinations...
-    const std::string& built = result.log;  // unused placeholder
+    // LaTeX 必须包含全部四种组合……
+    const std::string& built = result.log;  // 未使用的占位符
     (void)built;
     std::ifstream generated(workspace / "main.tex", std::ios::binary);
     std::ostringstream source;
@@ -190,9 +189,9 @@ PF_TEST(IeeeMarksReachPdfLatex) {
     PF_CHECK(tex_staged.find("\\emph{Emphasis}") != std::string::npos);
     PF_CHECK(tex_staged.find("\\textbf{\\emph{BoldItalic}}") != std::string::npos);
 
-    // ... and the log must show no font substitution (plan §24). IEEEtran's
-    // informational "Font shape ... not available" lines are expected: they
-    // map bx to b and the PDF still carries four distinct fonts.
+    // ……并且日志中不得出现字体替换（方案 §24）。IEEEtran 的信息性
+    //「Font shape ... not available」行是预期内的：它们把 bx 映射为 b，
+    // 且 PDF 仍带有四种不同的字体。
     for (const auto& message : result.messages) {
         const bool substitution =
             message.text.find("Font Warning") != std::string::npos ||
@@ -202,8 +201,7 @@ PF_TEST(IeeeMarksReachPdfLatex) {
 }
 
 PF_TEST(CompileRequestCarriesToolchain) {
-    // plan §14: the toolchain travels with the request; the compiler does not
-    // guess the engine from the document.
+    // 方案 §14：toolchain 随请求一起传递；编译器不会根据文档猜测引擎。
     CompileRequest request;
     request.toolchain.engine = LatexEngine::PdfLatex;
     request.toolchain.bibliography_engine = BibliographyEngine::BibTex;
@@ -216,9 +214,9 @@ PF_TEST(CompileRequestCarriesToolchain) {
 }
 
 PF_TEST(CompileStreamsOutputLiveToSink) {
-    // Build Diagnostics plan §44: the compiler hands stdout/stderr chunks to
-    // the sink while the child runs, so the Build Log grows live, and nothing
-    // is lost: the sink's stdout text reassembles result.log.
+    // Build Diagnostics 方案 §44：子进程运行期间，编译器把 stdout/stderr 分块
+    // 交给 sink，因此 Build Log 会实时增长，且不丢失任何内容：
+    // sink 的 stdout 文本重新拼接后即为 result.log。
     if (RuntimeManager(RepoRoot()).Initialize().status != RuntimeStatus::Healthy) {
         std::cout << "    (runtime not healthy; skipping)\n";
         return;
@@ -255,17 +253,17 @@ PF_TEST(CompileStreamsOutputLiveToSink) {
     auto result = compiler.Compile(request, nullptr);
     PF_CHECK(result.status == CompileStatus::Success);
     PF_CHECK(result.exit_code == 0);
-    PF_CHECK(chunks > 0);                 // the sink actually fired
-    PF_CHECK(!streamed_stdout.empty());   // latexmk writes its log there
+    PF_CHECK(chunks > 0);                 // sink 确实被触发了
+    PF_CHECK(!streamed_stdout.empty());   // latexmk 把日志写到这里
     PF_CHECK(result.log == streamed_stdout + streamed_stderr);
-    // The on-disk artifact still exists for inspection (plan §15/§45).
+    // 磁盘上的产物仍然保留以便检查（方案 §15/§45）。
     PF_CHECK(std::filesystem::exists(workspace / "latexmk.log"));
 }
 
 PF_TEST(CompileFailureCarriesExitCodeAndMessages) {
-    // Build Diagnostics plan §31/§32: success requires exit 0 + a PDF; a
-    // LaTeX error yields a non-zero exit code, failure status and at least
-    // one parsed message for the Problems panel.
+    // Build Diagnostics 方案 §31/§32：成功要求退出码为 0 且生成 PDF；
+    // LaTeX 错误会产生非零退出码、failure 状态，以及至少一条供 Problems
+    // 面板使用的已解析消息。
     if (RuntimeManager(RepoRoot()).Initialize().status != RuntimeStatus::Healthy) {
         std::cout << "    (runtime not healthy; skipping)\n";
         return;

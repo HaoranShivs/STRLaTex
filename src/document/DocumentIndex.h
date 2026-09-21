@@ -1,6 +1,6 @@
 #pragma once
-// DocumentIndex: NodeId -> logical location lookup (architecture section 九).
-// Stores logical positions (no pointers), rebuilt after structural edits.
+// DocumentIndex：NodeId -> 逻辑位置查找（架构 九）。
+// 只存储逻辑位置（不使用指针），在结构变更后重建。
 
 #include <optional>
 #include <unordered_map>
@@ -11,15 +11,15 @@
 namespace pf {
 
 struct NodeLocation {
-    NodeId parent;              // owning section/subsection/subsubsection id
-                                // (empty for top-level sections)
+    NodeId parent;              // 所属的 section/subsection/subsubsection id
+                                //（顶层 section 为空）
     NodeKind kind;
     size_t section_index = 0;
     bool in_subsection = false;
     size_t subsection_index = 0;
     bool in_subsubsection = false;
     size_t subsubsection_index = 0;
-    size_t block_index = 0;     // valid when kind is a Block kind
+    size_t block_index = 0;     // 当 kind 为某种 Block 类型时有效
 };
 
 class DocumentIndex {

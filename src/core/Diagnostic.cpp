@@ -48,8 +48,8 @@ std::string Diagnostic::Summary() const {
         out += " (" + location.file + ":" +
                std::to_string(location.line.value_or(0)) + ")";
     }
-    // A mapped compiler error carries both identities: the block it belongs
-    // to and the generated-source position it came from (plan §17).
+    // 已映射的编译器错误同时携带两种身份：它所属的 block，以及它来源的
+    // 生成源码位置（方案 §17）。
     if (location.kind != DiagnosticLocationKind::GeneratedFile &&
         location.has_file_location()) {
         out += " [" + location.file + ":" +

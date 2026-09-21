@@ -1,10 +1,9 @@
 #pragma once
-// Toolchain value types (plan §6, §7, §14).
+// Toolchain 值类型（方案 §6、§7、§14）。
 //
-// Deliberately free of includes into render/template/build so both
-// TemplateRegistry and Compiler can carry them without an include cycle: the
-// renderer depends on the template, the template declares the toolchain, and
-// the compiler consumes it.
+// 刻意不 include render/template/build 中的头文件，使 TemplateRegistry 与
+// Compiler 都能持有这些类型而不形成循环包含：renderer 依赖 template，
+// template 声明 toolchain，compiler 消费它。
 
 #include <cstdint>
 #include <string>
@@ -12,9 +11,9 @@
 
 namespace pf {
 
-// Which LaTeX engine compiles the document. The template author decides this
-// (IEEEtran, for example, is designed for pdfLaTeX and loses its font setup
-// under an XeTeX engine); nothing downstream re-derives it from the document.
+// 由哪个 LaTeX 引擎编译文档。这由模板作者决定
+// （例如 IEEEtran 专为 pdfLaTeX 设计，在 XeTeX 引擎下会丢失字体设置）；
+// 下游不会从文档中重新推导该信息。
 enum class LatexEngine : std::uint8_t {
     PdfLatex,
     XeLatex,
@@ -31,8 +30,8 @@ enum class BibliographyEngine : std::uint8_t {
 
 const char* ToString(BibliographyEngine engine);
 
-// What the build needs, resolved by the session from the template and carried
-// with every request (plan §14).
+// build 所需的内容，由 session 根据模板解析得出，并随每个请求一同传递
+// （方案 §14）。
 struct BuildToolchain {
     LatexEngine engine = LatexEngine::PdfLatex;
     BibliographyEngine bibliography_engine = BibliographyEngine::None;
@@ -40,7 +39,7 @@ struct BuildToolchain {
     bool operator==(const BuildToolchain&) const = default;
 };
 
-// How a template declares that requirement (plan §7).
+// 模板声明该需求的方式（方案 §7）。
 struct TemplateToolchainRequirement {
     LatexEngine engine = LatexEngine::PdfLatex;
     BibliographyEngine bibliography_engine = BibliographyEngine::None;

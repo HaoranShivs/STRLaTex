@@ -13,7 +13,7 @@
 
 namespace pf::gui {
 
-// ---------------- Bounded LRU cache ----------------
+// ---------------- 有界LRU缓存 ----------------
 
 MathRenderCache::MathRenderCache(std::size_t capacity)
     : capacity_(capacity == 0 ? 1 : capacity) {}
@@ -22,7 +22,7 @@ bool MathRenderCache::Find(const QString& key, MathRenderResult* out) {
     auto it = entries_.find(key);
     if (it == entries_.end())
         return false;
-    // A hit refreshes the stamp, making this entry the most recently used.
+    // 命中会刷新时间戳，使该条目成为最近使用的条目。
     it->second.stamp = ++clock_;
     if (out)
         *out = it->second.value;
@@ -37,9 +37,8 @@ void MathRenderCache::Insert(const QString& key, MathRenderResult value) {
         return;
     }
     if (entries_.size() >= capacity_) {
-        // Evict exactly the least-recently-used entry. The previous
-        // implementation cleared all 256 entries on overflow, discarding every
-        // warm preview because of a single miss.
+        // 精确淘汰最近最少使用的那一个条目。此前的实现在溢出时会清空全部
+        // 256个条目，仅因一次未命中就丢弃所有已预热的预览。
         auto victim = entries_.begin();
         for (auto candidate = entries_.begin(); candidate != entries_.end();
              ++candidate) {
@@ -57,7 +56,7 @@ void MathRenderCache::Insert(const QString& key, MathRenderResult value) {
 void MathRenderCache::ClearForTest() { entries_.clear(); }
 
 QPixmap PixmapFromMathResult(const MathRenderResult& result) {
-    // GUI thread only: QPixmap construction is not thread-safe.
+    // 仅限GUI线程：QPixmap的构造不是线程安全的。
     if (!result.pixmap.isNull())
         return result.pixmap;
     if (result.image.isNull())
@@ -69,7 +68,7 @@ QPixmap PixmapFromMathResult(const MathRenderResult& result) {
     return pixmap;
 }
 
-// ---------------- Service ----------------
+// ---------------- 服务 ----------------
 
 namespace {
 
@@ -79,7 +78,7 @@ QString CacheKeyFor(const QString& latex, const MathRenderStyle& style) {
            QString::number(style.device_pixel_ratio, 'f', 2) + QChar(0x1f) +
            style.font_family + QChar(0x1f) + style.template_id + QChar(0x1f) +
            QString::number(static_cast<int>(style.backend)) + QChar(0x1f) +
-           QStringLiteral("v1");  // renderer backend version
+           QStringLiteral("v1");  // 渲染器后端版本
 }
 
 QString FormulaKey(const QString& editor, const QString& formula) {
@@ -101,9 +100,9 @@ struct MathRenderService::Impl {
     std::thread::id worker_id;
 
     MathRenderCache cache;
-    // GUI-thread-only: newest generation issued per editor+formula.
+    // 仅限GUI线程：每个editor+formula已签发的最新generation。
     std::map<QString, std::uint64_t> issued_generation;
-    // GUI-thread-only: live clients, guarded so a destroyed widget is safe.
+    // 仅限GUI线程：存活的client，受保护以确保已销毁的widget安全。
     std::map<QString, QPointer<QObject>> clients;
 };
 
@@ -157,8 +156,8 @@ std::uint64_t MathRenderService::Request(const QString& editor_id,
                                          const QString& formula_id,
                                          const QString& latex,
                                          const MathRenderStyle& style) {
-    // GUI thread: bump the generation first, so a reply that is already in
-    // flight becomes stale the moment a newer request exists.
+    // GUI线程：先递增generation，这样一旦出现更新的请求，已在途的回复
+    // 立即失效。
     const QString key = FormulaKey(editor_id, formula_id);
     const std::uint64_t generation = ++impl_->issued_generation[key];
 
@@ -183,7 +182,7 @@ std::uint64_t MathRenderService::Generation(const QString& editor_id,
 }
 
 void MathRenderService::RenderJob(const MathRenderRequest& job) {
-    // Worker thread: pure computation. No widgets, no QPixmap.
+    // worker线程：纯计算。不涉及widget，不涉及QPixmap。
     const QString key = CacheKeyFor(job.latex, job.style);
     MathRenderResult result;
     bool cached = false;
@@ -205,18 +204,18 @@ void MathRenderService::RenderJob(const MathRenderRequest& job) {
     response.latex = job.latex;
     response.result = result;
 
-    // The reply enters the GUI thread through the object's own event loop. The
-    // worker never calls a widget method directly.
+    // 回复通过对象自身的事件循环进入GUI线程。worker绝不直接调用widget
+    // 方法。
     QMetaObject::invokeMethod(
         this, [this, response]() { ApplyReply(response); },
         Qt::QueuedConnection);
 }
 
 void MathRenderService::ApplyReply(const MathRenderResponse& response) {
-    // GUI thread.
+    // GUI线程。
     auto client = impl_->clients.find(response.editor_id);
     if (client == impl_->clients.end() || client->second.isNull()) {
-        // The editor is gone: never touch it (the historical use-after-free).
+        // editor已不存在：绝不触碰它（历史上的use-after-free）。
         stale_replies_dropped_.fetch_add(1);
         return;
     }
@@ -225,7 +224,7 @@ void MathRenderService::ApplyReply(const MathRenderResponse& response) {
     auto issued = impl_->issued_generation.find(key);
     if (issued == impl_->issued_generation.end() ||
         response.generation != issued->second) {
-        // A newer request for the same formula already replaced this result.
+        // 针对同一formula的更新请求已经替换了该结果。
         stale_replies_dropped_.fetch_add(1);
         return;
     }

@@ -75,14 +75,14 @@ void PopupList::popup(const QPoint& global_pos, const std::vector<Item>& items,
 }
 
 void PopupList::Refilter() {
-    // Re-run filtering with current search box contents.
+    // 用搜索框当前的内容重新执行过滤。
     SetFilter(search_box_->text());
 }
 
 void PopupList::SetFilter(const QString& text) {
     QString needle = text.trimmed().toLower();
     if (!needle.startsWith('/') && !needle.startsWith('@')) {
-        // caller strips the trigger char already; keep as-is
+        // 调用方已经去掉了触发字符；此处保持原样
     } else {
         needle.remove(0, 1);
     }
@@ -117,7 +117,7 @@ void PopupList::SetFilter(const QString& text) {
         empty->setFlags(Qt::NoItemFlags);
         empty->setForeground(0, QColor(theme::kDisabledText));
     } else {
-        // Select first selectable row.
+        // 选中第一个可被选中的行。
         for (int i = 0; i < list_->topLevelItemCount(); ++i) {
             if (list_->topLevelItem(i)->flags() & Qt::ItemIsSelectable) {
                 list_->setCurrentItem(list_->topLevelItem(i));

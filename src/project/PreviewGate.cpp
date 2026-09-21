@@ -17,8 +17,8 @@ const char* ToString(PreviewGateDecision decision) {
 PreviewGateDecision EvaluatePreviewGate(const PreviewGateInput& current,
                                         const BuildResult& result) {
     if (!current.has_project) return PreviewGateDecision::NoProject;
-    // Project identity first: switching projects reuses revisions, so a
-    // revision check alone would let project A's PDF into project B.
+    // 先校验项目身份：切换项目时会复用 revision，因此只做 revision 校验
+    // 会让项目 A 的 PDF 混入项目 B。
     if (result.project_id != current.project_id) {
         return PreviewGateDecision::ForeignProject;
     }

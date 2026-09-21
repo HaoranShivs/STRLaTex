@@ -18,7 +18,7 @@ ProjectSession::Config DefaultConfig() {
     ProjectSession::Config config;
     config.tectonic_path = PF_TECTONIC;
     config.workspace_root = "/tmp/paperforge-builds";
-    config.debounce = std::chrono::milliseconds{0};  // CLI: build immediately
+    config.debounce = std::chrono::milliseconds{0};  // CLI：立即 build
     return config;
 }
 
@@ -40,7 +40,7 @@ int CmdNew(const std::vector<std::string>& args) {
         std::cerr << "failed to create project\n";
         return 1;
     }
-    // Seed with a starter document via the editing protocol.
+    // 通过编辑协议植入一份起始文档。
     ProjectRevision rev = session.current_revision();
     auto make_cmd = [&](auto payload) {
         EditCommand cmd;
@@ -79,8 +79,8 @@ int CmdNew(const std::vector<std::string>& args) {
         session.Execute(make_cmd(para));
     }
 
-    // Save is asynchronous (immutable snapshot -> save worker); block until
-    // the snapshot has actually reached disk before reporting success.
+    // Save 是异步的（不可变 snapshot -> save worker）；需阻塞至
+    // snapshot 真正落盘后再报告成功。
     session.Save();
     auto save = session.FlushSaves();
     if (save.status != SaveResult::Status::Ok) {
@@ -121,8 +121,8 @@ int CmdBuild(const std::vector<std::string>& args) {
     });
 
     session.RequestBuild(true);
-    // The build runs on a worker; its result is delivered as an application
-    // event, so this loop must pump the application-thread queue.
+    // build 在 worker 上运行，其结果以应用事件的形式投递，
+    // 因此该循环必须驱动应用线程队列。
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{120};
     while (!done.load() && std::chrono::steady_clock::now() < deadline) {
         session.WaitForApplicationEvent(std::chrono::milliseconds{50});
@@ -159,7 +159,7 @@ int CmdInfo(const std::vector<std::string>& args) {
 }
 
 int CmdDemo(const std::vector<std::string>& args) {
-    // End-to-end demo: create project, edit, build PDF.
+    // 端到端 demo：创建项目、编辑、build PDF。
     std::string dir = args.empty() ? "/tmp/paperforge-demo" : args[0];
     std::filesystem::remove_all(dir);
     if (CmdNew({dir}) != 0) return 1;
@@ -171,7 +171,7 @@ int CmdDemo(const std::vector<std::string>& args) {
         return 1;
     }
 
-    // Add an equation + citation to the introduction section.
+    // 向引言章节添加一个公式与一条引用。
     const auto& doc = session.state().document();
     if (!doc.body().sections.empty()) {
         NodeId intro = doc.body().sections[0].id;
@@ -185,7 +185,7 @@ int CmdDemo(const std::vector<std::string>& args) {
         eq_cmd.payload = eq;
         session.Execute(eq_cmd);
 
-        // Import bibliography and cite.
+        // 导入参考文献并引用。
         std::string bib = R"(@article{einstein1905,
   author = {Albert Einstein},
   title = {Ist die Tr\"agheit eines K\"orpers von seinem Energieinhalt abh\"angig?},
@@ -196,7 +196,7 @@ int CmdDemo(const std::vector<std::string>& args) {
         session.ImportBibliography(bib);
 
         if (!doc.body().sections.empty()) {
-            // find paragraph
+            // 查找段落
             for (const auto& block : doc.body().sections[0].blocks) {
                 if (const auto* para = std::get_if<Paragraph>(&block)) {
                     EditCommand cit_cmd;

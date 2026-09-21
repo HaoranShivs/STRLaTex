@@ -1,4 +1,4 @@
-// Minimal test framework (no external deps).
+// 极简测试框架（无外部依赖）。
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>

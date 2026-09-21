@@ -1,8 +1,8 @@
-// Stage B tests: rich inline editing (plan §4-§6, §14).
-//   * TextMark composition survives the round trip
-//   * the renderer nests \textbf{}/\emph{} instead of dropping a mark
-//   * the rich editor representation is lossless and diffable
-//   * inline tokens stay semantic through the editing protocol
+// Stage B 测试：富文本行内编辑（方案 §4-§6、§14）。
+//   * TextMark 组合在往返过程中保持不变
+//   * 渲染器嵌套 \textbf{}/\emph{}，而不是丢弃某个标记
+//   * 富文本编辑器表示是无损且可 diff 的
+//   * 行内 token 在整个编辑协议中始终保有语义
 #include "TestMain.hpp"
 
 #include "core/IdGenerator.h"
@@ -46,7 +46,7 @@ EditCommand MakeCmd(ProjectState& state, FullEditPayload payload) {
     return cmd;
 }
 
-// A paragraph with one TextRun of each mark combination.
+// 一个包含各种标记组合的 TextRun 的段落。
 Paragraph MakeMixedParagraph() {
     Paragraph para;
     para.content.push_back(TextRun{"plain ", 0});
@@ -71,7 +71,7 @@ PF_TEST(RichTextSerializationRoundTripsMarks) {
     content.push_back(TextRun{".", 0});
 
     const std::string text = InlineToRichText(content);
-    // Readable, diffable and free of the old [cite:] style encoding.
+    // 可读、可 diff，且不再使用旧的 [cite:] 风格编码。
     std::cout << "    rich = \"" << text << "\"\n";
     PF_CHECK(text.find("significantly improves") != std::string::npos);
     PF_CHECK(text.find("**") != std::string::npos);
@@ -98,7 +98,7 @@ PF_TEST(RichTextSerializationHandlesBoldItalicCombination) {
         PF_CHECK(HasMark(first->marks, TextMark::Strong));
         PF_CHECK(HasMark(first->marks, TextMark::Emphasis));
     }
-    // The plain tail must not inherit the marks.
+    // 末尾的普通文本不得继承这些标记。
     const auto* second = std::get_if<TextRun>(&back[1]);
     PF_CHECK(second != nullptr);
     if (second) PF_CHECK(second->marks == 0);
@@ -122,8 +122,8 @@ PF_TEST(RichTextSerializationKeepsSemanticTokens) {
     const std::string text = InlineToRichText(content);
     PF_CHECK(text.find("[cite:smith2024,li2023]") != std::string::npos);
     PF_CHECK(text.find("[ref:n42]") != std::string::npos);
-    // The canonical spelling uses the generated \(...\) delimiter; the user
-    // never types a delimiter, and the old $...$ form still parses.
+    // 规范写法使用自动生成的 \(...\) 定界符；用户从不输入定界符，
+    // 而旧的 $...$ 形式仍可解析。
     PF_CHECK(text.find("\\(\\alpha\\)") != std::string::npos);
 
     const InlineContent back = InlineFromRichText(text);
@@ -140,7 +140,7 @@ PF_TEST(RichTextSerializationOfPlainTextStaysPlainText) {
 }
 
 PF_TEST(RichTextParseNeverDropsUnknownMarkup) {
-    // A stray asterisk with no closing fence stays literal text.
+    // 没有闭合定界符的孤立星号仍作为字面文本保留。
     const InlineContent parsed = InlineFromRichText("a * b ** c");
     std::string joined;
     for (const auto& node : parsed) {
@@ -149,7 +149,7 @@ PF_TEST(RichTextParseNeverDropsUnknownMarkup) {
     PF_CHECK(joined.find("a * b ** c") != std::string::npos);
 }
 
-// ---------------- Renderer ----------------
+// ---------------- 渲染器 ----------------
 
 PF_TEST(RendererNestsStrongAndEmphasis) {
     InlineContent content;
@@ -197,11 +197,11 @@ PF_TEST(RendererKeepsMarksThroughDocumentRender) {
     const std::string& tex = rendered.package.files[0].content;
     PF_CHECK(tex.find("\\textbf{bold }") != std::string::npos);
     PF_CHECK(tex.find("\\emph{italic }") != std::string::npos);
-    // The combination nests; it must not lose a mark.
+    // 组合标记会嵌套；不得丢失任何一个标记。
     PF_CHECK(tex.find("\\textbf{\\emph{both}}") != std::string::npos);
 }
 
-// ---------------- Editing protocol ----------------
+// ---------------- 编辑协议 ----------------
 
 PF_TEST(ParagraphContentRoundTripsThroughEditingProtocol) {
     ProjectState state = MakeState();
@@ -223,12 +223,12 @@ PF_TEST(ParagraphContentRoundTripsThroughEditingProtocol) {
     edit.content = rich;
     PF_CHECK(editing.Apply(MakeCmd(state, edit)).status == EditStatus::Applied);
 
-    // The document stores exactly what was committed - no flattening.
+    // 文档原样存储提交的内容——不做扁平化。
     const auto& stored = std::get<Paragraph>(
         BodyOf(state.mutable_document()).sections[0].blocks[0]);
     PF_CHECK(stored.content == rich);
 
-    // Undo restores the placeholder; redo brings the rich content back.
+    // Undo 恢复占位内容；redo 把富文本内容重新带回。
     PF_CHECK(editing.Undo().status == EditStatus::Applied);
     const auto& undone = std::get<Paragraph>(
         BodyOf(state.mutable_document()).sections[0].blocks[0]);
@@ -259,7 +259,7 @@ PF_TEST(InlineCitationAndReferenceSurviveProtocolRoundTrip) {
     cite.keys = {"smith2024"};
     PF_CHECK(editing.Apply(MakeCmd(state, cite)).status == EditStatus::Applied);
 
-    // A target node for the cross reference.
+    // 交叉引用所指向的目标节点。
     InsertFigurePayload fig;
     fig.parent = sec_result.created_node;
     fig.asset_id = AssetId("a1");
@@ -270,8 +270,8 @@ PF_TEST(InlineCitationAndReferenceSurviveProtocolRoundTrip) {
     xref.target = fig_result.created_node;
     PF_CHECK(editing.Apply(MakeCmd(state, xref)).status == EditStatus::Applied);
 
-    // The paragraph now holds [text][cite][xref] in order, and the plain-text
-    // form used by search/outline still shows the tokens.
+    // 此时段落按顺序持有 [text][cite][xref]，且 search/outline 使用的
+    // 纯文本形式仍会显示这些 token。
     const auto& stored = std::get<Paragraph>(
         BodyOf(state.mutable_document()).sections[0].blocks[0]);
     PF_CHECK(stored.content.size() == 3);
@@ -282,7 +282,7 @@ PF_TEST(InlineCitationAndReferenceSurviveProtocolRoundTrip) {
     PF_CHECK(plain.find("[ref:" + fig_result.created_node.value() + "]") !=
              std::string::npos);
 
-    // The validator still accepts it (the reference resolves).
+    // Validator 仍然接受它（该引用可以解析）。
     ValidationInput input;
     input.document = &state.mutable_document();
     input.template_id = "generic-article";
@@ -324,8 +324,8 @@ PF_TEST(InlineMathRendersAsMathInParagraph) {
 }
 
 PF_TEST(InlineMathTokenIsNotUserEditableText) {
-    // The inline equation is a semantic node: plain-text extraction shows the
-    // math source, but the node itself is not a string the editor re-parses.
+    // 行内公式是一个语义节点：纯文本提取会显示其 math 源码，
+    // 但该节点本身并不是编辑器会重新解析的字符串。
     InlineContent content;
     content.push_back(TextRun{"Loss ", 0});
     InlineMath eq;
@@ -333,15 +333,15 @@ PF_TEST(InlineMathTokenIsNotUserEditableText) {
     content.push_back(eq);
     PF_CHECK(InlineToPlainText(content) == "Loss \\mathcal{L}");
     PF_CHECK(InlineIsRich(content));
-    // Round trip keeps it a node, never a TextRun.
+    // 往返后它仍是节点，绝不会变成 TextRun。
     const InlineContent back = InlineFromRichText(InlineToRichText(content));
     PF_CHECK(std::holds_alternative<InlineMath>(back[1]));
 }
 
 PF_TEST(PasteRulesAreExpressedInTheEditorRepresentation) {
-    // Rich paste keeps marks; the hard-wrap reflow stays (plan §14).
-    // Lines long enough that the reflow heuristic recognises a hard-wrapped
-    // paragraph rather than deliberate line structure.
+    // 富文本粘贴会保留标记；硬换行重排逻辑保持不变（方案 §14）。
+    // 这些行足够长，使重排启发式判定为硬换行段落，
+    // 而不是有意的分行结构。
     const std::string wrapped =
         "the first line of a paragraph pasted out of a PDF file\n"
         "the second line of that same paragraph, equally long as the first\n"
@@ -351,7 +351,7 @@ PF_TEST(PasteRulesAreExpressedInTheEditorRepresentation) {
                   "PDF file the second line of that same paragraph") !=
               std::string::npos);
 
-    // Marks survive the reflow (reflow operates on text, not on markup).
+    // 标记在重排后依然保留（重排作用于文本，而不是标记）。
     const InlineContent content = InlineFromRichText("**bold** and *italic*");
     PF_CHECK(content.size() == 3);
     const auto* bold = std::get_if<TextRun>(&content[0]);

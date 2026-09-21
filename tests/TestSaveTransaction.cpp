@@ -1,12 +1,10 @@
-// P0-03 regression tests: save transaction and I/O error propagation.
+// P0-03 回归测试：保存事务与 I/O 错误传播。
 //
-// The release-blocking behaviours under test:
-//   * an enqueue during shutdown must NOT report a fake "Queued";
-//   * an old save superseded by a newer one is NOT an I/O error and must not
-//     push the project into SaveFailed;
-//   * a failed bibliography write leaves the in-memory database, the file on
-//     disk, the revision and the dirty state untouched;
-//   * SaveResult carries enough structure for the UI to tell the cases apart.
+// 被测的发布阻断行为：
+//   * 关闭过程中的入队绝不能报告虚假的「Queued」；
+//   * 旧保存被更新的保存取代不属于 I/O 错误，且不得将项目推入 SaveFailed；
+//   * 参考文献写入失败时，内存数据库、磁盘文件、revision 与 dirty 状态均保持不变；
+//   * SaveResult 携带足够的结构信息，使 UI 能够区分这些情况。
 #include "TestMain.hpp"
 #include "ScopedTempDir.hpp"
 
@@ -28,7 +26,7 @@ using namespace pf;
 
 namespace {
 
-// A compiler that never runs: these tests are about persistence, not builds.
+// 一个从不运行的编译器：这些测试关注的是持久化，而非 build。
 class NullCompiler final : public ICompiler {
 public:
     CompileResult Compile(const CompileRequest&,
@@ -81,7 +79,7 @@ EditCommand TitleCmd(ProjectSession& session, const std::string& title) {
     return cmd;
 }
 
-// Minimal BibTeX source with one entry.
+// 只包含一条 entry 的最小 BibTeX 源。
 const char* kSampleBib = R"(@article{smith2020,
   title = {A Study},
   author = {Smith, John},
@@ -91,13 +89,13 @@ const char* kSampleBib = R"(@article{smith2020,
 
 } // namespace
 
-// --- SaveCoordinator level ---
+// --- SaveCoordinator 层级 ---
 
 PF_TEST(EnqueueRejectsWorkOnceShutdownStarted) {
     SaveCoordinator coordinator(nullptr);
     coordinator.Shutdown();
-    // P0-03: a coordinator that has stopped must refuse the task instead of
-    // handing back an id for a write that will never happen.
+    // P0-03：已停止的 coordinator 必须拒绝任务，
+    // 而不是为一次永远不会发生的写入返回一个 id。
     SerializedProject project;
     project.project_id = "p1";
     auto id = coordinator.Enqueue(std::move(project), "/tmp/pf-never.paper",
@@ -115,9 +113,8 @@ PF_TEST(EnqueueAcceptsWorkBeforeShutdown) {
     coordinator.Shutdown();
 }
 
-// The coordinator reports a superseded user save as Superseded, never as an
-// I/O error (the legacy code mapped it to IoError, which made the UI claim a
-// disk failure).
+// coordinator 会把被取代的用户保存报告为 Superseded，而绝不会报告为
+// I/O 错误（旧代码将其映射为 IoError，导致 UI 误报磁盘故障）。
 PF_TEST(SupersededUserSaveIsNotAnIoError) {
     auto dir = TempDir("pf-superseded");
     std::filesystem::create_directories(dir);
@@ -139,7 +136,7 @@ PF_TEST(SupersededUserSaveIsNotAnIoError) {
         return project;
     };
 
-    // Save revision 10 first, let it land, then enqueue revision 9.
+    // 先保存 revision 10 并等它落盘，然后入队 revision 9。
     coordinator.Enqueue(make_project(10), dir / "project.paper", SaveKind::User);
     coordinator.Flush();
     coordinator.Enqueue(make_project(9), dir / "project.paper", SaveKind::User);
@@ -156,7 +153,7 @@ PF_TEST(SupersededUserSaveIsNotAnIoError) {
     std::filesystem::remove_all(dir);
 }
 
-// --- Session level ---
+// --- Session 层级 ---
 
 PF_TEST(SaveAfterShutdownIsNotReportedAsQueued) {
     auto dir = TempDir("pf-save-stopping");
@@ -164,7 +161,7 @@ PF_TEST(SaveAfterShutdownIsNotReportedAsQueued) {
     ProjectSession session(MakeConfig(&compiler));
     PF_CHECK(session.NewProject(dir));
     session.Execute(TitleCmd(session, "T"));
-    // Force the coordinator into its stopping state, then attempt a save.
+    // 强制 coordinator 进入 stopping 状态，然后尝试保存。
     session.StopAutosaveTimer();
     session.ShutdownSaveCoordinatorForTest();
     auto result = session.Save();
@@ -173,29 +170,29 @@ PF_TEST(SaveAfterShutdownIsNotReportedAsQueued) {
     std::filesystem::remove_all(dir);
 }
 
-// A failed bibliography write must be a no-op: the previous database and the
-// previous references.bib on disk stay intact and the revision does not move.
+// 参考文献写入失败必须是无操作：原有的内存数据库和磁盘上的 references.bib
+// 保持完好，revision 也不会移动。
 PF_TEST(FailedBibliographyWriteLeavesStateUntouched) {
     auto dir = TempDir("pf-bib-tx");
     NullCompiler compiler;
     ProjectSession session(MakeConfig(&compiler));
     PF_CHECK(session.NewProject(dir));
 
-    // First import succeeds and writes references.bib.
+    // 第一次导入成功并写入 references.bib。
     auto first = session.ImportBibliography(kSampleBib);
     PF_CHECK(first.status == BibliographyImportResult::Status::Ok);
     const std::uint64_t revision_after_first =
         session.current_revision().value;
     PF_CHECK(std::filesystem::exists(dir / "references.bib"));
 
-    // Make the project directory read-only so the atomic write cannot stage
-    // its temp file. (POSIX semantics; skipped elsewhere.)
+    // 将项目目录设为只读，使原子写入无法创建其临时文件。
+    //（POSIX 语义；在其他平台上跳过。）
     std::error_code ec;
     std::filesystem::permissions(dir, std::filesystem::perms::owner_read |
                                           std::filesystem::perms::owner_exec,
                                   std::filesystem::perm_options::replace, ec);
     if (ec) {
-        // Environment does not support the setup; do not fake a pass.
+        // 环境不支持该设置；不要伪造通过。
         std::filesystem::permissions(dir, std::filesystem::perms::all,
                                      std::filesystem::perm_options::replace,
                                      ec);
@@ -205,12 +202,12 @@ PF_TEST(FailedBibliographyWriteLeavesStateUntouched) {
     }
 
     auto second = session.ImportBibliography(kSampleBib);
-    // Restore permissions before any cleanup assertion.
+    // 在任何清理断言之前恢复权限。
     std::filesystem::permissions(dir, std::filesystem::perms::all,
                                  std::filesystem::perm_options::replace, ec);
 
-    // Whether the environment actually denied the write decides the branch:
-    // if it did, the import must have failed and nothing may have moved.
+    // 环境是否真的拒绝了写入决定了走哪个分支：
+    // 若确实拒绝，则导入必须已失败，且任何状态都不得改变。
     if (second.status != BibliographyImportResult::Status::Ok) {
         PF_CHECK(!second.detail.empty());
         PF_CHECK_EQ(session.current_revision().value, revision_after_first);
@@ -219,9 +216,8 @@ PF_TEST(FailedBibliographyWriteLeavesStateUntouched) {
 }
 
 PF_TEST(SaveCompletionCarriesMakerIdentity) {
-    // The completion is self-describing: project, revision and kind travel
-    // with it so the owner thread can never attribute a write to the wrong
-    // project.
+    // completion 是自描述的：project、revision 和 kind 随它一起传递，
+    // 因此 owner 线程绝不会把一次写入归到错误的 project 上。
     auto dir = TempDir("pf-completion-identity");
     NullCompiler compiler;
     ProjectSession session(MakeConfig(&compiler));
@@ -236,8 +232,8 @@ PF_TEST(SaveCompletionCarriesMakerIdentity) {
     std::filesystem::remove_all(dir);
 }
 
-// Saving while the document keeps changing leaves the project Dirty even
-// though the write itself succeeded (the completion is for an old revision).
+// 文档持续变化期间进行保存，即使写入本身成功，项目仍会保持 Dirty
+//（因为该 completion 对应的是旧 revision）。
 PF_TEST(SupersededOldRevisionDoesNotClearDirty) {
     auto dir = TempDir("pf-old-revision-dirty");
     NullCompiler compiler;

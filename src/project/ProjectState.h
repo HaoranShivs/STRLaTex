@@ -1,6 +1,6 @@
 #pragma once
-// ProjectState: owns the mutable project aggregate (architecture section
-// 十四). ProjectRevision's single owner.
+// ProjectState：持有可变的项目聚合根（架构 十四）。
+// ProjectRevision 的唯一所有者。
 
 #include <string>
 
@@ -28,7 +28,7 @@ public:
     TemplateSelection& mutable_template() noexcept { return template_; }
     ProjectSettings& mutable_settings() noexcept { return settings_; }
 
-    // Revision management - only called by ProjectSession / EditingSystem.
+    // revision 管理——仅由 ProjectSession／EditingSystem 调用。
     ProjectRevision BumpRevision() noexcept {
         revision_.value += 1;
         return revision_;

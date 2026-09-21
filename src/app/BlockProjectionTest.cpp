@@ -1,18 +1,16 @@
-// P0-05 regression test: every block kind must have a GUI projection at every
-// heading level.
+// P0-05 回归测试：每种 block 类型在每个标题层级都必须有 GUI 投影。
 //
-// Reported symptom: a Figure or Table inserted inside a Subsection or a
-// Subsubsection was invisible in the editor - the document stored it, the
-// outline listed it, but no card existed, so it could not be seen, captioned,
-// moved or deleted. Root cause was three hand-copied block loops: the Section
-// loop handled Paragraph/Equation/Figure/Table while the Subsection and
-// Subsubsection loops only handled Paragraph/Equation.
+// 报告的症状：插入到 Subsection 或 Subsubsection 内的 Figure 或 Table 在
+// 编辑器中不可见——文档存有它，outline 列出了它，但不存在对应卡片，因此
+// 无法查看、添加题注、移动或删除。根因是三处手工复制的 block 循环：
+// Section 循环处理 Paragraph/Equation/Figure/Table，而 Subsection 和
+// Subsubsection 循环只处理 Paragraph/Equation。
 //
-// The invariant enforced here: for a document with all four block kinds at
-// all three levels, the editor shows exactly one operable card per block,
-// with the node id, caption editor and commands enabled.
+// 这里强制的不变量：对于在三个层级上都具有全部四种 block 类型的文档，
+// 编辑器为每个 block 恰好显示一个可操作卡片，且 node id、题注编辑器和
+// 命令均已启用。
 //
-// Run with: QT_QPA_PLATFORM=offscreen ./build/src/app/paperforge-block-projection-test
+// 运行方式：QT_QPA_PLATFORM=offscreen ./build/src/app/paperforge-block-projection-test
 #include <QApplication>
 #include <QFrame>
 #include <QPlainTextEdit>
@@ -42,7 +40,7 @@ void Check(bool ok, const std::string& what) {
     if (!ok) ++failures;
 }
 
-// A 1x1 PNG so the figure path resolver has a real file to preview.
+// 一个 1x1 的 PNG，使图片路径解析器有真实文件可预览。
 std::filesystem::path WriteTinyPng() {
     static const unsigned char png[] = {
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00,
@@ -90,7 +88,7 @@ int main(int argc, char* argv[]) {
 
     const auto png = WriteTinyPng();
 
-    // Insert one figure, one table and one paragraph at each level.
+    // 在每个层级插入一个 figure、一个 table 和一个 paragraph。
     struct Placed {
         NodeId figure;
         NodeId table;
@@ -123,26 +121,24 @@ int main(int argc, char* argv[]) {
     const Placed at_sub = place(sub.value());
     const Placed at_subsub = place(subsub.value());
 
-    // Persist, then reopen so the GUI is rebuilt from the file exactly as a
-    // user would see it on a fresh start (this also proves the nested blocks
-    // survive the save/load round trip).
+    // 先持久化，再重新打开，使 GUI 完全按照用户全新启动时所看到的样子从
+    // 文件重建（这同时证明嵌套 block 能在保存/加载往返中保留下来）。
     controller->Save();
     controller->FlushSaves();
     controller->CloseProject();
     Check(window.OpenProjectDir(QString::fromStdString(dir.string())),
           "project reopened for a clean rebuild");
-    // The rebuild is driven by the documentChanged signal, which runs
-    // synchronously on open; give Qt one event pass for the deferred deletes
-    // of the previous widget generation.
+    // 重建由 documentChanged 信号驱动，该信号在打开时同步运行；给 Qt 一次
+    // 事件循环，以处理上一代 widget 的延迟删除。
     QCoreApplication::processEvents();
 
-    // ---- The actual projection assertions ----
+    // ---- 实际的投影断言 ----
     std::set<QString> figure_nodes;
     std::set<QString> table_nodes;
     std::set<QString> caption_editors;
     int table_widgets = 0;
 
-    // Figure cards announce themselves with row_kind == "Figure".
+    // Figure 卡片通过 row_kind == "Figure" 标识自身。
     for (QFrame* frame : window.findChildren<QFrame*>()) {
         const QString kind = frame->property("row_kind").toString();
         if (kind == "Figure" || kind == "Table") {
@@ -153,14 +149,14 @@ int main(int argc, char* argv[]) {
                 table_nodes.insert(node);
         }
     }
-    // Table previews are real QTableWidgets inside their card.
+    // Table 预览是卡片内真正的 QTableWidget。
     for (QTableWidget* grid : window.findChildren<QTableWidget*>()) {
         if (grid->isVisible() || grid->parentWidget() != nullptr)
             ++table_widgets;
     }
-    // Every figure/table card carries an operable caption editor: a
-    // QPlainTextEdit with row_node set and commands_enabled true. (Text rows
-    // use InlineEditor, a QTextEdit subclass, so they are not counted here.)
+    // 每个 figure/table 卡片都带有一个可用的题注编辑器：设置了 row_node
+    // 且 commands_enabled 为 true 的 QPlainTextEdit。（Text 行使用
+    // InlineEditor（QTextEdit 的子类），因此不计入此处。）
     for (QPlainTextEdit* edit : window.findChildren<QPlainTextEdit*>()) {
         if (!edit->property("commands_enabled").toBool())
             continue;
@@ -173,7 +169,7 @@ int main(int argc, char* argv[]) {
               << " table cards=" << table_nodes.size()
               << " table widgets=" << table_widgets << "\n";
 
-    // Three of each, one per level.
+    // 每种三个，每个层级一个。
     Check(figure_nodes.size() == 3, "three figure cards are projected");
     Check(table_nodes.size() == 3, "three table cards are projected");
     Check(table_widgets >= 3, "three table grid previews exist");
@@ -192,8 +188,8 @@ int main(int argc, char* argv[]) {
     Check(table_nodes == expected_tables,
           "every table node id has a card at its own level");
 
-    // Captions are editable: each figure/table node owns a caption editor with
-    // commands enabled, which is what makes Move/Delete reachable.
+    // 题注可编辑：每个 figure/table 节点都拥有一个启用了 commands 的题注
+    // 编辑器，正是它让 Move/Delete 可达。
     for (const auto& expected : expected_figures)
         Check(caption_editors.count(expected) == 1,
               "figure caption editor operable for " + expected.toStdString());
@@ -201,13 +197,13 @@ int main(int argc, char* argv[]) {
         Check(caption_editors.count(expected) == 1,
               "table caption editor operable for " + expected.toStdString());
 
-    // The paragraphs at every level are projected too (this part worked before,
-    // asserted so the shared path does not regress it). Text rows are
-    // InlineEditor instances (QTextEdit), not QPlainTextEdit.
+    // 每个层级的段落也都有投影（这部分此前已正常，添加断言是为了防止共享
+    // 路径使其回归）。Text 行是 InlineEditor 实例（QTextEdit），而不是
+    // QPlainTextEdit。
     std::set<QString> paragraph_nodes;
     for (QTextEdit* edit : window.findChildren<QTextEdit*>()) {
         if (qobject_cast<QPlainTextEdit*>(edit) != nullptr)
-            continue;  // caption editors were counted above
+            continue;  // 题注编辑器已在上方统计
         const QString node = edit->property("row_node").toString();
         if (!node.isEmpty())
             paragraph_nodes.insert(node);

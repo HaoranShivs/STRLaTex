@@ -15,12 +15,11 @@
 namespace pf {
 
 namespace {
-// Write a small whole-file resource atomically: temp file + rename. The
-// bibliography must never be observed (or survive a crash) half-written, and
-// a failed write must leave the previous file intact (citation plan §7).
-// P0-03: structured result instead of bool - the caller can tell a denied
-// permission from a full disk from a failed replace, and the UI can show a
-// specific message instead of "save failed".
+// 以原子方式写入一个小的整文件资源：临时文件 + rename。bibliography 绝不能
+// 被观察到半写入状态（也不能以半写入状态挺过崩溃），且写入失败必须保持原文件
+// 不变（引用方案 §7）。
+// P0-03：用结构化结果代替 bool——调用方可以区分权限被拒、磁盘已满和替换失败，
+// UI 也能给出具体提示，而不是笼统的「保存失败」。
 [[nodiscard]] Result<void, IoError>
 WriteFileAtomically(const std::filesystem::path& path,
                     const std::string& contents) {
@@ -64,14 +63,13 @@ ProjectSession::ProjectSession(Config config)
       assets_(std::make_unique<AssetManager>(
           std::filesystem::path("/tmp/paperforge-assets"))),
       snapshot_factory_(assets_.get()),
-      // The save worker hands completions back through the application event
-      // queue; it never calls into the domain directly.
+      // save worker 通过应用事件队列回传完成结果，绝不直接调用 domain。
       save_coordinator_([this](const SaveCompletion &completion) {
         SaveCompletedEvent event;
         event.completion = completion;
         PostApplicationEvent(std::move(event));
       }) {
-  // Wire the editing system after members exist (lambdas capture `this`).
+  // 在成员就绪后再接线编辑系统（lambda 会捕获 `this`）。
   EditingSystem::Host ehost;
   ehost.project_id = [this] { return state_.id(); };
   ehost.revision = [this] { return state_.revision(); };
@@ -83,7 +81,7 @@ ProjectSession::ProjectSession(Config config)
   };
   editing_.SetHost(std::move(ehost));
 
-  // Compiler: injected factory (tests) or tectonic at the configured path.
+  // 编译器：使用注入的工厂（测试）或位于配置路径的 tectonic。
   if (config_.compiler_factory) {
     compiler_ = config_.compiler_factory();
   } else {
@@ -91,13 +89,13 @@ ProjectSession::ProjectSession(Config config)
                                                    config_.tectonic_cache_dir);
   }
 
-  // Production environment (plan §3, §17): the bundled portable TeX Live.
-  // Its root is the directory that contains runtime/texlive.
-  // The install root is the directory that contains runtime/texlive. A
-  // source build passes the repo root; an installed app passes its own dir.
+  // 生产环境（方案 §3、§17）：随包提供的便携版 TeX Live。其根目录即包含
+  // runtime/texlive 的那个目录。
+  // 安装根目录即包含 runtime/texlive 的那个目录。源码构建传入仓库根目录；
+  // 已安装的应用传入其自身目录。
   std::filesystem::path install_root = config_.install_root;
   if (install_root.empty()) {
-    // __FILE__ lives in <repo>/src/project, so the repo root is two levels up.
+    // __FILE__ 位于 <repo>/src/project，因此仓库根目录在其上两级。
     install_root = std::filesystem::path(__FILE__).parent_path().parent_path()
                        .parent_path();
   }
@@ -106,19 +104,19 @@ ProjectSession::ProjectSession(Config config)
 
   BuildCoordinator::Host bhost;
   bhost.project_id = [this] { return state_.id(); };
-  // Immutable configuration only - never mutable project state.
+  // 仅限不可变配置——绝不涉及可变项目状态。
   bhost.workspace_root = [this] { return config_.workspace_root.string(); };
-  // TEMP-DEBUG: expose the generated LaTeX under the project's build dir.
+  // TEMP-DEBUG：把生成的 LaTeX 暴露到项目的 build 目录下。
   bhost.debug_dump_dir = [this]() -> std::optional<std::string> {
     if (lifecycle_state_ != LifecycleState::Open)
       return std::nullopt;
     return paths_.build_dir.string();
   };
-  // Worker thread: publish a value object, never read the live state.
+  // worker 线程：只发布值对象，绝不读取实时 state。
   bhost.on_build_finished = [this](const BuildResult &result) {
     PostBuildResult(result);
   };
-  // Worker thread: same mailbox for lifecycle/streaming log events.
+  // worker 线程：生命周期/流式日志事件走同一个 mailbox。
   bhost.on_build_event = [this](const BuildEvent &event) {
     PostBuildEvent(event);
   };
@@ -128,15 +126,15 @@ ProjectSession::ProjectSession(Config config)
     event.current = current;
     PostApplicationEvent(std::move(event));
   };
-  // A test that injected its own compiler keeps it (deterministic tests do
-  // not want to depend on a TeX runtime being present).
+  // 测试注入过自己的 compiler 时予以保留（确定性测试不应依赖 TeX runtime
+  // 是否存在）。
   if (config_.compiler_factory) {
     build_coordinator_ = std::make_unique<BuildCoordinator>(
         std::move(bhost), compiler_.get());
     return;
   }
-  // Production: the coordinator picks a compiler per build from the
-  // snapshot's toolchain (plan §13).
+  // 生产环境：coordinator 每次 build 都依据 snapshot 的 toolchain 选择
+  // compiler（方案 §13）。
   build_coordinator_ = std::make_unique<BuildCoordinator>(
       std::move(bhost),
       [this](const BuildToolchain &toolchain)
@@ -152,13 +150,12 @@ ProjectSession::ProjectSession(Config config)
 
 ProjectSession::~ProjectSession() {
   StopAutosaveTimer();
-  // Stop the producers while the state they post about is still alive, and
-  // give queued saves a chance to reach disk.
+  // 在它们所发布的状态仍然存活时停止生产者，并给排队的 save 一个落盘的机会。
   build_coordinator_.reset();
   save_coordinator_.Shutdown();
 }
 
-// ---------------- Application event pump ----------------
+// ---------------- 应用事件泵 ----------------
 
 void ProjectSession::NoteOwnerThreadUse() const {
   if (std::this_thread::get_id() != owner_thread_) {
@@ -207,7 +204,7 @@ void ProjectSession::ProcessApplicationEvents() {
     std::lock_guard<std::mutex> lock(events_mutex_);
     events.swap(pending_events_);
   }
-  // Applied outside the lock: handlers may post further events.
+  // 在锁外应用：handler 可能继续发布新事件。
   for (const auto &event : events) {
     std::visit([this](const auto &typed) { HandleEvent(typed); }, event);
   }
@@ -236,9 +233,9 @@ void ProjectSession::HandleEvent(const BuildResultReadyEvent &event) {
 }
 
 void ProjectSession::HandleEvent(const BuildEventReadyEvent &event) {
-  // Old-build isolation (Build Diagnostics plan §35): the decision runs on
-  // the thread that owns the current build identity. A late event from a
-  // superseded attempt must never append to the log the user is watching.
+  // 旧 build 隔离（Build Diagnostics 方案 §35）：该判定运行在持有当前 build
+  // 身份标识的线程上。来自被取代尝试的迟到事件，绝不能追加进用户正在查看的
+  // 日志。
   if (!latest_build_id_.empty() &&
       event.event.build_id != latest_build_id_) {
     return;
@@ -252,8 +249,7 @@ void ProjectSession::HandleEvent(const SaveCompletedEvent &event) {
 }
 
 void ProjectSession::HandleEvent(const AutosaveTickEvent &) {
-  // The timer thread only rang the bell; the snapshot is captured here, on
-  // the thread that owns the document.
+  // 定时线程只是敲了一下铃；snapshot 在这里、在持有 Document 的线程上捕获。
   if (lifecycle_state_ == LifecycleState::Open &&
       persistence_state_ == PersistenceState::Dirty) {
     Autosave();
@@ -272,8 +268,8 @@ PreviewGateInput ProjectSession::CurrentGateInput() const {
 
 bool ProjectSession::AcceptBuildResult(const BuildResult &result) {
   NoteOwnerThreadUse();
-  // Architecture section 47: the staleness decision belongs to the thread
-  // that owns the revision. Workers never make it.
+  // （架构 47）：过期判定属于持有 revision 的那个线程的职责，worker 绝不
+  // 做此判定。
   const PreviewGateDecision decision =
       EvaluatePreviewGate(CurrentGateInput(), result);
   if (decision != PreviewGateDecision::Accept)
@@ -282,7 +278,7 @@ bool ProjectSession::AcceptBuildResult(const BuildResult &result) {
   if (result.outcome == BuildResult::Outcome::Success) {
     preview_state_ = PreviewState::Fresh;
   } else if (result.outcome == BuildResult::Outcome::Failure) {
-    // Keep the last successful PDF on disk; the preview is out of date.
+    // 保留磁盘上最后一次成功的 PDF；预览已过期。
     if (preview_state_ != PreviewState::NoPreview) {
       preview_state_ = PreviewState::Stale;
     }
@@ -305,12 +301,11 @@ bool ProjectSession::AcceptBuildResult(const BuildResult &result) {
   return true;
 }
 
-// ---------------- Lifecycle ----------------
+// ---------------- 生命周期 ----------------
 
-// P0-03: every directory is created through its own error_code and the first
-// failure aborts with a structured error carrying the exact path. A project
-// whose directories could not be created must never enter LifecycleState::Open
-// (the old code ignored every error_code and reported success regardless).
+// P0-03：每个目录都通过自己的 error_code 创建，首次失败即以携带精确路径的
+// 结构化错误中止。目录创建失败的项目绝不能进入 LifecycleState::Open（旧代码
+// 忽略所有 error_code，无论如何都报告成功）。
 Result<void, IoError> ProjectSession::EnsureDirectories() {
   struct Target {
     std::filesystem::path path;
@@ -325,15 +320,15 @@ Result<void, IoError> ProjectSession::EnsureDirectories() {
   for (const Target &target : targets) {
     std::error_code ec;
     std::filesystem::create_directories(target.path, ec);
-    // create_directories reports the pre-existing-directory case as success
-    // (no error_code); anything else means the project cannot be used.
+    // create_directories 把目录已存在的情况视为成功（不设 error_code）；
+    // 其他任何情况都意味着该项目无法使用。
     if (ec) {
       return Unexpected2<IoError>(MakeIoError(
           ec, IoErrorCode::DirectoryCreateFailed,
           std::string("cannot create the ") + target.what, target.path));
     }
   }
-  // Re-point asset manager at this project's assets dir.
+  // 把 asset manager 重新指向本项目的 assets 目录。
   assets_ = std::make_unique<AssetManager>(paths_.assets_dir);
   snapshot_factory_ = SnapshotFactory(assets_.get());
   return {};
@@ -347,7 +342,7 @@ bool ProjectSession::NewProject(const std::filesystem::path &project_dir,
   paths_.assets_dir = project_dir / "assets";
   paths_.build_dir = project_dir / ".paperforge" / "build";
   paths_.autosave_dir = project_dir / ".paperforge" / "autosave";
-  // P0-03: only enter Open once every directory really exists.
+  // P0-03：只有在每个目录都真实存在之后才进入 Open。
   if (auto created = EnsureDirectories(); !created.ok()) {
     if (error)
       *error = created.error().ToString();
@@ -359,7 +354,7 @@ bool ProjectSession::NewProject(const std::filesystem::path &project_dir,
   state_.SetId(ProjectId(IdGenerator::NewProjectId()));
   state_.mutable_settings().name = project_dir.filename().string();
   lifecycle_state_ = LifecycleState::Open;
-  persistence_state_ = PersistenceState::Dirty; // not yet saved
+  persistence_state_ = PersistenceState::Dirty; // 尚未保存
   preview_state_ = PreviewState::NoPreview;
   return true;
 }
@@ -400,10 +395,9 @@ bool ProjectSession::OpenProject(const std::filesystem::path &project_dir,
   for (const auto &meta : sp.assets) {
     assets_->registry().Register(meta);
   }
-  // Load bibliography file if present. P0-04 (second check): the path came
-  // out of an untrusted file - resolve it through the trust boundary right
-  // before the read so a hand-edited project.paper can never make this open
-  // a file outside the project directory.
+  // 若存在则加载 bibliography 文件。P0-04（二次校验）：该路径来自不可信
+  // 文件——必须在读取前通过信任边界解析，这样手工改过的 project.paper 就
+  // 永远无法让此操作打开项目目录之外的文件。
   auto bib_path =
       ResolveUntrustedProjectPath(paths_.project_dir, sp.bibliography_path);
   if (bib_path.ok() && std::filesystem::exists(bib_path.value())) {
@@ -430,8 +424,8 @@ void ProjectSession::CloseProject() {
     return;
   StopAutosaveTimer();
   build_coordinator_->Cancel();
-  // Queued saves snapshot the project being closed: let them land before the
-  // state is reset, otherwise the user's last Ctrl+S could be lost.
+  // 排队的 save 是针对正在关闭的项目的快照：让它们先落盘，再重置 state，
+  // 否则用户最后一次 Ctrl+S 可能丢失。
   save_coordinator_.Flush();
   ProcessApplicationEvents();
   state_.Reset();
@@ -450,16 +444,14 @@ bool ProjectSession::OpenProjectWithRecovery(
   if (recovered)
     *recovered = false;
 
-  // P0-01: three cases, matching the rectification plan §P0-01.
+  // P0-01：三种情况，对应整改方案 §P0-01。
   //
-  //   A. project.paper exists      -> open it, then recover from a newer
-  //                                   autosave if one exists.
-  //   B. only autosave.paper       -> a never-saved project. Load the
-  //                                   autosave directly: the old code
-  //                                   required project.paper to open first,
-  //                                   which made this recovery path
-  //                                   unreachable and lost the work.
-  //   C. neither                   -> NotFound.
+  //   A. project.paper 存在     -> 打开它，若存在更新的 autosave 则再从中
+  //                                恢复。
+  //   B. 只有 autosave.paper    -> 一个从未保存过的项目。直接加载 autosave：
+  //                                旧代码要求必须先打开 project.paper，导致
+  //                                这条恢复路径不可达，工作成果就此丢失。
+  //   C. 两者都没有             -> NotFound。
   const bool has_project_file = std::filesystem::exists(project_dir / "project.paper");
   const bool has_autosave =
       std::filesystem::exists(project_dir / ".paperforge" / "autosave" /
@@ -472,22 +464,22 @@ bool ProjectSession::OpenProjectWithRecovery(
   }
 
   if (has_project_file) {
-    // Case A.
+    // 情况 A。
     if (!OpenProject(project_dir, error))
       return false;
     if (HasRecoverySnapshot()) {
       auto result = RecoverFromAutosave();
       if (result.status == SaveResult::Status::Ok && recovered) {
         *recovered = true;
-        // Recovered content is not yet user-saved.
+        // 恢复出来的内容尚未被用户保存。
         persistence_state_ = PersistenceState::Dirty;
       }
     }
     return true;
   }
 
-  // Case B: only the autosave survives. Initialise the paths and state as if
-  // a project were open, then load the autosave snapshot into it.
+  // 情况 B：只有 autosave 幸存。像项目已打开那样初始化路径和 state，再把
+  // autosave snapshot 载入其中。
   CloseProject();
   paths_.project_dir = project_dir;
   paths_.project_file = project_dir / "project.paper";
@@ -510,8 +502,8 @@ bool ProjectSession::OpenProjectWithRecovery(
 
   auto result = RecoverFromAutosave();
   if (result.status != SaveResult::Status::Ok) {
-    // The autosave exists but cannot be read: report it rather than leaving
-    // a half-open empty project pretending to be the recovered one.
+    // autosave 存在却读不出来：如实报告，而不是留下一个伪装成「已恢复」的
+    // 半打开空项目。
     if (error)
       *error = result.detail.empty()
                    ? std::string("autosave could not be recovered")
@@ -522,7 +514,7 @@ bool ProjectSession::OpenProjectWithRecovery(
   }
   if (recovered)
     *recovered = true;
-  // Recovered content is not yet user-saved.
+  // 恢复出来的内容尚未被用户保存。
   persistence_state_ = PersistenceState::Dirty;
   return true;
 }
@@ -531,7 +523,7 @@ bool ProjectSession::HasRecoverySnapshot() const {
   auto autosave_file = paths_.autosave_dir / "autosave.paper";
   if (!std::filesystem::exists(autosave_file))
     return false;
-  // Newer than project.paper?
+  // 比 project.paper 更新吗？
   auto autosave_time = std::filesystem::last_write_time(autosave_file);
   if (!std::filesystem::exists(paths_.project_file))
     return true;
@@ -576,7 +568,7 @@ void ProjectSession::StartAutosaveTimer(std::chrono::milliseconds interval) {
   autosave_stop_.store(false);
   autosave_thread_ = std::thread([this] {
     while (!autosave_stop_.load()) {
-      // Sleep in small steps so Stop is responsive.
+      // 分小步睡眠，以便 Stop 能及时响应。
       for (std::chrono::milliseconds waited{0};
            waited < autosave_interval_ && !autosave_stop_.load();
            waited += std::chrono::milliseconds{100}) {
@@ -584,8 +576,8 @@ void ProjectSession::StartAutosaveTimer(std::chrono::milliseconds interval) {
       }
       if (autosave_stop_.load())
         break;
-      // Only ring the bell. Reading the Document from this thread would
-      // race the user's edits; the app thread captures the snapshot.
+      // 只敲铃。从本线程读取 Document 会与用户的编辑产生 race；snapshot
+      // 由应用线程捕获。
       PostApplicationEvent(AutosaveTickEvent{});
     }
   });
@@ -602,7 +594,7 @@ void ProjectSession::MarkDirty() {
   preview_state_ = PreviewState::Stale;
 }
 
-// ---------------- Editing ----------------
+// ---------------- 编辑 ----------------
 
 EditResult ProjectSession::Execute(const EditCommand &command) {
   NoteOwnerThreadUse();
@@ -640,15 +632,13 @@ void ProjectSession::RequestBuild(bool manual) {
     return;
   auto snapshot =
       snapshot_factory_.CreateBuildSnapshot(state_, bibliography_bibtex_);
-  // The template decides the engine (plan §14): resolved here, on the
-  // application thread, and carried with the request.
+  // 模板决定引擎（方案 §14）：在此处、在应用线程上解析，并随请求一起携带。
   if (const TemplateDefinition *tpl =
           TemplateRegistry::Instance().Find(state_.template_selection())) {
     snapshot.toolchain.engine = tpl->toolchain.engine;
     snapshot.toolchain.bibliography_engine = tpl->toolchain.bibliography_engine;
   }
-  // Remember the identity of this ask on the owning thread; a result can
-  // only be accepted if it matches.
+  // 在持有线程上记住这次请求的身份标识；只有与之匹配的结果才会被接受。
   latest_snapshot_id_ = snapshot.snapshot_id;
   latest_build_id_ = snapshot.build_id;
   build_coordinator_->RequestBuild(std::move(snapshot), manual);
@@ -660,10 +650,10 @@ BuildPhase ProjectSession::build_phase() const {
   return build_coordinator_->phase();
 }
 
-// ---------------- Save ----------------
+// ---------------- 保存 ----------------
 
 SaveSnapshot ProjectSession::CaptureSaveSnapshot() const {
-  // Application thread: deep copy of the mutable state, handed to the worker.
+  // 应用线程：深拷贝可变状态，交给 worker。
   return snapshot_factory_.CreateSaveSnapshot(state_);
 }
 
@@ -677,9 +667,8 @@ SaveResult ProjectSession::Save() {
   }
   auto snapshot = CaptureSaveSnapshot();
   queued.saved_revision = snapshot.revision;
-  // P0-03: the save counts as queued only when the coordinator actually
-  // accepted the task; during shutdown Enqueue returns nullopt and the
-  // caller must not believe a write is in flight.
+  // P0-03：只有 coordinator 真正接受了任务，这次 save 才算入队；关闭过程中
+  // Enqueue 返回 nullopt，调用方绝不能以为有写入正在进行。
   auto save_id = save_coordinator_.Enqueue(std::move(snapshot.serialized),
                                            paths_.project_file, SaveKind::User);
   if (!save_id) {
@@ -690,19 +679,18 @@ SaveResult ProjectSession::Save() {
   queued.status = SaveResult::Status::Queued;
   queued.save_id = save_id->value();
   persistence_state_ = PersistenceState::Saving;
-  // Bibliography side-car: one small file, written on the owner thread.
-  // Atomic (temp + rename) so a crash can never leave a truncated
-  // references.bib behind, and at the *configured* project-relative path so
-  // OpenProject reads back exactly what Save wrote (citation plan §7).
-  // P0-03: a failed write is remembered - the completion handler refuses to
-  // report Clean when the side-car could not be persisted.
+  // Bibliography side-car：一个小文件，在持有者线程上写入。原子写入
+  // （temp + rename），因此崩溃绝不会留下截断的 references.bib；且写入
+  // *配置的* 项目相对路径，这样 OpenProject 读回的内容与 Save 写入的完全
+  // 一致（引用方案 §7）。
+  // P0-03：写入失败会被记住——当 side-car 未能持久化时，完成处理函数拒绝
+  // 报告 Clean。
   if (!bibliography_bibtex_.empty()) {
     const std::string rel = state_.settings().bibliography_path.empty()
                                 ? std::string("references.bib")
                                 : state_.settings().bibliography_path;
-    // P0-04 (second check): writing is the most dangerous operation - a
-    // traversal in the stored path could overwrite a file outside the
-    // project. Resolve through the boundary; refuse to write when it fails.
+    // P0-04（二次校验）：写入是最危险的操作——存储路径中的目录穿越可能
+    // 覆盖项目之外的文件。通过边界解析；解析失败就拒绝写入。
     auto target = ResolveUntrustedProjectPath(paths_.project_dir, rel);
     if (!target.ok() ||
         !WriteFileAtomically(target.value(), bibliography_bibtex_)) {
@@ -729,28 +717,26 @@ SaveResult ProjectSession::Autosave() {
                                 paths_.autosave_dir / "autosave.paper",
                                 SaveKind::Autosave);
   if (!save_id) {
-    // P0-03: shutdown in progress - do not pretend an autosave is queued.
+    // P0-03：关闭进行中——不要假装 autosave 已入队。
     queued.status = SaveResult::Status::IoError;
     queued.detail = "save queue is shutting down; autosave skipped";
     return queued;
   }
   queued.status = SaveResult::Status::Queued;
   queued.save_id = save_id->value();
-  // Autosave does not change Clean/Dirty state (architecture section 32).
+  // Autosave 不改变 Clean/Dirty 状态（架构 32）。
   return queued;
 }
 
 SaveResult ProjectSession::FlushSaves() {
   save_coordinator_.Flush();
-  // Completions are posted as events; apply them so the caller observes the
-  // final persistence state.
+  // 完成结果以事件形式发布；应用它们，使调用方能观察到最终的持久化状态。
   ProcessApplicationEvents();
   return last_user_save_result_;
 }
 
 void ProjectSession::ApplySaveCompletion(const SaveCompletion &completion) {
-  // A save that finished after the project was switched must not speak for
-  // the new project.
+  // 在项目已切换之后才完成的 save，不能代表新项目说话。
   if (completion.project_id != state_.id() ||
       lifecycle_state_ != LifecycleState::Open) {
     if (save_result_handler_) {
@@ -764,23 +750,21 @@ void ProjectSession::ApplySaveCompletion(const SaveCompletion &completion) {
         completion.outcome == SaveOutcome::Saved &&
         !bibliography_write_failed_;
     if (actually_saved) {
-      // Only Clean when nothing changed while the snapshot was being
-      // written: save rev20 -> edit rev21 -> save20 finishes must leave
-      // the project Dirty.
+      // 只有当 snapshot 写入期间没有任何改动时才算 Clean：save rev20 ->
+      // edit rev21 -> save20 完成，必须让项目保持 Dirty。
       if (completion.revision == state_.revision()) {
         persistence_state_ = PersistenceState::Clean;
       }
     } else if (completion.outcome == SaveOutcome::Superseded) {
-      // P0-03: a superseded save is not a failure. The newer save decides
-      // the outcome; do not degrade the state to SaveFailed for it.
+      // P0-03：被取代的 save 不算失败。由更新的那次 save 决定最终结果；
+      // 不要因此把状态降级为 SaveFailed。
       if (persistence_state_ == PersistenceState::Saving) {
-        // Still waiting on the newer save - keep Saving.
+        // 仍在等待更新的那次 save——保持 Saving。
       }
     } else if (completion.revision == state_.revision()) {
       persistence_state_ = PersistenceState::SaveFailed;
     } else {
-      // An older snapshot failed while a newer one is in flight; let the
-      // newer save decide.
+      // 较旧的 snapshot 失败，而较新的仍在进行中；交给较新的 save 决定。
       if (persistence_state_ != PersistenceState::Saving) {
         persistence_state_ = PersistenceState::SaveFailed;
       }
@@ -790,7 +774,7 @@ void ProjectSession::ApplySaveCompletion(const SaveCompletion &completion) {
     save_result_handler_(completion.result, completion.kind);
 }
 
-// ---------------- Template ----------------
+// ---------------- 模板 ----------------
 
 void ProjectSession::ChangeTemplate(const std::string &template_id) {
   const auto *def = TemplateRegistry::Instance().Find(template_id);
@@ -800,8 +784,8 @@ void ProjectSession::ChangeTemplate(const std::string &template_id) {
   if (old_id == template_id)
     return;
   state_.mutable_template() = template_id;
-  // Template change: ProjectRevision +1, DocumentVersion unchanged
-  // (architecture rule 补充 8). Push a template history action.
+  // 模板变更：ProjectRevision +1，DocumentVersion 不变（架构补充 8）。
+  // 压入一条模板历史动作。
   state_.BumpRevision();
   HistoryEntry entry;
   TemplateHistoryAction action;
@@ -815,7 +799,7 @@ void ProjectSession::ChangeTemplate(const std::string &template_id) {
   RequestBuild(false);
 }
 
-// ---------------- Assets ----------------
+// ---------------- 资源 ----------------
 
 AssetImportResult
 ProjectSession::ImportAsset(const std::filesystem::path &source) {
@@ -824,8 +808,8 @@ ProjectSession::ImportAsset(const std::filesystem::path &source) {
   request.project_id = state_.id();
   auto result = assets_->Stage(request);
   if (result.status == AssetImportResult::Status::Ok) {
-    // Registration happens only when the asset is actually used
-    // (architecture 补充 rule 3) - InsertFigureFromSource registers.
+    // 只有在 asset 真正被使用时才注册（架构补充规则 3）——
+    // InsertFigureFromSource 负责注册。
   }
   return result;
 }
@@ -842,11 +826,10 @@ ProjectSession::InsertFigureFromSource(const std::filesystem::path &source,
     r.detail = "asset import failed: " + imported.detail;
     return r;
   }
-  // Register now that it is being used.
+  // 既然已被使用，现在就注册。
   assets_->Register(assets_->ToCandidate(imported));
 
-  // Re-resolve the anchor against the current revision
-  // (architecture 补充 rule 4).
+  // 针对当前 revision 重新解析锚点（架构补充规则 4）。
   EditCommand cmd;
   cmd.operation_id = OperationId(IdGenerator::NewOperationId());
   cmd.project_id = state_.id();
@@ -860,15 +843,13 @@ ProjectSession::InsertFigureFromSource(const std::filesystem::path &source,
   return Execute(cmd);
 }
 
-// ---------------- Bibliography ----------------
+// ---------------- 参考文献 ----------------
 
 BibliographyImportResult
 ProjectSession::ImportBibliography(const std::string &bibtex_text) {
-  // P0-03: the import is a small transaction. Parse and stage the file
-  // FIRST; only after the bytes are durably on disk does the in-memory
-  // database commit. Any failure before the replace leaves the previous
-  // database, the previous references.bib, the revision and the dirty state
-  // untouched.
+  // P0-03：导入是一个小事务。先解析并暂存文件；只有在字节确实落盘之后，
+  // 内存中的数据库才提交。替换之前的任何失败都不会触碰旧数据库、旧的
+  // references.bib、revision 和 dirty 状态。
   BibliographyDatabase staged_db;
   BibliographyService staged_service(staged_db);
   auto result = staged_service.ImportText(bibtex_text);
@@ -880,19 +861,19 @@ ProjectSession::ImportBibliography(const std::string &bibtex_text) {
   if (!WriteFileAtomically(bib_file, bibtex_text)) {
     BibliographyImportResult io_fail;
     io_fail.status = BibliographyImportResult::Status::ParseError;
-    // Distinguish an I/O failure from a parse failure by detail; the status
-    // enum has no IoError slot (kept for Qt signal compatibility).
+    // 通过 detail 区分 I/O 失败与解析失败；status 枚举没有 IoError 槽位
+    // （为兼容 Qt 信号而保留）。
     io_fail.detail = "cannot write references.bib; bibliography unchanged";
     return io_fail;
   }
 
-  // Commit: database, cached source, settings, revision, dirty, rebuild.
+  // 提交：数据库、缓存的源文本、设置、revision、dirty、重建。
   bibliography_db_ = std::move(staged_db);
   bibliography_bibtex_ = bibtex_text;
   bibliography_revision_ = result.bibliography_revision;
   state_.mutable_settings().bibliography_path = "references.bib";
   bibliography_write_failed_ = false;
-  // Bibliography change: ProjectRevision +1 (architecture section 40).
+  // Bibliography 变更：ProjectRevision +1（架构 40）。
   state_.BumpRevision();
   MarkDirty();
   RequestBuild(false);

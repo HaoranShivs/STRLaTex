@@ -1,4 +1,4 @@
-// Renderer + SourceMap tests.
+// Renderer + SourceMap 测试。
 #include "TestMain.hpp"
 
 #include "document/InlineText.h"
@@ -62,7 +62,7 @@ PF_TEST(RendererEscapesLatexSpecials) {
   req.template_id = "generic-article";
   auto result = renderer.Render(req);
   const std::string &tex = result.package.files[0].content;
-  // "&" in title must be escaped; "_" in section name must be escaped.
+  // 标题中的「&」必须转义；节名中的「_」必须转义。
   PF_CHECK(tex.find("Sample \\& Title") != std::string::npos);
   PF_CHECK(tex.find("Intro\\_1") != std::string::npos);
   PF_CHECK(tex.find("\\section{Intro\\_1}") != std::string::npos);
@@ -90,7 +90,7 @@ PF_TEST(RendererSourceMapCoversEquation) {
   req.template_id = "generic-article";
   auto result = renderer.Render(req);
 
-  // Count lines to find the equation in the tex, then resolve.
+  // 统计行数以在 tex 中定位该公式，然后解析。
   const std::string &tex = result.package.files[0].content;
   size_t pos = tex.find("\\begin{equation}");
   PF_CHECK(pos != std::string::npos);
@@ -101,7 +101,7 @@ PF_TEST(RendererSourceMapCoversEquation) {
   }
   auto node = result.source_map.Resolve(line);
   PF_CHECK(node.has_value());
-  // The resolved node must be the equation node (second block).
+  // 解析出的节点必须是公式节点（第二个 block）。
   PF_CHECK(cdoc.body().sections[0].blocks[1].index() == 3); // EquationBlock
   PF_CHECK(std::get<EquationBlock>(cdoc.body().sections[0].blocks[1]).id ==
            *node);
@@ -132,7 +132,7 @@ PF_TEST(RendererBibliographyPackaging) {
       has_bib = true;
   }
   PF_CHECK(has_bib);
-  // files[0] is main.tex (bib file appended after it)
+  // files[0] 是 main.tex（bib 文件追加在其后）
   std::string tex;
   for (const auto &f : result.package.files) {
     if (f.path == "main.tex")
@@ -163,9 +163,8 @@ PF_TEST(RendererCitationsAndCrossRefs) {
   PF_CHECK(tex.find("\\citep{k1,k2}") != std::string::npos);
 }
 
-// The figure's single-/double-column attribute is the only thing that decides
-// which float environment is emitted: `figure` stays inside one column,
-// `figure*` spans both. Both images resolve through the assets/ package path.
+// 图的单栏/双栏属性是决定输出哪个 float 环境的唯一依据：`figure` 保持
+// 在单栏内，`figure*` 横跨两栏。两张图片都通过 assets/ 包路径解析。
 PF_TEST(RendererFigureSpanChoosesFloatEnvironment) {
   Document doc;
   DocumentEditor editor(doc);
@@ -193,23 +192,22 @@ PF_TEST(RendererFigureSpanChoosesFloatEnvironment) {
   PF_CHECK(result.status == RenderResult::Status::Ok);
   const std::string &tex = result.package.files[0].content;
 
-  // Single column: the ordinary float.
+  // 单栏：普通的 float。
   PF_CHECK(tex.find("\\begin{figure}[htbp]") != std::string::npos);
   PF_CHECK(tex.find("\\end{figure}\n") != std::string::npos);
-  // Double column: the starred float, opened and closed.
+  // 双栏：带星号的 float，成对开闭。
   PF_CHECK(tex.find("\\begin{figure*}[htbp]") != std::string::npos);
   PF_CHECK(tex.find("\\end{figure*}\n") != std::string::npos);
-  // The starred float must not accidentally be closed by `\end{figure}`.
+  // 带星号的 float 不得被 `\end{figure}` 误关闭。
   PF_CHECK(tex.find("\\end{figure}\n\n\\begin{figure*}") != std::string::npos);
-  // Both images are referenced by their real file inside assets/.
+  // 两张图片都通过其在 assets/ 内的真实文件引用。
   PF_CHECK(tex.find("{assets/figure_one.png}") != std::string::npos);
   PF_CHECK(tex.find("{assets/figure_two.png}") != std::string::npos);
 }
 
-// A double-column figure in a template that has only one column must still
-// produce a complete, matched float: `figure*` is valid in a one-column class
-// and behaves like `figure`. That is what lets the attribute be stored before a
-// two-column template is chosen.
+// 在只有单栏的模板中，双栏图仍必须生成完整且配对的 float：`figure*`
+// 在单栏文档类中合法，行为与 `figure` 相同。正因如此，该属性可以在
+// 选定双栏模板之前就先存储。
 PF_TEST(RendererDoubleColumnFigureStaysCompleteInSingleColumnTemplate) {
   Document doc;
   DocumentEditor editor(doc);
@@ -236,8 +234,8 @@ PF_TEST(RendererDoubleColumnFigureStaysCompleteInSingleColumnTemplate) {
     }
     return n;
   };
-  // The float opens and closes exactly once, with the matching name: an
-  // unbalanced environment would abort the build in a one-column template.
+  // 该 float 以匹配的名称恰好开闭一次：在单栏模板中，
+  // 不配对的环境会导致 build 中止。
   PF_CHECK_EQ(count("\\begin{figure*}"), std::size_t{1});
   PF_CHECK_EQ(count("\\end{figure*}"), std::size_t{1});
   PF_CHECK_EQ(count("\\begin{figure}"), std::size_t{0});

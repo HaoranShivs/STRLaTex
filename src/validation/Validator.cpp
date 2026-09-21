@@ -14,9 +14,9 @@ namespace pf {
 
 namespace {
 
-// Validator runs on whatever thread owns the snapshot - in practice the build
-// worker, but also the application thread for a direct validation - so the
-// diagnostic id counter must be atomic. Found by ThreadSanitizer.
+// Validator 运行在持有 snapshot 的线程上——实际是 build worker，
+// 直接校验时也可能是应用线程——因此诊断 id 计数器必须是原子的。
+// 由 ThreadSanitizer 发现。
 std::atomic<std::uint64_t> g_counter{0};
 
 Diagnostic MakeDiag(ProjectRevision rev, DiagnosticSeverity severity,
@@ -52,29 +52,27 @@ ValidationResult Validator::Validate(const ValidationInput& input) const {
     ValidateSemantic(*input.document, input, &result);
     ValidateTemplate(*input.document, input, &result);
 
-    // Semantic issues are diagnostics, not render blockers (V1: best-effort
-    // PDF generation continues; problems show in the Problems panel).
+    // 语义问题只是诊断，不阻断渲染（V1：仍尽力生成 PDF；问题显示在
+    // Problems 面板）。
     result.can_render = true;
     return result;
 }
 
 void Validator::ValidateSemantic(const Document& doc, const ValidationInput& input,
                                  ValidationResult* result) const {
-    // Empty title
+    // 标题为空
     if (InlineIsBlank(doc.front_matter().title)) {
         result->diagnostics.push_back(MakeDiag(
             input.revision, DiagnosticSeverity::Warning, "W-EMPTY-TITLE",
             "paper title is empty", DiagnosticLocation::ForProject()));
     }
 
-    // Citations resolve into the bibliography; math bodies obey the LaTeX
-    // input boundary (design §5). Inline math has no node id of its own, so a
-    // problem is reported against the block that owns it.
+    // 引用会解析到参考文献；数学公式体遵循 LaTeX 输入边界（设计 §5）。
+    // 行内数学没有自己的 node id，因此问题报到拥有它的块上。
     //
-    // Citation validation (citation plan §9): a cited key that is not in the
-    // bibliography is an error - never silently dropped - and a document that
-    // cites at all while the project has no bibliography reports that once at
-    // project level instead of one noise error per key.
+    // 引用校验（Citation 方案 §9）：被引用但不在参考文献中的 key 是错误——
+    // 绝不静默丢弃——而项目没有参考文献却出现了引用时，只在项目级报告一次，
+    // 而不是为每个 key 各报一个噪声错误。
     bool document_has_citations = false;
     auto check_inline = [&](const InlineContent& content,
                             const std::optional<NodeId>& owner) {
@@ -113,8 +111,8 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
         }
     };
 
-    // Block-level semantic rules. One traversal; the heading nesting lives in
-    // DocumentTraversal, not here.
+    // 块级语义规则。一次遍历完成；标题嵌套关系在 DocumentTraversal 中，
+    // 不在这里。
     VisitBlocks(doc, [&](const Block& block, const NodeAddress& address) {
         if (const auto* para = std::get_if<Paragraph>(&block)) {
             check_inline(para->content, address.node);
@@ -149,8 +147,8 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
         }
     });
 
-    // Dangling cross references: every inline run (paragraph bodies and
-    // captions, plus the title/abstract) in one traversal.
+    // 悬空的交叉引用：一次遍历覆盖所有行内内容（段落正文与题注，
+    // 以及标题/摘要）。
     auto check_ref = [&](const InlineContent& content) {
         for (const auto& node : content) {
             if (const auto* ref = std::get_if<CrossReference>(&node)) {
@@ -169,9 +167,8 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
         check_ref(content);
     });
 
-    // Cited, but the project has no bibliography at all: one project-level
-    // error (citation plan §9). The per-key pass above was skipped for
-    // exactly this case so the Problems panel stays readable.
+    // 有引用，但项目完全没有参考文献：只报一个项目级错误（Citation 方案
+    // §9）。上面按 key 的检查正是为这种情况跳过，以保持 Problems 面板可读。
     if (document_has_citations && input.bibliography_keys.empty()) {
         result->diagnostics.push_back(MakeDiag(
             input.revision, DiagnosticSeverity::Error,
@@ -192,8 +189,8 @@ void Validator::ValidateTemplate(const Document& doc, const ValidationInput& inp
         return;
     }
 
-    // Template-specific required-field checks (drive the editor's field
-    // hints as well as the Problems panel).
+    // 模板专用的必填字段检查（同时驱动编辑器的字段提示与 Problems
+    // 面板）。
     const auto& fm = doc.front_matter();
     const auto& req = def->required;
     if (req.title && InlineIsBlank(fm.title)) {
@@ -236,8 +233,7 @@ void Validator::ValidateTemplate(const Document& doc, const ValidationInput& inp
             "template requires keywords", DiagnosticLocation::ForProject()));
     }
 
-    // Heading depth capability (plan §9): a heading deeper than the template
-    // supports will not render as a distinct level.
+    // 标题深度能力（方案 §9）：比模板支持层级更深的标题不会渲染成独立层级。
     const int max_depth = def->capabilities.max_heading_depth;
     if (max_depth > 0 && max_depth < 3) {
         VisitHeadings(doc, [&](const NodeAddress& address) {

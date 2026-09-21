@@ -1,5 +1,5 @@
-// Stage A + C tests: DocumentTraversal / NodeAddress, the third heading
-// level (Subsubsection) end to end, and schema migration.
+// 阶段 A + C 测试：DocumentTraversal / NodeAddress、第三级标题
+// （Subsubsection）的端到端行为，以及 schema 迁移。
 #include "TestMain.hpp"
 
 #include <filesystem>
@@ -50,7 +50,7 @@ EditCommand MakeCmd(ProjectState& state, FullEditPayload payload) {
 
 Body& BodyOf(Document& doc) { return DocumentMutableAccess::body(doc); }
 
-// Section(1) -> Subsection(1) -> Subsubsection(1..2), each with one paragraph.
+// Section(1) -> Subsection(1) -> Subsubsection(1..2)，每个各带一个段落。
 void SeedThreeLevels(Document& doc) {
     DocumentEditor editor(doc);
     auto section = editor.InsertSection(0, InlineFromText("S1"));
@@ -70,14 +70,14 @@ void SeedThreeLevels(Document& doc) {
 
 }  // namespace
 
-// ---------------- NodeAddress / traversal ----------------
+// ---------------- NodeAddress / 遍历 ----------------
 
 PF_TEST(TraversalLocatesEveryNodeWithItsAddress) {
     Document doc;
     SeedThreeLevels(doc);
 
-    // Every id the document holds must be locatable with the right kind.
-    // 1 section + 1 subsection + 2 subsubsections + 3 paragraphs.
+    // 文档持有的每个 id 都必须能按其正确的 kind 定位到。
+    // 1 个 section + 1 个 subsection + 2 个 subsubsection + 3 个段落。
     const auto ids = doc.CollectNodeIds();
     PF_CHECK(ids.size() == 7);
     for (const auto& id : ids) {
@@ -104,7 +104,7 @@ PF_TEST(TraversalLocatesEveryNodeWithItsAddress) {
     PF_CHECK(*subsub->subsubsection == 1);
     PF_CHECK(subsub->depth() == 3);
 
-    // A paragraph inside the second subsubsection carries the full chain.
+    // 第二个 subsubsection 内的段落携带完整的层级链。
     const auto& deep_block =
         BodyOf(doc).sections[0].subsections[0].subsubsections[1].blocks[0];
     const NodeId deep_id =
@@ -126,9 +126,9 @@ PF_TEST(TraversalVisitsInDocumentOrder) {
     std::vector<NodeKind> kinds;
     VisitNodes(doc, [&](const NodeAddress& a) { kinds.push_back(a.kind); });
 
-    // Section, the subsection's own block, the subsection, then its two
-    // subsubsections each followed by their block. A subsection renders its
-    // own blocks before its subsubsections, so that is document order.
+    // Section、subsection 自身的 block、subsection，然后是它的两个
+    // subsubsection，每个后面跟自己的 block。subsection 会先渲染自身的
+    // block，再渲染 subsubsection，因此这才是文档顺序。
     const std::vector<NodeKind> expected = {
         NodeKind::Section,       NodeKind::Subsection,
         NodeKind::Paragraph,     NodeKind::Subsubsection,
@@ -156,14 +156,14 @@ PF_TEST(TraversalHeadingsAndBlocksHelpers) {
     });
     PF_CHECK(blocks == 3);
 
-    // CollectAllNodeIds agrees with Document::CollectNodeIds.
+    // CollectAllNodeIds 与 Document::CollectNodeIds 的结果一致。
     PF_CHECK(CollectAllNodeIds(doc) == doc.CollectNodeIds());
 }
 
 PF_TEST(TraversalInlineCoversParagraphsAndCaptions) {
     Document doc;
     DocumentEditor editor(doc);
-    // A non-empty paper title is itself inline content.
+    // 非空的论文标题本身也是 inline 内容。
     (void)editor.SetTitle(InlineFromText("Paper Title"));
     auto section = editor.InsertSection(0, InlineFromText("S"));
     Paragraph p;
@@ -179,18 +179,18 @@ PF_TEST(TraversalInlineCoversParagraphsAndCaptions) {
         ++seen;
         if (InlineToPlainText(content) == "the caption") saw_caption = true;
     });
-    // Paper title + paragraph body + figure caption.
+    // 论文标题 + 段落正文 + figure caption。
     PF_CHECK(seen == 3);
     PF_CHECK(saw_caption);
 }
 
-// ---------------- Subsubsection through the editing protocol ----------------
+// ---------------- 通过编辑协议操作 Subsubsection ----------------
 
 PF_TEST(SubsubsectionInsertRenameDeleteThroughProtocol) {
     ProjectState state = MakeState();
     auto editing = MakeEditing(state);
 
-    // Section + subsection.
+    // Section 与 Subsection。
     InsertSectionPayload sec;
     sec.index = 0;
     sec.title = InlineFromText("Section");
@@ -203,7 +203,7 @@ PF_TEST(SubsubsectionInsertRenameDeleteThroughProtocol) {
     PF_CHECK(sub_result.status == EditStatus::Applied);
     const NodeId sub_id = sub_result.created_node;
 
-    // Insert a subsubsection under it.
+    // 在它下面插入一个 subsubsection。
     InsertSubsubsectionPayload payload;
     payload.section_index = 0;
     payload.subsection_index = 0;
@@ -218,11 +218,11 @@ PF_TEST(SubsubsectionInsertRenameDeleteThroughProtocol) {
                  .subsections[0]
                  .subsubsections.size() == 1);
 
-    // NodeKind + index reflect it.
+    // NodeKind 与索引都反映出它。
     PF_CHECK(state.mutable_document().GetNodeKind(subsub_id) ==
              NodeKind::Subsubsection);
 
-    // Rename.
+    // 重命名。
     RenameSubsubsectionPayload rename;
     rename.subsubsection = subsub_id;
     rename.title = InlineFromText("Renamed third");
@@ -233,7 +233,7 @@ PF_TEST(SubsubsectionInsertRenameDeleteThroughProtocol) {
                                    .subsubsections[0]
                                    .title) == "Renamed third");
 
-    // Move: swap a second one in front of the first.
+    // 移动：把第二个换到第一个前面。
     InsertSubsubsectionPayload second;
     second.section_index = 0;
     second.subsection_index = 0;
@@ -254,15 +254,15 @@ PF_TEST(SubsubsectionInsertRenameDeleteThroughProtocol) {
                                    .subsubsections[0]
                                    .title) == "Second third");
 
-    // After the move, "Second third" (second_id) is at index 0 and the
-    // original "Renamed third" (subsub_id) sits at index 1.
+    // 移动之后，"Second third"（second_id）位于索引 0，而原来的
+    // "Renamed third"（subsub_id）位于索引 1。
     PF_CHECK(BodyOf(state.mutable_document())
                  .sections[0]
                  .subsections[0]
                  .subsubsections[0]
                  .id == second_id);
 
-    // Delete by index; whatever sits there now is the one that goes.
+    // 按索引删除；当前位于该索引的那个就是要被删除的。
     DeleteSubsubsectionPayload del;
     del.section_index = 0;
     del.subsection_index = 0;
@@ -292,7 +292,7 @@ PF_TEST(SubsubsectionAfterAnchorTakesFollowingBlocks) {
     sub.title = InlineFromText("Sub");
     auto sub_result = editing.Apply(MakeCmd(state, sub));
 
-    // Two paragraphs directly in the subsection.
+    // 两个直接位于 subsection 中的段落。
     InsertParagraphPayload p1;
     p1.parent = sub_result.created_node;
     p1.content = InlineFromText("one");
@@ -302,7 +302,7 @@ PF_TEST(SubsubsectionAfterAnchorTakesFollowingBlocks) {
     p2.content = InlineFromText("two");
     auto p2_result = editing.Apply(MakeCmd(state, p2));
 
-    // Insert a subsubsection after the first paragraph: "two" moves into it.
+    // 在第一个段落后插入一个 subsubsection："two" 会移入其中。
     InsertSubsubsectionAfterPayload payload;
     payload.after = p1_result.created_node;
     payload.title = InlineFromText("Split here");
@@ -310,7 +310,7 @@ PF_TEST(SubsubsectionAfterAnchorTakesFollowingBlocks) {
     PF_CHECK(created.status == EditStatus::Applied);
 
     const auto& subsection = BodyOf(state.mutable_document()).sections[0].subsections[0];
-    PF_CHECK(subsection.blocks.size() == 1);  // "one" stays
+    PF_CHECK(subsection.blocks.size() == 1);  // "one" 保留在原处
     PF_CHECK(subsection.subsubsections.size() == 1);
     PF_CHECK(subsection.subsubsections[0].blocks.size() == 1);
     PF_CHECK(InlineToPlainText(
@@ -344,7 +344,7 @@ PF_TEST(SubsubsectionSurvivesUndoAndRedo) {
                  .subsections[0]
                  .subsubsections.size() == 1);
 
-    // Undo removes it; redo brings it back with the same id.
+    // Undo 将其移除；redo 会以相同的 id 让它恢复。
     const NodeId created = BodyOf(state.mutable_document())
                  .sections[0]
                                .subsections[0]
@@ -372,7 +372,7 @@ PF_TEST(SubsubsectionBlocksMoveAndValidate) {
     SeedThreeLevels(doc);
 
     DocumentEditor editor(doc);
-    // A block can move from one subsubsection to the sibling one.
+    // block 可以从一个 subsubsection 移动到同级的另一个。
     const NodeId source_id = std::visit(
         [](const auto& b) { return b.id; },
         BodyOf(doc).sections[0].subsections[0].subsubsections[0].blocks[0]);
@@ -390,13 +390,13 @@ PF_TEST(SubsubsectionBlocksMoveAndValidate) {
                 .subsubsections[1]
                 .blocks.size() == 2);
 
-    // The document stays structurally valid.
+    // 文档在结构上保持有效。
     for (const auto& id : doc.CollectNodeIds()) {
         PF_CHECK(doc.ContainsNode(id));
         PF_CHECK(LocateNode(doc, id).has_value());
     }
 
-    // And the validator accepts it.
+    // 校验器也接受它。
     ValidationInput input;
     input.document = &doc;
     input.template_id = "generic-article";
@@ -442,7 +442,7 @@ PF_TEST(DocumentIndexCoversThirdLevel) {
     PF_CHECK(location->subsubsection_index == 0);
     PF_CHECK(location->parent == BodyOf(doc).sections[0].subsections[0].id);
 
-    // A block inside it names the subsubsection as its parent.
+    // 它内部的 block 以该 subsubsection 作为其父节点。
     const NodeId block_id = std::visit(
         [](const auto& b) { return b.id; }, subsub.blocks[0]);
     auto block_location = index.Find(block_id);
@@ -450,10 +450,10 @@ PF_TEST(DocumentIndexCoversThirdLevel) {
     PF_CHECK(block_location->parent == subsub.id);
 }
 
-// ---------------- Template capability ----------------
+// ---------------- 模板能力 ----------------
 
 PF_TEST(TemplateCapabilityLimitsHeadingDepth) {
-    // Both shipped templates support all three levels.
+    // 两个内置模板都支持全部三级。
     for (const auto& def : TemplateRegistry::Instance().All()) {
         PF_CHECK(def.capabilities.max_heading_depth == 3);
         PF_CHECK(def.capabilities.max_heading_depth >= 1);
@@ -469,7 +469,7 @@ PF_TEST(ValidatorWarnsWhenHeadingExceedsTemplateDepth) {
     input.template_id = "generic-article";
     input.revision = ProjectRevision{1};
 
-    // Sanity: at depth 3 there is nothing to warn about.
+    // 健全性检查：在深度 3 时没有任何需要警告的内容。
     auto result = Validator().Validate(input);
     size_t depth_warnings = 0;
     for (const auto& d : result.diagnostics) {
@@ -478,10 +478,10 @@ PF_TEST(ValidatorWarnsWhenHeadingExceedsTemplateDepth) {
     PF_CHECK(depth_warnings == 0);
 }
 
-// ---------------- Persistence + migration ----------------
+// ---------------- 持久化 + 迁移 ----------------
 
 PF_TEST(SchemaMigrationV1ToV2KeepsDocumentAndStampsVersion) {
-    // A V1 file: no subsubsections anywhere.
+    // 一个 V1 文件：任何地方都没有 subsubsection。
     const std::string v1_json = R"({
       "schemaVersion": "1",
       "projectId": "p-old",
@@ -511,10 +511,10 @@ PF_TEST(SchemaMigrationV1ToV2KeepsDocumentAndStampsVersion) {
     PF_CHECK(migration.migrated);
     PF_CHECK(migration.from_version == "1");
     PF_CHECK(migration.to_version == "3");
-    PF_CHECK(migration.applied.size() == 2);  // V1->V2, V2->V3
+    PF_CHECK(migration.applied.size() == 2);  // V1->V2、V2->V3
     PF_CHECK(migration.warnings.empty());
 
-    // Nothing was lost.
+    // 没有任何内容丢失。
     PF_CHECK(InlineToPlainText(
              DocumentMutableAccess::front_matter(loaded.value().document)
                  .title) == "Old Paper");
@@ -531,7 +531,7 @@ PF_TEST(SchemaMigrationV1ToV2KeepsDocumentAndStampsVersion) {
     }
     PF_CHECK(loaded.value().revision.value == 4);
 
-    // Saving writes the current version, and the round trip is stable.
+    // 保存会写入当前版本，且往返转换是稳定的。
     const std::string saved = ProjectSerializer::Serialize(loaded.value());
     auto reloaded = ProjectSerializer::Deserialize(saved);
     PF_CHECK(reloaded.ok());
@@ -546,7 +546,7 @@ PF_TEST(SchemaMigrationIsIdempotentAndFlagsUnknownVersions) {
     PF_CHECK(!untouched.migrated);
     PF_CHECK(untouched.to_version == "3");
 
-    // A V2 file gains only the version stamp for the math format change.
+    // V2 文件只会因公式格式变更而补上版本标记。
     SerializedProject v2;
     v2.schema_version = "2";
     auto from_v2 = ProjectMigrator::MigrateToCurrent(&v2);
@@ -589,7 +589,7 @@ PF_TEST(LoadMigratesOldProjectFileInMemory) {
     PF_CHECK(result.project.has_value());
     PF_CHECK(result.project->schema_version == "3");
 
-    // The old file is untouched on disk - only a save rewrites it.
+    // 旧文件在磁盘上保持不变——只有执行保存才会重写它。
     std::ifstream in(file, std::ios::binary);
     std::ostringstream ss;
     ss << in.rdbuf();
@@ -617,7 +617,7 @@ PF_TEST(SubsubsectionRoundTripsThroughProjectFile) {
     PF_CHECK(InlineToPlainText(subsub[0].title) == "S1.1.1");
     PF_CHECK(subsub[0].blocks.size() == 1);
     PF_CHECK(std::visit([](const auto& b) { return b.id; }, subsub[0].blocks[0]) != NodeId());
-    // Ids survive so cross references stay valid.
+    // id 得以保留，因此交叉引用仍然有效。
     PF_CHECK(subsub[0].id == BodyOf(doc)
                                  .sections[0]
                                  .subsections[0]
@@ -625,7 +625,7 @@ PF_TEST(SubsubsectionRoundTripsThroughProjectFile) {
                                  .id);
 }
 
-// ---------------- Session-level e2e ----------------
+// ---------------- Session 级端到端 ----------------
 
 PF_TEST(SessionSubsubsectionEndToEnd) {
     auto dir = std::filesystem::temp_directory_path() / "pf-subsub-e2e";
@@ -657,8 +657,8 @@ PF_TEST(SessionSubsubsectionEndToEnd) {
     auto sub_result = session.Execute(sub_cmd);
     PF_CHECK(sub_result.status == EditStatus::Applied);
 
-    // Insert a subsubsection after the subsection heading via the payload the
-    // GUI uses, then rename and delete it.
+    // 使用 GUI 所用的 payload 在 subsection 标题之后插入一个 subsubsection，
+    // 然后重命名并删除它。
     EditCommand subsub_cmd = sec_cmd;
     subsub_cmd.operation_id = OperationId(IdGenerator::NewOperationId());
     subsub_cmd.base_revision = session.current_revision();
@@ -671,7 +671,7 @@ PF_TEST(SessionSubsubsectionEndToEnd) {
     PF_CHECK(session.state().document().GetNodeKind(subsub_result.created_node) ==
              NodeKind::Subsubsection);
 
-    // Undo removes it, redo restores it.
+    // Undo 将其移除，redo 将其恢复。
     const std::uint64_t before = session.current_revision().value;
     PF_CHECK(session.Undo().status == EditStatus::Applied);
     PF_CHECK(session.state().document()
@@ -687,7 +687,7 @@ PF_TEST(SessionSubsubsectionEndToEnd) {
                  .subsubsections.size() == 1);
     PF_CHECK(session.current_revision().value > before);
 
-    // Save + reload keeps the third level.
+    // 保存 + 重新加载后仍保留第三级。
     session.Save();
     PF_CHECK(session.FlushSaves().status == SaveResult::Status::Ok);
     std::string error;

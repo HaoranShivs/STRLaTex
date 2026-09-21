@@ -31,11 +31,10 @@ std::string DetectMediaType(const std::filesystem::path &path) {
   return {};
 }
 
-// Asset file names end up verbatim inside \includegraphics{assets/<name>}, so
-// they must be free of spaces, braces and other characters LaTeX cannot take
-// literally. Keep only [A-Za-z0-9_-] in the stem and [A-Za-z0-9] in the
-// extension; anything else becomes '_'. The extension is preserved because
-// pdfLaTeX selects its graphics driver from it.
+// asset文件名会原样出现在\includegraphics{assets/<name>}中，因此
+// 不能包含空格、花括号以及其他LaTeX无法直接接受的字符。stem中只保留
+// [A-Za-z0-9_-]，extension中只保留[A-Za-z0-9]；其他字符一律变成'_'。
+// 保留extension，是因为pdfLaTeX会据此选择图形驱动。
 std::string SanitizeNameComponent(const std::string &text) {
   std::string out;
   out.reserve(text.size());
@@ -53,8 +52,8 @@ std::string SafeAssetFilename(const std::filesystem::path &source) {
   std::string stem = SanitizeNameComponent(source.stem().string());
   if (stem.empty())
     stem = "asset";
-  // extension() includes the leading '.'; drop it before sanitizing ('.' is
-  // not an allowed component character) and re-add it afterwards.
+  // extension()包含开头的'.'；清洗前先去掉它（'.'不是允许的
+  // 组成字符），之后再补回来。
   std::string ext = source.extension().string();
   if (!ext.empty() && ext.front() == '.')
     ext.erase(ext.begin());
@@ -65,7 +64,7 @@ std::string SafeAssetFilename(const std::filesystem::path &source) {
 }
 
 std::string FileHash(const std::filesystem::path &path) {
-  // FNV-1a 64-bit as a cheap V1 content hash (not cryptographic).
+  // 采用FNV-1a 64位作为低成本的V1内容hash（非密码学用途）。
   std::ifstream in(path, std::ios::binary);
   if (!in)
     return {};
@@ -85,7 +84,7 @@ std::string FileHash(const std::filesystem::path &path) {
   return out;
 }
 
-// Parse PNG/JPEG/GIF intrinsic dimensions (header sniffing).
+// 解析PNG/JPEG/GIF的固有尺寸（通过嗅探文件头）。
 void SniffImageSize(const std::filesystem::path &path, std::uint64_t &width,
                     std::uint64_t &height) {
   std::ifstream in(path, std::ios::binary);
@@ -99,7 +98,7 @@ void SniffImageSize(const std::filesystem::path &path, std::uint64_t &width,
            (static_cast<std::uint64_t>(header[off + 2]) << 8) |
            static_cast<std::uint64_t>(header[off + 3]);
   };
-  // PNG: 8-byte signature, then IHDR: width at 16, height at 20 (big-endian)
+  // PNG：8字节签名，随后是IHDR：偏移16处为width，偏移20处为height（大端）
   static const unsigned char png_sig[8] = {0x89, 'P',  'N',  'G',
                                            0x0D, 0x0A, 0x1A, 0x0A};
   if (std::memcmp(header, png_sig, 8) == 0) {
@@ -107,7 +106,7 @@ void SniffImageSize(const std::filesystem::path &path, std::uint64_t &width,
     height = read_u32_be(20);
     return;
   }
-  // GIF: "GIF8?a", little-endian width at 6, height at 8
+  // GIF："GIF8?a"，偏移6处为小端width，偏移8处为height
   if (header[0] == 'G' && header[1] == 'I' && header[2] == 'F') {
     width = static_cast<std::uint64_t>(header[6]) |
             (static_cast<std::uint64_t>(header[7]) << 8);
@@ -115,7 +114,7 @@ void SniffImageSize(const std::filesystem::path &path, std::uint64_t &width,
              (static_cast<std::uint64_t>(header[9]) << 8);
     return;
   }
-  // JPEG: scan markers for SOFn
+  // JPEG：扫描marker寻找SOFn
   if (header[0] == 0xFF && header[1] == 0xD8) {
     in.clear();
     in.seekg(2);
@@ -174,7 +173,7 @@ AssetImportResult AssetManager::Stage(const AssetImportRequest &request) {
   }
   std::string media = DetectMediaType(src);
   if (media.empty() || media == "application/pdf" || media == "image/svg+xml") {
-    // V1 accepts raster images only for PDF embedding.
+    // V1仅接受用于PDF嵌入的位图图像。
     result.status = AssetImportResult::Status::UnsupportedType;
     result.detail = "unsupported asset type: " +
                     (media.empty() ? std::string("unknown") : media);
@@ -182,11 +181,11 @@ AssetImportResult AssetManager::Stage(const AssetImportRequest &request) {
   }
   std::error_code ec;
   auto filename = src.filename();
-  // Store under a LaTeX-safe name (still recognisable, extension intact);
-  // the original name is kept in metadata for display.
+  // 以对LaTeX安全的名称存储（仍可辨认，extension保持不变）；
+  // 原始名称保存在metadata中用于展示。
   const std::string safe_name = SafeAssetFilename(filename);
   auto dest = assets_dir_ / safe_name;
-  // Avoid overwrite: prefix with a fresh asset id when the name exists.
+  // 避免覆盖：当名称已存在时，用一个新的asset id作前缀。
   if (std::filesystem::exists(dest)) {
     dest = assets_dir_ / (IdGenerator::NewAssetId() + "_" + safe_name);
   }
@@ -201,9 +200,9 @@ AssetImportResult AssetManager::Stage(const AssetImportRequest &request) {
   AssetMetadata meta;
   meta.id = IdGenerator::NewAsset();
   meta.relative_path = dest.filename().string();
-  // P0-04: the stored path is a trust-boundary value. SafeAssetFilename()
-  // only emits [A-Za-z0-9_-], so this parse cannot fail today; asserting it
-  // here keeps the invariant local to the place that mints the value.
+  // P0-04：存储的路径是一个信任边界值。SafeAssetFilename()
+  // 只会输出[A-Za-z0-9_-]，因此如今该解析不可能失败；在此断言
+  // 可让这一不变量留在生成该值的地方。
   if (!ProjectRelativePath::Parse(meta.relative_path).ok()) {
     result.status = AssetImportResult::Status::IoError;
     result.detail = "refusing to register an unsafe asset name";

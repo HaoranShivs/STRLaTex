@@ -1,11 +1,11 @@
-// GUI-layer tests for the citation redesign (citation plan §1-§6):
-//   * a citation is a real renderable inline object (pill), not a fake
-//     U+E000 character - one object replacement char, format carries the
-//     semantic payload, the paint comes from CitationNumberResolver;
-//   * backspace deletes the whole pill and never disturbs surrounding marks;
-//   * the picker flow inserts at the *saved* caret and commits immediately
-//     (InlineEditor -> ParagraphContentEdited -> EditParagraphRich);
-//   * focusOut while the picker owns focus is not treated as "done editing".
+// 引文重设计的 GUI 层测试（引用方案 §1-§6）：
+//   * 引文是真正可渲染的行内对象（pill），而非伪造的
+//     U+E000 字符 —— 一个 object replacement 字符，format 承载
+//     语义载荷，绘制来自 CitationNumberResolver；
+//   * Backspace 删除整个 pill，绝不扰动周围的 marks；
+//   * picker 流程在 *已保存的* 光标位置插入并立即提交
+//     （InlineEditor -> ParagraphContentEdited -> EditParagraphRich）；
+//   * picker 持有焦点时的 focusOut 不会被当作「编辑完成」。
 #include "TestMain.hpp"
 
 #include <QApplication>
@@ -82,7 +82,7 @@ std::shared_ptr<const CitationNumberResolver> ResolverFor(
         CitationNumberResolver::Build(doc, db));
 }
 
-// The char format of the object at `position` (object replacement char).
+// `position`处对象的 char format（object replacement 字符）。
 QTextCharFormat FormatAt(const InlineEditor& editor, int position) {
     QTextCursor cursor(editor.document());
     cursor.setPosition(position);
@@ -90,7 +90,7 @@ QTextCharFormat FormatAt(const InlineEditor& editor, int position) {
     return cursor.charFormat();
 }
 
-// Sends a key event straight to the widget, as the platform would.
+// 像平台那样，把按键事件直接发送给 widget。
 void SendKey(QWidget* widget, int key, Qt::KeyboardModifiers mods = {}) {
     QKeyEvent event(QEvent::KeyPress, key, mods);
     QApplication::sendEvent(widget, &event);
@@ -99,7 +99,7 @@ void SendKey(QWidget* widget, int key, Qt::KeyboardModifiers mods = {}) {
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// InlineEditor: semantic object + renderer architecture
+// InlineEditor：语义对象 + renderer 架构
 // ---------------------------------------------------------------------------
 
 PF_TEST(CitationPillCarriesKeyPayloadAndResolvedNumber) {
@@ -109,13 +109,13 @@ PF_TEST(CitationPillCarriesKeyPayloadAndResolvedNumber) {
     editor.SetContent(InlineFromText("introduced by "));
     editor.InsertCitationObject({QStringLiteral("smith2024")});
 
-    // Exactly one object replacement character, no legacy U+E000 anywhere.
+    // 恰好一个 object replacement 字符，任何地方都不再出现遗留的 U+E000。
     const QString plain = editor.toPlainText();
     PF_CHECK(!plain.contains(QChar(0xE000)));
     PF_CHECK(plain.count(QChar(0xFFFC)) == 1);
 
-    // The paint text is resolved from the document-wide numbering: smith is
-    // [1]; the payload (stored semantics) is the key, never the number.
+    // 绘制文本由全文档编号解析得到：smith 是 [1]；
+    // payload（存储的语义）是 key，绝不是编号。
     const int pill_position = plain.indexOf(QChar(0xFFFC));
     PF_CHECK(pill_position >= 0);
     const QTextCharFormat format = FormatAt(editor, pill_position);
@@ -127,7 +127,7 @@ PF_TEST(CitationPillCarriesKeyPayloadAndResolvedNumber) {
     PF_CHECK(format.property(citation_format::kDisplayTextProperty)
                  .toString() == QStringLiteral("[1]"));
 
-    // What the document receives is the key set.
+    // 文档收到的是 key 集合。
     const InlineContent content = editor.Content();
     const Citation* citation = nullptr;
     for (const auto& node : content) {
@@ -142,7 +142,7 @@ PF_TEST(CitationPillCarriesKeyPayloadAndResolvedNumber) {
 
 PF_TEST(CitationNumberingFollowsInsertionOrderAcrossRows) {
     EnsureQApplication();
-    // First A, then B: A is [1], B is [2]; re-citing A keeps [1].
+    // 先 A 后 B：A 为 [1]，B 为 [2]；再次引用 A 仍保持 [1]。
     auto resolver = ResolverFor({"a", "b"}, {"a", "b"});
     InlineEditor editor;
     editor.SetCitationNumbers(resolver);
@@ -150,7 +150,7 @@ PF_TEST(CitationNumberingFollowsInsertionOrderAcrossRows) {
     PF_CHECK(FormatAt(editor, 0)
                  .property(citation_format::kDisplayTextProperty)
                  .toString() == QStringLiteral("[1]"));
-    // Multi-citation A+B renders sorted: [1, 2].
+    // 多重引文 A+B 按排序渲染：[1, 2]。
     InlineEditor multi;
     multi.SetCitationNumbers(resolver);
     multi.InsertCitationObject({QStringLiteral("b"), QStringLiteral("a")});
@@ -167,7 +167,7 @@ PF_TEST(UnknownCitationKeyPillShowsQuestionMark) {
     PF_CHECK(FormatAt(editor, 0)
                  .property(citation_format::kDisplayTextProperty)
                  .toString() == QStringLiteral("[?]"));
-    // Still semantic: the key survives the round trip for validation.
+    // 仍然是语义的：key 经过往返后依然保留，可供校验。
     const InlineContent content = editor.Content();
     PF_CHECK(content.size() == 1);
     PF_CHECK(std::holds_alternative<Citation>(content[0]));
@@ -178,13 +178,13 @@ PF_TEST(BackspaceDeletesWholeCitationPill) {
     InlineEditor editor;
     editor.SetCitationNumbers(ResolverFor({"a"}, {"a"}));
     editor.SetContent(InlineFromText("see x"));
-    // Insert the pill between "see " and "x" (position 4).
+    // 在 "see " 与 "x" 之间（位置 4）插入 pill。
     QTextCursor cursor(editor.document());
     cursor.setPosition(4);
     editor.setTextCursor(cursor);
     editor.InsertCitationObject({QStringLiteral("a")});
 
-    // Caret directly behind the pill; one Backspace removes the whole object.
+    // 光标紧跟在 pill 之后；一次 Backspace 删除整个对象。
     QTextCursor after(editor.document());
     after.setPosition(5);
     editor.setTextCursor(after);
@@ -208,14 +208,14 @@ PF_TEST(CitationDoesNotInheritOrPolluteMarks) {
     cursor.insertText(QStringLiteral("bold"));
     editor.setTextCursor(cursor);
     editor.InsertCitationObject({QStringLiteral("a")});
-    // Type after the pill exactly like the user does: through the editor's
-    // own cursor, which the object insert left in a neutral format.
+    // 像用户那样在 pill 之后输入：经由编辑器自身的
+    // cursor，对象插入把它留在了中性 format。
     editor.moveCursor(QTextCursor::End);
     editor.insertPlainText(QStringLiteral("tail"));
 
     const InlineContent content = editor.Content();
-    // bold run, citation, plain "tail" - the pill breaks the bold run but the
-    // following text must not silently inherit bold or object properties.
+    // bold run、citation、普通 "tail" —— pill 打断了 bold run，但
+    // 后续文本不得悄悄继承 bold 或对象属性。
     size_t citations = 0;
     for (size_t i = 0; i < content.size(); ++i) {
         if (std::holds_alternative<Citation>(content[i])) {
@@ -231,15 +231,15 @@ PF_TEST(CitationDoesNotInheritOrPolluteMarks) {
         }
     }
     PF_CHECK(citations == 1);
-    // The typed text is not swallowed by the pill.
+    // 输入的文本没有被 pill 吞掉。
     const std::string flat = InlineToPlainText(content);
     PF_CHECK(flat.find("bold") != std::string::npos);
     PF_CHECK(flat.find("tail") != std::string::npos);
 }
 
-// Undo / Redo must not break the surrounding text or invent tokens (plan §11).
-// Qt 6.2 keeps the whole undo history; the pill insert is its own command
-// because it carries a character format distinct from the adjacent text.
+// Undo / Redo 不得破坏周围文本或凭空造出 token（方案 §11）。
+// Qt 6.2 保留整段 undo 历史；pill 插入是独立命令，
+// 因为它携带的字符 format 与相邻文本不同。
 PF_TEST(UndoRedoOfCitationKeepsTextIntact) {
     EnsureQApplication();
     InlineEditor editor;
@@ -277,8 +277,8 @@ PF_TEST(PickerFocusRoundTripDoesNotCommitEarly) {
     QObject::connect(&editor, &InlineEditor::Committed,
                      [&]() { committed = true; });
 
-    // With the protection active (the picker has grabbed focus), a focus-out
-    // must NOT be mistaken for "the user finished editing" (plan §4).
+    // 保护生效时（picker 已抢到焦点），focus-out
+    // 绝不能被误认为「用户已完成编辑」（方案 §4）。
     editor.BeginProtectedInsert();
     QFocusEvent out(QEvent::FocusOut);
     QApplication::sendEvent(&editor, &out);
@@ -291,7 +291,7 @@ PF_TEST(PickerFocusRoundTripDoesNotCommitEarly) {
 }
 
 // ---------------------------------------------------------------------------
-// End to end: the pill number and the PDF number are the same policy
+// 端到端：pill 编号与 PDF 编号遵循同一策略
 // ---------------------------------------------------------------------------
 
 PF_TEST(GuiPillNumberMatchesTheBuiltPdf) {
@@ -300,7 +300,7 @@ PF_TEST(GuiPillNumberMatchesTheBuiltPdf) {
     std::filesystem::remove_all(dir);
 
     ProjectSession::Config config;
-    config.install_root = PF_INSTALL_ROOT;  // bundled portable TeX Live
+    config.install_root = PF_INSTALL_ROOT;  // 捆绑的可移植 TeX Live
     config.debounce = std::chrono::milliseconds{0};
     ProjectSession session(config);
     PF_CHECK(session.NewProject(dir));
@@ -328,7 +328,7 @@ PF_TEST(GuiPillNumberMatchesTheBuiltPdf) {
     auto sec_r = session.Execute(cmd);
     PF_CHECK(sec_r.status == EditStatus::Applied);
 
-    // Cite order: smith first, then jones, then both.
+    // 引用顺序：先 smith，再 jones，最后两者。
     auto add_paragraph = [&](InlineContent content) {
         InsertParagraphPayload para;
         para.parent = sec_r.created_node;
@@ -350,7 +350,7 @@ PF_TEST(GuiPillNumberMatchesTheBuiltPdf) {
     add_paragraph(cite({"jones2020"}));
     add_paragraph(cite({"smith2024", "jones2020"}));
 
-    // The GUI projection.
+    // GUI 侧的投影。
     auto resolver =
         CitationNumberResolver::Build(session.state().document(),
                                       session.bibliography());
@@ -359,7 +359,7 @@ PF_TEST(GuiPillNumberMatchesTheBuiltPdf) {
     PF_CHECK(gui_smith == 1 && gui_jones == 2);
     PF_CHECK(resolver.FormatPill({"smith2024", "jones2020"}) == "[1, 2]");
 
-    // The real toolchain projection.
+    // 真实工具链的投影。
     bool done = false;
     std::optional<BuildResult> result;
     session.SetBuildResultHandler(
@@ -383,7 +383,7 @@ PF_TEST(GuiPillNumberMatchesTheBuiltPdf) {
         return;
     }
 
-    // pdftotext the built PDF and read the bracket numbers off the page.
+    // 对构建出的 PDF 运行 pdftotext，从页面上读出方括号编号。
     const std::string pdf = result->pdf_path.string();
     auto uniq = dir / "cited.txt";
     const std::string extract = "pdftotext -layout " + pdf + " " +
@@ -399,7 +399,7 @@ PF_TEST(GuiPillNumberMatchesTheBuiltPdf) {
         std::cout << "    pdftotext produced nothing; skipping text match\n";
         return;
     }
-    // "[1]" marks smith's first citation, "[2]" jones' - identical to the GUI.
+    // "[1]" 标记 smith 的首次引用，"[2]" 标记 jones 的 —— 与 GUI 一致。
     const size_t first = text.find("[1]");
     const size_t second = text.find("[2]");
     const size_t both = text.find("[1, 2]");
@@ -407,17 +407,17 @@ PF_TEST(GuiPillNumberMatchesTheBuiltPdf) {
     PF_CHECK(second != std::string::npos);
     PF_CHECK(both != std::string::npos);
     if (first != std::string::npos && second != std::string::npos) {
-        PF_CHECK(first < second);  // citation order, not alphabetical
+        PF_CHECK(first < second);  // 引用顺序，而非字母顺序
     }
     PF_CHECK(both != std::string::npos && both > second);
-    // The bibliography heading numbers match too.
+    // 参考文献标题中的编号也同样匹配。
     PF_CHECK(text.find("[1] J. Smith") != std::string::npos ||
              text.find("[1]Smith") != std::string::npos ||
              text.find("[1] ") != std::string::npos);
 }
 
 // ---------------------------------------------------------------------------
-// BlockEditor / MainWindow: the one legal data path
+// BlockEditor / MainWindow：唯一合法的数据路径
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -474,8 +474,8 @@ PF_TEST(CitationCommitFlowReachesDocumentAndPillRepaints) {
     Fixture fixture("pf-citation-flow");
     MainWindow& window = fixture.window;
 
-    // The user's caret sits mid-paragraph when the picker opens; the insert
-    // must honour that saved position (citation plan §4).
+    // picker 打开时用户的光标位于段落中间；插入
+    // 必须遵循该已保存的位置（引用方案 §4）。
     BlockEditor* editor = window.findChild<BlockEditor*>();
     PF_CHECK(editor != nullptr);
     if (!editor) return;
@@ -483,14 +483,14 @@ PF_TEST(CitationCommitFlowReachesDocumentAndPillRepaints) {
     PF_CHECK(row != nullptr);
     if (!row) return;
     QTextCursor caret(row->document());
-    caret.setPosition(7);  // between "before " and "after"
+    caret.setPosition(7);  // "before " 与 "after" 之间
     row->setTextCursor(caret);
 
     PF_CHECK(editor->InsertCitationIntoParagraph(fixture.node_id,
                                                  QStringLiteral("smith2024")));
     Spin(200);
 
-    // 1. The document holds the citation *between* the text runs, as keys.
+    // 1. 文档以 key 的形式把引文放在文本 run *之间*。
     const Paragraph* stored = StoredParagraph(window);
     PF_CHECK(stored != nullptr);
     if (!stored) return;
@@ -505,7 +505,7 @@ PF_TEST(CitationCommitFlowReachesDocumentAndPillRepaints) {
         ++index;
     }
     PF_CHECK(inserted_mid_paragraph);
-    // Three nodes: "before " + citation + "after" - position preserved.
+    // 三个节点："before " + citation + "after" —— 位置得以保留。
     PF_CHECK(stored->content.size() == 3);
     if (stored->content.size() == 3) {
         const auto* first = std::get_if<TextRun>(&stored->content[0]);
@@ -514,7 +514,7 @@ PF_TEST(CitationCommitFlowReachesDocumentAndPillRepaints) {
         PF_CHECK(last && last->text == "after");
     }
 
-    // 2. The commit rebuilt the row; the pill in the *new* widget shows [1].
+    // 2. 提交重建了该 row；*新* widget 中的 pill 显示 [1]。
     InlineEditor* reloaded_row = FindRow(window, fixture.node_id);
     PF_CHECK(reloaded_row != nullptr);
     if (reloaded_row) {
@@ -540,8 +540,8 @@ PF_TEST(SecondCitationNumbersIncrementallyInGui) {
     PF_CHECK(editor->InsertCitationIntoParagraph(fixture.node_id,
                                                 QStringLiteral("jones2020"), 0));
     Spin(150);
-    // jones cited first now -> [1]; adding smith after it -> [2]. Both pills
-    // must reflect one shared numbering after the second commit.
+    // 现在 jones 先被引用 -> [1]；在其后加入 smith -> [2]。第二次提交后
+    // 两个 pill 必须反映同一套共享编号。
     PF_CHECK(editor->InsertCitationIntoParagraph(fixture.node_id,
                                                  QStringLiteral("smith2024"), 20));
     Spin(150);
@@ -559,8 +559,8 @@ PF_TEST(SecondCitationNumbersIncrementallyInGui) {
     }
     PF_CHECK(pills.size() == 2);
     if (pills.size() == 2) {
-        PF_CHECK(pills[0] == QStringLiteral("[1]"));   // jones, cited first
-        PF_CHECK(pills[1] == QStringLiteral("[2]"));   // smith, cited second
+        PF_CHECK(pills[0] == QStringLiteral("[1]"));   // jones，先被引用
+        PF_CHECK(pills[1] == QStringLiteral("[2]"));   // smith，后被引用
     }
 }
 
@@ -572,16 +572,16 @@ PF_TEST(ManualBuildFlushesTheFocusedRowFirst) {
     PF_CHECK(row != nullptr);
     if (!row) return;
 
-    // Focus the row and type: no commit has happened yet (no focus-out).
+    // 聚焦该 row 并输入：此时尚未发生提交（没有 focus-out）。
     row->setFocus(Qt::MouseFocusReason);
     row->moveCursor(QTextCursor::End);
     row->insertPlainText(QStringLiteral(" tail typed"));
     PF_CHECK(row->IsDirty());
 
-    // Build must flush first (citation plan §6): the Document - and with it
-    // the build snapshot - must contain the typed text immediately after
-    // OnBuild, without any focus-out. (The commit rebuilds the row, so the
-    // old `row` pointer is dropped here; only the document is consulted.)
+    // Build 必须先 flush（引用方案 §6）：Document —— 以及随之的
+    // build snapshot —— 必须在 OnBuild 之后立即包含已输入的文本，
+    // 无需任何 focus-out。（提交会重建该 row，因此这里丢弃旧的
+    // `row` 指针；只查询文档。）
     QMetaObject::invokeMethod(&window, "OnBuild");
     Spin(150);
     const Paragraph* stored = StoredParagraph(window);

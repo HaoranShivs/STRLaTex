@@ -36,9 +36,9 @@ InlineEditor::InlineEditor(QWidget* parent)
     : QTextEdit(parent),
       math_object_renderer_(std::make_unique<InlineMathObjectRenderer>()),
       citation_object_renderer_(std::make_unique<CitationObjectRenderer>()) {
-    // P0-07: connect to the shared math render service. Every row gets a
-    // unique id; the service replies through the queued signal, so a reply
-    // for a destroyed row is dropped by the QPointer guard inside the service.
+    // P0-07：连接到共享的数学渲染服务。每一行都会获得唯一 id；
+    // 服务通过 queued 信号回复，因此针对已销毁行的回复
+    // 会被服务内部的 QPointer 守卫丢弃。
     static std::atomic<std::uint64_t> next_editor_id{0};
     const QString editor_id =
         QStringLiteral("inline-editor-%1")
@@ -89,12 +89,12 @@ void InlineEditor::SetReferenceItems(std::vector<ReferenceItem> items) {
     reference_items_ = std::move(items);
 }
 
-// ---------------- Model -> editor ----------------
+// ---------------- 模型 -> 编辑器 ----------------
 
 void InlineEditor::SetBodyTypography(const QFont& font,
                                      int line_height_percent) {
     line_height_percent_ = line_height_percent;
-    // Programmatic styling: never a user edit, never dirty.
+    // 程序化设置样式：绝不算作用户编辑，绝不置为 dirty。
     loading_ = true;
     setFont(font);
     theme::ApplyDocumentTypography(document(), font, line_height_percent);
@@ -143,8 +143,8 @@ void InlineEditor::SetContent(const InlineContent& content) {
     QTextCursor cursor(document());
     setTextCursor(cursor);
     InsertContent(content);
-    // clear() dropped the block formats: restore the proportional line
-    // height so the row reads at 150% after every reload (UI plan §5).
+    // clear() 丢弃了块格式：恢复比例行高，
+    // 使该行在每次重新加载后仍按 150% 显示（UI 方案 §5）。
     ApplyLineHeight();
     loading_ = false;
     dirty_ = false;
@@ -162,13 +162,12 @@ InlineContent InlineEditor::Content() const {
 }
 
 InlineContent InlineEditor::ContentInRange(int begin, int end) const {
-    // Read the marks from the document's own structure instead of asking
-    // charFormat() at every caret position: charFormat() reports the format of
-    // the character *before* the position, so a per-character scan shifted
-    // every run by one character - bold "worked" by luck on long runs and
-    // italic lost its first character, which is exactly why italics never
-    // reached the PDF. A QTextFragment is a maximal run of one format, so
-    // walking fragments reproduces the run boundaries exactly.
+    // 从文档自身的结构中读取 marks，而不是在每个光标位置调用
+    // charFormat()：charFormat() 报告的是该位置 *之前* 那个字符的格式，
+    // 因此逐字符扫描会让每个 run 整体偏移一个字符——粗体只是因为长 run
+    // 才侥幸「看起来正常」，而斜体则丢掉了第一个字符，这正是斜体始终
+    // 无法进入 PDF 的原因。QTextFragment 是同一格式的最大连续段，
+    // 因此遍历 fragment 能精确还原 run 的边界。
     InlineContent content;
     for (QTextBlock block = document()->begin(); block.isValid();
          block = block.next()) {
@@ -182,17 +181,16 @@ InlineContent InlineEditor::ContentInRange(int begin, int end) const {
             const QTextCharFormat format = fragment.charFormat();
             const QString text = fragment.text();
 
-            // Semantic tokens. The fragment's own format is the authoritative
-            // token description; TokenAt() would report the *previous*
-            // character's format and misread every token.
+            // 语义 token。fragment 自身的格式才是权威的 token 描述；
+            // TokenAt() 会报告 *前一个* 字符的格式，从而误判每一个 token。
             const QVariant kind_variant = format.property(kTokenKindProperty);
             if (kind_variant.isValid()) {
                 const TokenKind kind =
                     static_cast<TokenKind>(kind_variant.toInt());
                 const QString payload =
                     format.property(kTokenPayloadProperty).toString();
-                // Usually one token per fragment; a merged fragment may hold
-                // several identical ones.
+                // 通常每个 fragment 只有一个 token；合并后的 fragment
+                // 可能包含多个相同的 token。
                 const int token_count =
                     text.count(kTokenChar) + text.count(kObjectChar);
                 if (token_count > 0) {
@@ -222,14 +220,13 @@ InlineContent InlineEditor::ContentInRange(int begin, int end) const {
                     }
                     continue;
                 }
-                // A token format spread over characters that are not token
-                // markers is a format leak (e.g. a foreign cursor inheriting
-                // the object format while typing). Never invent a semantic
-                // node out of it - fall through and keep the text.
+                // token 格式扩散到并非 token 标记的字符上属于格式泄漏
+                // （例如外部光标在输入时继承了对象格式）。绝不能据此
+                // 臆造语义节点——直接落到下面的分支，保留文本。
             }
 
-            // Ordinary text: take the part that overlaps [begin, end) and drop
-            // any token character that lost its format.
+            // 普通文本：取与 [begin, end) 重叠的部分，
+            // 并丢弃任何已丢失格式的 token 字符。
             const int from = qMax(fragment_start, begin);
             const int to = qMin(fragment_end, end);
             if (to <= from) continue;
@@ -251,8 +248,8 @@ InlineContent InlineEditor::ContentInRange(int begin, int end) const {
             }
             content.push_back(TextRun{run.toStdString(), marks});
         }
-        // Paragraph breaks do not exist inside a single paragraph block: a
-        // newline becomes a space, which is what the document model wants.
+        // 单个段落块内部不存在段落分隔：换行会变成空格，
+        // 这正是文档模型所期望的。
         if (block.next().isValid() && !content.empty() &&
             block.next().position() < end) {
             if (auto* run = std::get_if<TextRun>(&content.back())) {
@@ -265,7 +262,7 @@ InlineContent InlineEditor::ContentInRange(int begin, int end) const {
 
 QString InlineEditor::PlainText() const { return toPlainText(); }
 
-// ---------------- Marks ----------------
+// ---------------- 标记 ----------------
 
 void InlineEditor::ToggleBold() {
     QTextCursor cursor = textCursor();
@@ -298,33 +295,31 @@ bool InlineEditor::IsItalicActive() const {
     return const_cast<InlineEditor*>(this)->textCursor().charFormat().fontItalic();
 }
 
-// ---------------- Semantic inline objects ----------------
+// ---------------- 语义行内对象 ----------------
 
-// Citation / cross reference pills. One object replacement character painted
-// by CitationObjectRenderer (citation plan §1); the payload (keys or target
-// node) lives in the char format and the display text is resolved from the
-// document-wide numbering map, never from what the character itself shows.
+// 引用 / 交叉引用 pill。一个对象替换字符，由 CitationObjectRenderer 绘制
+// （引用方案 §1）；payload（key 或目标节点）存放在 char format 中，
+// 显示文本从文档级编号映射解析，绝不取决于该字符自身显示的内容。
 void InlineEditor::InsertPillObject(QTextCursor& cursor, TokenKind kind,
                                     const QString& payload,
                                     const QString& display) {
     QTextCharFormat format;
     format.setObjectType(citation_format::kObjectType);
     format.setFont(document()->defaultFont());
-    // The pill must not grow the line: AlignNormal reserves exactly the
-    // height the renderer reports.
+    // pill 不得撑高行高：AlignNormal 恰好按渲染器报告的高度预留空间。
     format.setVerticalAlignment(QTextCharFormat::AlignNormal);
     format.setProperty(kTokenKindProperty, static_cast<int>(kind));
     format.setProperty(kTokenPayloadProperty, payload);
     format.setProperty(citation_format::kDisplayTextProperty, display);
     cursor.insertText(QString(kObjectChar), format);
-    // New typing must never inherit the object identity.
+    // 后续输入绝不能继承对象的身份标识。
     cursor.setCharFormat(QTextCharFormat());
 }
 
 QString InlineEditor::CitationDisplayText(const QStringList& keys) const {
     if (!citation_numbers_) {
-        // No numbering snapshot yet (fresh widget): show the keys so the pill
-        // is still honest about what it stands for.
+        // 尚无编号 snapshot（新建的 widget）：显示 key，
+        // 让 pill 仍能如实表明自己所代表的含义。
         return QStringLiteral("[") + keys.join(QStringLiteral(", ")) +
                QStringLiteral("]");
     }
@@ -356,9 +351,8 @@ void InlineEditor::SetCrossReferenceLabels(std::map<QString, QString> labels) {
 
 void InlineEditor::RefreshObjectDisplays() {
     if (!document() || !document()->documentLayout()) return;
-    // Repainting the pills rewrites *format* only. The base class still
-    // reports that as a content change, so the row must not mistake it for
-    // user input: refreshing the displays never dirties the editor.
+    // 重绘 pill 只改写 *格式*。基类仍会将其报告为内容变更，
+    // 因此该行不能把它误认为用户输入：刷新显示绝不会把编辑器置为 dirty。
     refreshing_displays_ = true;
     QTextCursor cursor(document());
     for (QTextBlock block = document()->begin(); block.isValid();
@@ -398,9 +392,8 @@ void InlineEditor::InsertMathObject(QTextCursor& cursor, const QString& latex) {
     const QFont text_font = document()->defaultFont();
     const QFontMetricsF text_metrics(text_font);
 
-    // P0-07: insert a lightweight placeholder and enqueue the render. The
-    // GUI thread never runs TeX: a 20+ second compile no longer freezes the
-    // window, and the result arrives through the service's queued signal.
+    // P0-07：插入轻量占位符并将渲染入队。GUI 线程绝不运行 TeX：
+    // 20 秒以上的编译不再冻结窗口，结果通过服务的 queued 信号返回。
     const QString formula_id =
         QStringLiteral("f%1").arg(++next_formula_id_);
 
@@ -408,20 +401,20 @@ void InlineEditor::InsertMathObject(QTextCursor& cursor, const QString& latex) {
     format.setObjectType(inline_math_format::kObjectType);
     format.setFont(text_font);
     format.setVerticalAlignment(QTextCharFormat::AlignNormal);
-    // Placeholder metrics: a small, correctly baselined box so the line
-    // height does not jump when the real pixmap arrives.
+    // 占位符度量：一个小尺寸、基线正确的盒子，
+    // 使真实 pixmap 到达时行高不会跳动。
     format.setProperty(inline_math_format::kWidthProperty, 24.0);
     format.setProperty(inline_math_format::kHeightProperty,
                        text_metrics.height());
     format.setProperty(inline_math_format::kBaselineProperty,
                        text_metrics.ascent());
     format.setProperty(kTokenKindProperty, static_cast<int>(TokenKind::Math));
-    // The payload stays the LaTeX body; the formula id travels in the kind
-    // byte's companion property so a reply can find its object.
+    // payload 仍然是 LaTeX 主体；formula id 通过 kind 字节的伴随属性传递，
+    // 以便回复能定位到自己的对象。
     format.setProperty(kTokenPayloadProperty, latex);
     format.setProperty(kMathFormulaIdProperty, formula_id);
     cursor.insertText(QString(kObjectChar), format);
-    // New typing must never inherit the semantic object properties.
+    // 后续输入绝不能继承语义对象的属性。
     cursor.setCharFormat(QTextCharFormat());
 
     MathRenderStyle style;
@@ -443,9 +436,8 @@ void InlineEditor::ApplyMathRender(const QString& formula_id,
     const QFont text_font = document()->defaultFont();
     const QFontMetricsF text_metrics(text_font);
 
-    // Locate the formula object by its id. The document may have been
-    // reloaded, undone or the object deleted while the render was in flight;
-    // in every such case the reply is simply dropped (never a crash).
+    // 按 id 定位公式对象。渲染在途期间，文档可能已重新加载、已撤销，
+    // 或对象已被删除；无论哪种情况，都直接丢弃该回复（绝不崩溃）。
     QTextCursor found;
     for (QTextBlock block = document()->begin(); block.isValid();
          block = block.next()) {
@@ -470,7 +462,7 @@ void InlineEditor::ApplyMathRender(const QString& formula_id,
     if (found.isNull())
         return;
 
-    // Fit both sides of the TeX baseline into the current text line.
+    // 将 TeX 基线上下两侧都适配进当前文本行。
     const qreal math_ascent = qMax<qreal>(1.0, baseline);
     const qreal math_descent = qMax<qreal>(1.0, height - baseline);
     qreal scale = qMin(text_metrics.ascent() / math_ascent,
@@ -497,8 +489,8 @@ void InlineEditor::ApplyMathRender(const QString& formula_id,
     update.setProperty(kTokenKindProperty, static_cast<int>(TokenKind::Math));
     update.setProperty(kTokenPayloadProperty, latex);
     update.setProperty(kMathFormulaIdProperty, formula_id);
-    // Only the object's format changes - the QTextDocument is never rebuilt
-    // or re-created here, so the caret and the surrounding text are intact.
+    // 这里只改变对象的格式——QTextDocument 绝不会重建或重新创建，
+    // 因此光标和周围文本保持原样。
     found.mergeCharFormat(update);
     if (viewport())
         viewport()->update();
@@ -509,8 +501,8 @@ std::optional<InlineEditor::TokenHit> InlineEditor::TokenAt(int position) const 
     if (position < 0 || position >= last) return std::nullopt;
     QTextCursor cursor(document());
     cursor.setPosition(position);
-    // charFormat() reports the character *before* the cursor unless something
-    // is selected, so select exactly the character under test.
+    // 除非有内容被选中，否则 charFormat() 报告的是光标 *之前* 的字符，
+    // 因此精确选中要检测的那个字符。
     cursor.setPosition(position + 1, QTextCursor::KeepAnchor);
     const QTextCharFormat format = cursor.charFormat();
     const QVariant kind = format.property(kTokenKindProperty);
@@ -531,8 +523,8 @@ void InlineEditor::RemoveTokenAt(int position) {
 }
 
 void InlineEditor::SanitizeTokens() {
-    // A token character that lost its payload (foreign paste) becomes plain
-    // text rather than a token that Content() would silently drop.
+    // 丢失了 payload 的 token 字符（外部粘贴）会变成普通文本，
+    // 而不是 Content() 会静默丢弃的 token。
     for (QTextBlock block = document()->begin(); block.isValid();
          block = block.next()) {
         for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
@@ -545,7 +537,7 @@ void InlineEditor::SanitizeTokens() {
                 fragment.charFormat().property(kTokenKindProperty).isValid();
             if (has_token_char || has_object_char) {
                 if (has_kind) continue;
-                // Orphan token character: strip it and re-run the scan.
+                // 孤立的 token 字符：将其剥离并重新扫描。
                 QTextCursor cursor(document());
                 cursor.setPosition(fragment.position());
                 cursor.setPosition(fragment.position() + fragment.length(),
@@ -554,14 +546,13 @@ void InlineEditor::SanitizeTokens() {
                 replacement.remove(kTokenChar);
                 replacement.remove(kObjectChar);
                 cursor.insertText(replacement);
-                return;  // textChanged re-runs the scan
+                return;  // textChanged 会重新扫描
             }
             if (has_kind) {
-                // The object identity leaked onto ordinary characters (e.g.
-                // typing through a raw cursor parked behind a pill). Strip
-                // the semantics - never let plain text masquerade as a token.
-                // setCharFormat replaces the whole format, so keep the two
-                // legitimate visual properties (bold / italic).
+                // 对象身份标识泄漏到了普通字符上（例如通过停在
+                // pill 后面的原始光标输入）。剥离语义——绝不能让
+                // 普通文本伪装成 token。setCharFormat 会替换整个格式，
+                // 因此保留两个合法的视觉属性（粗体 / 斜体）。
                 QTextCursor cursor(document());
                 cursor.setPosition(fragment.position());
                 cursor.setPosition(fragment.position() + fragment.length(),
@@ -570,7 +561,7 @@ void InlineEditor::SanitizeTokens() {
                 clean.setFontWeight(fragment.charFormat().fontWeight());
                 clean.setFontItalic(fragment.charFormat().fontItalic());
                 cursor.setCharFormat(clean);
-                return;  // textChanged re-runs the scan
+                return;  // textChanged 会重新扫描
             }
         }
     }
@@ -629,8 +620,8 @@ void InlineEditor::OpenMathEditor(const std::optional<TokenHit>& hit) {
         target.setPosition(hit->position);
         target.setPosition(hit->position + 1, QTextCursor::KeepAnchor);
     }
-    // Heap ownership plus open() avoids a nested event loop and prevents a
-    // row rebuild from deleting a stack-allocated child dialog.
+    // 堆所有权加 open() 可避免嵌套事件循环，
+    // 并防止行重建时删除栈上分配的子对话框。
     auto* dialog = new MathEditorDialog(hit ? hit->payload : QString(), this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     connect(dialog, &QDialog::finished, this,
@@ -645,8 +636,8 @@ void InlineEditor::OpenMathEditor(const std::optional<TokenHit>& hit) {
             ResizeToContent();
         }
         math_editor_open_ = false;
-        // Finish the dialog's signal delivery before committing can rebuild
-        // its parent row. Context binding cancels this if the row is removed.
+        // 在提交可能重建父行之前，先完成对话框的信号投递。
+        // 若该行被移除，上下文绑定会取消这一操作。
         QTimer::singleShot(0, this, [this]() {
             setFocus(Qt::OtherFocusReason);
             emit Committed();
@@ -655,10 +646,10 @@ void InlineEditor::OpenMathEditor(const std::optional<TokenHit>& hit) {
     dialog->open();
 }
 
-// ---------------- Events ----------------
+// ---------------- 事件 ----------------
 
 void InlineEditor::keyPressEvent(QKeyEvent* event) {
-    // Backspace/Delete removes a whole token, never half of one.
+    // Backspace/Delete 删除整个 token，绝不删除半个。
     if (event->key() == Qt::Key_Backspace || event->key() == Qt::Key_Delete) {
         const QString text = toPlainText();
         const int position = textCursor().position();
@@ -695,8 +686,8 @@ bool InlineEditor::canInsertFromMimeData(const QMimeData*) const { return true; 
 
 void InlineEditor::insertFromMimeData(const QMimeData* source) {
     if (!source) return;
-    // The editor's own rich content (marks, tokens, math objects) survives a
-    // copy/paste inside the document through its private clipboard flavour.
+    // 编辑器自身的富内容（marks、token、数学对象）通过私有剪贴板
+    // flavour 在文档内复制/粘贴时得以保留。
     if (source->hasFormat(InlineMimeType())) {
         const std::string encoded =
             source->data(InlineMimeType()).toStdString();
@@ -706,8 +697,8 @@ void InlineEditor::insertFromMimeData(const QMimeData* source) {
         ResizeToContent();
         return;
     }
-    // Ctrl+Shift+V: text only (plan §14). Plain Ctrl+V keeps bold/italic and
-    // drops fonts, sizes, colors and spacing.
+    // Ctrl+Shift+V：仅纯文本（方案 §14）。普通 Ctrl+V 保留粗体/斜体，
+    // 丢弃字体、字号、颜色和间距。
     const bool plain_only =
         QApplication::keyboardModifiers().testFlag(Qt::ShiftModifier);
     if (plain_only || !source->hasHtml()) {
@@ -720,7 +711,7 @@ void InlineEditor::insertFromMimeData(const QMimeData* source) {
         ResizeToContent();
         return;
     }
-    // Rich paste: convert HTML and keep only weight/italic.
+    // 富文本粘贴：转换 HTML，仅保留字重/斜体。
     QTextDocument converted;
     converted.setHtml(source->html());
     QTextCursor cursor = textCursor();
@@ -741,11 +732,10 @@ void InlineEditor::insertFromMimeData(const QMimeData* source) {
 }
 
 QMimeData* InlineEditor::createMimeDataFromSelection() const {
-    // Build our own QMimeData rather than decorating the one the base class
-    // returns: some platform clipboard backends hand back a wrapper whose
-    // storage is not the plain QMimeData map, and writing to it is silently
-    // lost. Re-creating the object keeps the standard plain/html flavours and
-    // lets the private one survive.
+    // 自行构建 QMimeData，而不是装饰基类返回的那个：某些平台的
+    // 剪贴板后端返回的是包装对象，其存储并非普通的 QMimeData map，
+    // 写入其中的数据会被静默丢弃。重新创建该对象可保留标准的
+    // plain/html flavour，并让私有 flavour 得以保留。
     QMimeData* base = QTextEdit::createMimeDataFromSelection();
     auto* data = new QMimeData();
     if (base) {
@@ -753,7 +743,7 @@ QMimeData* InlineEditor::createMimeDataFromSelection() const {
         for (const QString& format : formats) {
             if (format == QStringLiteral("text/plain") ||
                 format == QStringLiteral("text/html")) {
-                continue;  // restored through the accessors below
+                continue;  // 通过下面的访问器恢复
             }
             data->setData(format, base->data(format));
         }
@@ -772,7 +762,7 @@ QMimeData* InlineEditor::createMimeDataFromSelection() const {
 }
 
 void InlineEditor::mousePressEvent(QMouseEvent* event) {
-    // Clicking a token selects it whole (plan §5).
+    // 点击 token 会整体选中它（方案 §5）。
     const QString text = toPlainText();
     const int position =
         document()->documentLayout()->hitTest(event->pos(), Qt::FuzzyHit);
@@ -788,7 +778,7 @@ void InlineEditor::mousePressEvent(QMouseEvent* event) {
 }
 
 void InlineEditor::mouseDoubleClickEvent(QMouseEvent* event) {
-    // Double-clicking an inline math object opens the LaTeX source editor.
+    // 双击行内数学对象会打开 LaTeX 源码编辑器。
     const QString text = toPlainText();
     const int position =
         document()->documentLayout()->hitTest(event->pos(), Qt::FuzzyHit);
@@ -819,8 +809,8 @@ void InlineEditor::mouseReleaseEvent(QMouseEvent* event) {
 
 void InlineEditor::resizeEvent(QResizeEvent* event) {
     QTextEdit::resizeEvent(event);
-    // Measure with the incoming width: width() still reports the old value
-    // while the resize event is being delivered.
+    // 使用传入的宽度进行测量：在 resize 事件投递期间，
+    // width() 仍报告旧值。
     ResizeToWidth(event->size().width());
 }
 
@@ -841,9 +831,9 @@ void InlineEditor::ResizeToWidth(int width) {
 
 void InlineEditor::focusOutEvent(QFocusEvent* event) {
     QTextEdit::focusOutEvent(event);
-    // A focus loss caused by the citation/reference picker (or the math
-    // editor) opening is *not* "the user finished editing" (citation plan
-    // §4): the picker will insert an object and commit itself.
+    // 由引用/交叉引用选择器（或数学编辑器）打开导致的焦点丢失
+    // *不* 是「用户完成编辑」（引用方案 §4）：选择器会自行
+    // 插入对象并提交。
     if (!math_editor_open_ && !IsProtectedInsertOpen()) emit Committed();
 }
 

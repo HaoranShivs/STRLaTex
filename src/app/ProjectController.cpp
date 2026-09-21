@@ -47,9 +47,9 @@ ProjectController::ProjectController(QObject *parent) : QObject(parent) {
   qRegisterMetaType<pf::BuildEvent>("pf::BuildEvent");
 
   ProjectSession::Config config;
-  // The bundled portable TeX Live is the production environment (plan §3):
-  // the app directory carries runtime/texlive, so no user TeX install is
-  // needed and the user's PATH cannot influence a build.
+  // 内置的可移植 TeX Live 即生产环境（方案 §3）：
+  // 应用目录自带 runtime/texlive，因此无需用户另装 TeX，
+  // 且用户的 PATH 无法影响 build。
   config.install_root = PF_INSTALL_ROOT;
   config.workspace_root =
       std::filesystem::temp_directory_path() / "paperforge-gui-builds";
@@ -57,8 +57,8 @@ ProjectController::ProjectController(QObject *parent) : QObject(parent) {
 
   session_ = std::make_unique<ProjectSession>(config);
 
-  // Background workers wake the application thread through this hook; the
-  // queued invocation lands exactly where the mutable state lives.
+  // 后台 worker 通过此钩子唤醒应用线程；
+  // 排队调用恰好落在可变状态所在的线程。
   session_->SetWakeHandler([this]() {
     QMetaObject::invokeMethod(
         this, [this]() { PumpEvents(); }, Qt::QueuedConnection);
@@ -82,32 +82,28 @@ ProjectController::ProjectController(QObject *parent) : QObject(parent) {
     }
     emit buildStatusChanged(text);
   });
-  // Runs on the application thread, and only for results that passed the
-  // ProjectSession preview gate (project id + revision + build id). The
-  // whole BuildResult travels: diagnostics keep their structure, so the
-  // Problems panel never re-parses text (plan §37).
+  // 运行于应用线程，且仅针对通过了 ProjectSession 预览门禁
+  // （project id + revision + build id）的结果。整个 BuildResult 完整传递：
+  // 诊断信息保留自身结构，因此 Problems 面板无需重新解析文本（方案 §37）。
   session_->SetBuildResultHandler(
       [this](const BuildResult &result) { emit buildCompleted(result); });
-  // Live build-log events of the current build (the session already dropped
-  // any event whose build id went stale).
+  // 当前 build 的实时构建日志事件（session 已丢弃所有 build id 失效的事件）。
   session_->SetBuildEventHandler(
       [this](const BuildEvent &event) { emit buildEvent(event); });
   session_->SetPreviewUpdateHandler(
       [this](const PreviewUpdate &update) { emit previewUpdated(update); });
   session_->SetSaveResultHandler([this](const SaveResult &result, SaveKind) {
-    // P0-06: the bool says whether the write landed (Saved) or was replaced
-    // by a newer save (Superseded) - a superseded save is not an error the
-    // user must worry about.
+    // P0-06：该 bool 表示写入成功落地（Saved），还是被更新的保存取代
+    // （Superseded）——被取代的保存不是用户需要担心的错误。
     const bool landed = result.status == SaveResult::Status::Ok;
     emit saveFinished(landed, ToQ(result.detail));
-    // The state label always re-derives from the session's authoritative
-    // state; a superseded revision never shows "Saved".
+    // 状态标签始终从 session 的权威状态重新推导；
+    // 被取代的 revision 绝不会显示「Saved」。
     EmitProjectStateChanged();
   });
 
-  // Backstop: the wake handler already delivers events promptly, so this is
-  // only a safety net against a missed wake-up. Kept slow enough not to spin
-  // the event loop when the app is idle.
+  // 兜底：唤醒处理器已能及时投递事件，此处仅作为漏掉唤醒时的安全网。
+  // 间隔足够慢，以免应用空闲时空转事件循环。
   pump_timer_ = new QTimer(this);
   pump_timer_->setInterval(100);
   connect(pump_timer_, &QTimer::timeout, this, [this]() { PumpEvents(); });
@@ -180,8 +176,8 @@ ProjectController::ResolveInsertionPoint(const NodeId &anchor) const {
 
 namespace {
 
-// 1-based institution ordinal encoded by a superscript character: the
-// Institution row renders superscripts, so marker N means slot N.
+// 由上标字符编码的 1-based 机构序号：Institution 行渲染上标，
+// 因此标记 N 表示第 N 个槽位。
 int SuperscriptOrdinal(QChar ch) {
   switch (ch.unicode()) {
   case 0x00B9:
@@ -191,12 +187,12 @@ int SuperscriptOrdinal(QChar ch) {
   case 0x00B3:
     return 3;
   case 0x2070:
-    return 10; // superscript zero: tenth institution
+    return 10; // 上标零：第十个机构
   default:
     break;
   }
   if (ch.unicode() >= 0x2074 && ch.unicode() <= 0x2079) {
-    return ch.unicode() - 0x2074 + 4; // superscripts four..nine
+    return ch.unicode() - 0x2074 + 4; // 上标四至九
   }
   return 0;
 }
@@ -251,7 +247,7 @@ void ProjectController::EmitDocumentChanged() {
 }
 
 void ProjectController::EmitProjectStateChanged() {
-  // P0-06: the only source of the UI's save/preview/revision state.
+  // P0-06：UI 的保存/预览/revision 状态的唯一来源。
   emit stateChanged(ToString(session_->persistence_state()),
                     ToString(session_->preview_state()),
                     QString::number(session_->current_revision().value));
@@ -280,8 +276,8 @@ EditResult ProjectController::SetAbstract(const QString &text) {
 }
 
 EditResult ProjectController::SetAuthorsText(const QString &comma_separated) {
-  // Parse "Alice, Bob, Carol" into author entries. Superscript markers keep
-  // their institution binding, so editing names never loses the link.
+  // 将 "Alice, Bob, Carol" 解析为作者条目。上标标记保留其机构绑定，
+  // 因此编辑姓名绝不会丢失该关联。
   QStringList names = comma_separated.split(
       QRegularExpression(QStringLiteral(R"([,\n\x{00B7}]+)")),
       Qt::SkipEmptyParts);
@@ -291,8 +287,8 @@ EditResult ProjectController::SetAuthorsText(const QString &comma_separated) {
   for (const auto &raw : names) {
     Author author;
     QString name = raw.trimmed();
-    // Superscript markers after a name select institutions by their
-    // 1-based position in the Institution row: "Alice\u00b9, Bob\u00b2".
+    // 姓名后的上标标记按其在 Institution 行中的 1-based 位置选择机构：
+    // "Alice\u00b9, Bob\u00b2"。
     static const QRegularExpression markers(QStringLiteral(
         R"(([\x{00B9}\x{00B2}\x{00B3}\x{2070}-\x{209F}]+)\s*$)"));
     const auto match = markers.match(name);
@@ -308,16 +304,15 @@ EditResult ProjectController::SetAuthorsText(const QString &comma_separated) {
       name.remove(match.capturedStart(0), match.capturedLength(0));
     }
     author.name = ToStd(name.trimmed());
-    // With exactly one institution and no markers there is nothing to
-    // disambiguate, so everyone belongs to it.
+    // 恰好只有一个机构且没有任何标记时无需消歧，
+    // 因此所有人都归属于它。
     if (author.affiliations.empty() && affiliations.size() == 1) {
       author.affiliations.push_back(affiliations.front().id);
     }
     authors.push_back(std::move(author));
   }
 
-  // Replace the author list via Remove/Add payloads (undoable snapshot
-  // history captures both).
+  // 通过 Remove/Add payload 替换作者列表（可撤销的 snapshot 历史会捕获两者）。
   const auto &current = session_->state().document().front_matter().authors;
   for (size_t i = current.size(); i > 0; --i) {
     RemoveAuthorPayload p;
@@ -350,7 +345,7 @@ EditResult ProjectController::SetAuthorAffiliation(
       links.push_back(id);
   }
   if (linked) {
-    // Keep the document's institution order so the superscripts read 1,2.
+    // 保持文档的机构顺序，使上标读作 1,2。
     const auto &all = session_->state().document().front_matter().affiliations;
     std::vector<AffiliationId> ordered;
     for (const auto &candidate : all) {
@@ -387,17 +382,17 @@ ProjectController::SetAffiliationsText(const QString &semicolon_separated) {
   size_t slot = 0;
   for (const auto &raw : names) {
     QString name = raw.trimmed();
-    // Drop the leading ordinal marker so "1 University" and the
-    // superscript form both parse to the same institution.
+    // 去掉开头的序号标记，使 "1 University" 与上标形式
+    // 都解析为同一机构。
     static const QRegularExpression leading(
         QStringLiteral(R"(^[\x{00B9}\x{00B2}\x{00B3}\x{2070}-\x{209F}]+\s*)"));
     name.remove(leading);
     if (name.isEmpty())
       continue;
     Affiliation aff;
-    // Reuse the id already occupying this slot. Affiliation ids are what
-    // authors reference, so minting a fresh one per keystroke would
-    // silently detach every author from its institution.
+    // 复用已占用该槽位的 id。作者引用的正是 Affiliation id，
+    // 因此每敲一次键就生成新 id 会
+    // 悄悄使每位作者脱离其机构。
     aff.id = slot < existing.size()
                  ? existing[slot].id
                  : AffiliationId(IdGenerator::NewAffiliationId());
@@ -406,7 +401,7 @@ ProjectController::SetAffiliationsText(const QString &semicolon_separated) {
     ++slot;
   }
   auto r = session_->Execute(MakeCmd(std::move(p)));
-  // EditingSystem prunes author links that no longer resolve.
+  // EditingSystem 会清除不再能解析的作者链接。
   if (r.status == EditStatus::Applied)
     EmitDocumentChanged();
   return r;
@@ -486,9 +481,9 @@ EditResult ProjectController::InsertSubsection(size_t section_index,
 
 EditResult ProjectController::InsertSubsectionAfter(const NodeId &anchor,
                                                     const QString &title) {
-  // The core resolves the anchor and, for a block, hands the following
-  // blocks to the new subsection so the heading lands where it was asked
-  // for rather than at the end of the section.
+  // 核心层解析锚点，对于 block 则把其后的 block 交给新的 subsection，
+  // 使标题落在所请求的位置，
+  // 而不是落在 section 末尾。
   InsertSubsectionAfterPayload payload;
   payload.after = anchor;
   payload.title = InlineFromText(ToStd(title));
@@ -652,7 +647,7 @@ EditResult ProjectController::EditParagraphRich(const NodeId &paragraph,
                                                 const InlineContent &content) {
   EditParagraphPayload p;
   p.paragraph = paragraph;
-  p.content = content; // already structured; no string round trip
+  p.content = content; // 已是结构化数据，无需字符串往返
   auto r = session_->Execute(MakeCmd(std::move(p)));
   if (r.status == EditStatus::Applied)
     EmitDocumentChanged();
@@ -686,7 +681,7 @@ EditResult ProjectController::RenameSection(const NodeId &section,
 
 EditResult ProjectController::RenameSubsection(const NodeId &subsection,
                                                const QString &title) {
-  // V1: rename via section rename payload on the subsection node.
+  // V1：在 subsection 节点上通过 section rename payload 重命名。
   RenameSubsectionPayload p;
   p.subsection = subsection;
   p.title = InlineFromText(ToStd(title));
@@ -723,8 +718,7 @@ EditResult ProjectController::DeleteBlock(const NodeId &block) {
 }
 
 EditResult ProjectController::DeleteNode(const NodeId &node) {
-  // One traversal answers "what kind of node is this, and where" for every
-  // branch below.
+  // 一次遍历即可为下面每个分支回答「这是什么类型的节点，以及在哪里」。
   auto address = LocateNode(session_->state().document(), node);
   if (!address)
     return DeleteBlock(node);
@@ -762,10 +756,10 @@ EditResult ProjectController::MoveNodeAfter(const NodeId &node,
                             "move target not found");
   }
 
-  // ---- A block: drop it into the anchor's container, after the anchor. ----
+  // ---- block：放入锚点所在容器中，位于锚点之后。 ----
   if (source->block) {
-    // A block anchor means "right after me, in my container"; a heading
-    // anchor means "at the start of that heading's own block list".
+    // block 锚点表示「在我之后、同一容器内」；
+    // 标题锚点表示「该标题自身 block 列表的开头」。
     NodeId parent;
     std::optional<size_t> index;
     const NodeId *anchor_parent = nullptr;
@@ -789,7 +783,7 @@ EditResult ProjectController::MoveNodeAfter(const NodeId &node,
         break;
       }
       index = *target->block + 1;
-      // Moving an earlier block out of the same list shifts the anchor.
+      // 将更靠前的 block 移出同一列表会使锚点位置偏移。
       if (source->section == target->section &&
           source->subsection == target->subsection &&
           source->subsubsection == target->subsubsection &&
@@ -797,7 +791,7 @@ EditResult ProjectController::MoveNodeAfter(const NodeId &node,
         --*index;
       }
     } else {
-      // Anchor is a heading: its own blocks are the destination.
+      // 锚点是标题：其自身的 block 列表即目标位置。
       switch (target->kind) {
       case NodeKind::Subsubsection:
         anchor_parent = &doc.body()
@@ -828,7 +822,7 @@ EditResult ProjectController::MoveNodeAfter(const NodeId &node,
     return ExecuteAndNotify(std::move(payload));
   }
 
-  // ---- A subsubsection moves inside its own subsection. ----
+  // ---- subsubsection 在其所属 subsection 内移动。 ----
   if (source->kind == NodeKind::Subsubsection) {
     if (source->section != target->section ||
         source->subsection != target->subsection) {
@@ -840,7 +834,7 @@ EditResult ProjectController::MoveNodeAfter(const NodeId &node,
                                      .sections[*source->section]
                                      .subsections[*source->subsection]
                                      .subsubsections;
-    // After a sibling subsubsection: right behind it. Otherwise append.
+    // 位于同级 subsubsection 之后时：紧跟其后。否则追加到末尾。
     const size_t to = target->kind == NodeKind::Subsubsection
                           ? *target->subsubsection + 1
                           : subsubsections.size();
@@ -852,17 +846,17 @@ EditResult ProjectController::MoveNodeAfter(const NodeId &node,
     return ExecuteAndNotify(std::move(payload));
   }
 
-  // ---- A subsection moves inside its own section. ----
+  // ---- subsection 在其所属 section 内移动。 ----
   if (source->kind == NodeKind::Subsection) {
     if (source->section != target->section) {
       return EditResult::Fail(
           FailureReason::InvalidTarget,
           "a subsection can only be reordered inside its section");
     }
-    // MoveSubsection takes an insert-before index in the original list.
-    // After a subsection: right behind it. After a block of the section
-    // itself: the first subsection slot, which is the earliest the model
-    // can render. After the section title: append.
+    // MoveSubsection 接受原列表中的「插入到其前」索引。
+    // 位于 subsection 之后时：紧跟其后。位于该 section 自身的 block
+    // 之后时：第一个 subsection 槽位，即模型
+    // 能渲染的最早位置。位于 section 标题之后时：追加。
     const size_t to =
         target->kind == NodeKind::Subsection
             ? *target->subsection + 1
@@ -874,7 +868,7 @@ EditResult ProjectController::MoveNodeAfter(const NodeId &node,
     return ExecuteAndNotify(std::move(payload));
   }
 
-  // ---- A section moves among sections. ----
+  // ---- section 在 section 之间移动。 ----
   if (*source->section == *target->section) {
     return EditResult::Fail(FailureReason::InvalidTarget, "already in place");
   }
@@ -966,10 +960,10 @@ EditResult ProjectController::DeleteSection(size_t index) {
   return r;
 }
 
-// The old GUI-side InsertCitation / InsertCrossReference helpers were removed
-// (citation plan §5): citations now enter the document exclusively through
+// 旧的 GUI 侧 InsertCitation / InsertCrossReference 辅助函数已移除
+// （引用方案 §5）：引用现在仅通过
 // InlineEditor::InsertCitationObject -> ParagraphContentEdited ->
-// EditParagraphRich, so the picker commit and the document can never diverge.
+// EditParagraphRich 进入文档，因此选择器的提交与文档绝不会不一致。
 
 void ProjectController::Undo() {
   auto r = session_->Undo();
@@ -999,10 +993,9 @@ BibliographyImportResult
 ProjectController::ImportBibliographyText(const QString &bibtex) {
   auto r = session_->ImportBibliography(ToStd(bibtex));
   if (r.status == BibliographyImportResult::Status::Ok) {
-    // The bibliography is a project resource: ProjectSession persists it
-    // atomically into <project>/references.bib on a successful import, so
-    // an import failure can never destroy the previous file (citation
-    // plan §7).
+    // 参考文献是项目资源：导入成功时 ProjectSession 会将其
+    // 原子地持久化到 <project>/references.bib，因此
+    // 导入失败绝不会破坏先前的文件（引用方案 §7）。
     EmitDocumentChanged();
   }
   return r;

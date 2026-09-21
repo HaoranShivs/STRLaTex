@@ -42,9 +42,9 @@ constexpr const char *kSettingsKey = "recent_projects";
 } // namespace
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
-  // GUI typography lives in Theme.h; the app font is the chrome baseline
-  // and no stylesheet pins a font-size over per-widget setFont() (UI plan
-  // §7). Set it before any widget exists so all inherit it.
+  // GUI 排版统一放在 Theme.h：应用字体是整个界面框架的基准字体，
+  // 且没有任何样式表会用 font-size 覆盖各控件自身的 setFont()
+  // （UI 方案 §7）。必须在任何控件创建之前设置，以便它们全部继承。
   QApplication::setFont(theme::AppFont());
 
   controller_ = new ProjectController(this);
@@ -72,13 +72,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
           &MainWindow::OnPreviewUpdated);
   connect(controller_, &ProjectController::saveFinished, this,
           &MainWindow::OnSaveFinished);
-  // P0-06: the authoritative persistence/preview/revision projection drives
-  // the state label; nothing in the UI keeps a second dirty flag.
+  // P0-06：由权威的 persistence/preview/revision 投影驱动状态标签；
+  // UI 中不保留第二份 dirty 标志。
   connect(controller_, &ProjectController::stateChanged, this,
           &MainWindow::RenderProjectState);
-  // Problems and Build Log consume the structured pipeline directly
-  // (Build Diagnostics plan §37): MainWindow wires the components, it never
-  // parses logs, computes source mappings or creates Diagnostics.
+  // Problems 与 Build Log 直接消费结构化流水线（Build Diagnostics 方案
+  // §37）：MainWindow 只负责连接各组件，绝不解析日志、计算源码映射或
+  // 创建 Diagnostic。
   connect(controller_, &ProjectController::buildCompleted, this,
           &MainWindow::OnBuildCompleted);
   connect(controller_, &ProjectController::buildEvent, this,
@@ -95,7 +95,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
   ShowWorkspace(false);
 }
 
-// ---------------- UI construction ----------------
+// ---------------- UI 构建 ----------------
 
 void MainWindow::BuildUi() {
   central_stack_ = new QStackedWidget(this);
@@ -110,8 +110,8 @@ void MainWindow::BuildUi() {
   connect(welcome_, &WelcomePage::OpenProjectRequested, this,
           &MainWindow::OnOpenProject);
   connect(welcome_, &WelcomePage::RecentActivated, this, [this](QString path) {
-    // P0-01: the recent-project entry point is a destructive navigation too;
-    // it must go through the same guard, never switch the project directly.
+    // P0-01：最近项目入口同样属于破坏性导航，必须走同一个守卫，
+    // 绝不能直接切换项目。
     OpenProjectDir(path);
   });
   for (const QString &path : recent_projects_) {
@@ -140,9 +140,8 @@ void MainWindow::BuildUi() {
     const auto *metadata = controller_->session().assets().registry().Find(id);
     if (!metadata)
       return QString();
-    // P0-04 (second check): the preview reads this path - resolve it through
-    // the project trust boundary so a malformed asset path cannot make the
-    // GUI open a file outside the project.
+    // P0-04（第二道检查）：preview 会读取该路径，因此要通过项目信任
+    // 边界解析它，避免畸形的 asset 路径让 GUI 打开项目之外的文件。
     auto resolved = pf::ResolveUntrustedProjectPath(
         controller_->session().paths().assets_dir, metadata->relative_path);
     if (!resolved.ok())
@@ -170,7 +169,7 @@ void MainWindow::BuildUi() {
   main_splitter_->addWidget(editor_);
   main_splitter_->addWidget(vertical_splitter_);
   main_splitter_->setSizes({270, 780, 450});
-  main_splitter_->setCollapsible(1, false); // the editor never collapses
+  main_splitter_->setCollapsible(1, false); // 编辑器永不折叠
 
   workspace_layout->addWidget(main_splitter_, 1);
   central_stack_->addWidget(workspace_);
@@ -218,8 +217,8 @@ QWidget *MainWindow::BuildHeader() {
   layout->addWidget(template_combo_);
   layout->addStretch(1);
 
-  // Focus mode toggle (UI plan §11): a quiet text control, never louder
-  // than the Build button, that hides the side panels for long writing.
+  // 专注模式开关（UI 方案 §11）：一个低调的文字控件，视觉上绝不比
+  // Build 按钮更抢眼，用于在长时间写作时隐藏侧边面板。
   focus_button_ = new QPushButton(QStringLiteral("⤢  Focus"), header);
   focus_button_->setObjectName("focusToggle");
   focus_button_->setCheckable(true);
@@ -260,8 +259,8 @@ void MainWindow::OnToggleFocusMode(bool on) {
   focus_mode_ = on;
   if (on) {
     pre_focus_sizes_ = main_splitter_->sizes();
-    // Hide the outline and the preview+problems column; the editor keeps
-    // the whole width (the QSplitter redistributes to visible panes).
+    // 隐藏大纲与 preview+problems 列；编辑器占据整个宽度
+    // （QSplitter 会把空间重新分配给可见面板）。
     outline_->setVisible(false);
     vertical_splitter_->setVisible(false);
   } else {
@@ -321,10 +320,10 @@ void MainWindow::WireEditor() {
           [this](QString t) {
             controller_->SetKeywordsText(std::move(t));
           });
-  // Rich commit from an InlineEditor row: marks, citations, cross
-  // references and inline equations arrive as InlineContent (plan §4.1).
-  // Body text has exactly one path into the document - the old
-  // ParagraphEdited / "[cite:key]" text encoding is gone (citation plan §5).
+  // 来自 InlineEditor 行的 rich commit：标记、引用、交叉引用与行内公式
+  // 以 InlineContent 形式到达（方案 §4.1）。正文文本进入文档只有唯一
+  // 路径——旧的 ParagraphEdited /「[cite:key]」文本编码已被移除
+  // （引用方案 §5）。
   connect(editor_, &BlockEditor::ParagraphContentEdited, this,
           [this](QString node, const InlineContent &content) {
             if (shutting_down_)
@@ -379,8 +378,8 @@ void MainWindow::WireEditor() {
       editor_, &BlockEditor::InsertBlockRequested, this,
       [this](QString type, QString after) {
         if (after.isEmpty()) {
-          // No anchor: the body has no blocks yet, so the only
-          // meaningful insert is the first section.
+          // 没有锚点：正文尚无任何块，此时唯一有意义的插入
+          // 就是第一个 section。
           if (type == "section") {
             const EditResult created = controller_->InsertSection(QString());
             if (created.status == EditStatus::Applied &&
@@ -451,13 +450,13 @@ void MainWindow::WireEditor() {
               statusBar()->showMessage(ToQ(result.detail), 3000);
             }
           });
-  // The legacy InsertCitationRequested / InsertCrossRefRequested detour is
-  // gone (citation plan §5): every citation enters through the focused
-  // row's InlineEditor and commits as rich content.
+  // 旧有的 InsertCitationRequested / InsertCrossRefRequested 迂回路径已
+  // 移除（引用方案 §5）：所有引用都通过聚焦行的 InlineEditor 进入，
+  // 并作为 rich content 提交。
   connect(outline_, &OutlinePanel::NodeActivated, this,
           [this](QString node) { editor_->RevealNode(node); });
-  // Reverse sync (UI plan §10): the caret moves -> the outline highlights
-  // the owning section, so a long manuscript always says where you are.
+  // 反向同步（UI 方案 §10）：光标移动 → 大纲高亮所属 section，
+  // 因此长稿件始终能显示你所在的位置。
   connect(editor_, &BlockEditor::FocusOutlineChanged, outline_,
           &OutlinePanel::SelectNode);
   connect(outline_, &OutlinePanel::CitationChosen, this,
@@ -468,8 +467,8 @@ void MainWindow::WireEditor() {
                   "Click into a Text block first, then pick a reference", 4000);
               return;
             }
-            // Same rich path as the toolbar picker: insert the Citation object
-            // at the row's caret and commit immediately.
+            // 与工具栏选择器相同的 rich 路径：在该行光标处插入
+            // Citation 对象并立即提交。
             if (editor_->InsertCitationIntoParagraph(*focused, key)) {
             } else {
               statusBar()->showMessage(
@@ -572,12 +571,11 @@ int MainWindow::CountWords() const {
       .size();
 }
 
-// ---------------- Actions ----------------
+// ---------------- 动作 ----------------
 
 void MainWindow::OnNewProject() {
-  // P0-01: the directory picker is shown first (so Cancel costs nothing),
-  // but the unsaved-changes guard runs before the current project is
-  // replaced. Every destructive navigation shares this one guard.
+  // P0-01：先弹出目录选择器（这样取消不会有任何代价），但在当前项目
+  // 被替换之前先执行未保存更改守卫。所有破坏性导航共用这一个守卫。
   QString dir =
       QFileDialog::getExistingDirectory(this, "New Project Directory");
   if (dir.isEmpty())
@@ -609,14 +607,13 @@ void MainWindow::OnNewProject() {
   }
   controller_->StartAutosave();
   ShowWorkspace(true);
-  RenderProjectState();  // P0-06: a new project is Dirty from the start.
+  RenderProjectState();  // P0-06：新项目从一开始就是 Dirty。
   statusBar()->showMessage("Created project: " + dir);
 }
 
 void MainWindow::OnCloseProject() {
-  // P0-01: same guard as every other destructive navigation. Only when the
-  // user's work is safe (Clean, explicitly discarded, or saved) does the
-  // project actually close.
+  // P0-01：与其他破坏性导航相同的守卫。只有当用户的工作已安全
+  // （Clean、被显式丢弃或已保存）时，项目才真正关闭。
   if (!controller_->has_project())
     return;
   if (MaybeSaveBeforeDestructiveNavigation() ==
@@ -639,9 +636,9 @@ void MainWindow::OnOpenProject() {
 }
 
 bool MainWindow::OpenProjectDir(const QString &dir) {
-  // P0-01: opening switches projects, so the current one gets the guard
-  // first. A programmatic caller that must bypass it passes through
-  // MaybeSaveBeforeDestructiveNavigation directly.
+  // P0-01：打开操作会切换项目，因此先对当前项目执行守卫。
+  // 必须绕过它的程序化调用方直接走
+  // MaybeSaveBeforeDestructiveNavigation。
   if (MaybeSaveBeforeDestructiveNavigation() ==
       DestructiveNavigationDecision::Cancel) {
     return false;
@@ -664,12 +661,12 @@ bool MainWindow::OpenProjectDir(const QString &dir) {
         "Recovered unsaved changes from the autosave snapshot.");
   }
   ShowWorkspace(true);
-  RenderProjectState();  // P0-06: render the actual state of the loaded project.
+  RenderProjectState();  // P0-06：渲染已加载项目的真实状态。
   statusBar()->showMessage("Opened project: " + dir);
   return true;
 }
 
-// ---------------- P0-01: unsaved-changes guard ----------------
+// ---------------- P0-01：未保存更改守卫 ----------------
 
 bool MainWindow::WaitForUserSaveCompletion(int timeout_ms) {
   if (!controller_->has_project())
@@ -677,8 +674,8 @@ bool MainWindow::WaitForUserSaveCompletion(int timeout_ms) {
   auto& session = controller_->session();
   QElapsedTimer timer;
   timer.start();
-  // The save worker posts a completion event; pumping the application event
-  // queue applies it and updates the authoritative persistence state.
+  // save worker 会投递完成事件；泵送应用事件队列可应用该事件，
+  // 并更新权威的持久化状态。
   while (timer.elapsed() < timeout_ms) {
     session.ProcessApplicationEvents();
     if (session.persistence_state() != PersistenceState::Saving)
@@ -690,10 +687,10 @@ bool MainWindow::WaitForUserSaveCompletion(int timeout_ms) {
 
 MainWindow::DestructiveNavigationDecision
 MainWindow::MaybeSaveBeforeDestructiveNavigation() {
-  // Fixed order (rectification plan P0-01):
-  //   1. commit the row the user is editing, so the snapshot is complete;
-  //   2. pump already-completed async events;
-  //   3. read the authoritative persistence state and ask accordingly.
+  // 固定顺序（整改方案 P0-01）：
+  //   1. 提交用户正在编辑的行，使 snapshot 完整；
+  //   2. 泵送已经完成的异步事件；
+  //   3. 读取权威的持久化状态，并据此询问。
   if (editor_)
     editor_->CommitFocused();
   if (!controller_->has_project())
@@ -720,7 +717,7 @@ MainWindow::MaybeSaveBeforeDestructiveNavigation() {
       return 0;
     if (box.clickedButton() == discard)
       return 1;
-    return 2;  // cancel
+    return 2;  // 取消
   };
 
   switch (session.persistence_state()) {
@@ -734,8 +731,8 @@ MainWindow::MaybeSaveBeforeDestructiveNavigation() {
       if (choice == 2)
         return DestructiveNavigationDecision::Cancel;
       if (choice == 1)
-        return DestructiveNavigationDecision::Proceed;  // explicit discard
-      // Save: enqueue and wait for the matching revision to land.
+        return DestructiveNavigationDecision::Proceed;  // 显式丢弃
+      // 保存：入队并等待对应的 revision 落盘。
       auto result = session.Save();
       if (result.status != SaveResult::Status::Queued) {
         QMessageBox::critical(this, "PaperForge",
@@ -749,8 +746,8 @@ MainWindow::MaybeSaveBeforeDestructiveNavigation() {
         return DestructiveNavigationDecision::Cancel;
       }
       RenderProjectState();
-      // Only proceed when the project is genuinely clean now; a save that
-      // failed (or that a newer edit superseded) must keep the user here.
+      // 只有项目现在确实为 Clean 才继续；保存失败（或被更新的编辑取代）
+      // 时必须把用户留在此处。
       return session.persistence_state() == PersistenceState::Clean
                  ? DestructiveNavigationDecision::Proceed
                  : DestructiveNavigationDecision::Cancel;
@@ -802,8 +799,8 @@ MainWindow::MaybeSaveBeforeDestructiveNavigation() {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
-  // P0-01: closing the window is a destructive navigation. The destructor's
-  // best-effort CommitFocused() is no longer what protects the user's work.
+  // P0-01：关闭窗口属于破坏性导航。析构函数中尽力而为的
+  // CommitFocused() 已不再是保护用户工作的手段。
   if (MaybeSaveBeforeDestructiveNavigation() ==
       DestructiveNavigationDecision::Cancel) {
     event->ignore();
@@ -815,13 +812,12 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 void MainWindow::OnSave() {
   if (!controller_->has_project())
     return;
-  // Citation plan §6: anything that reads the Document must first flush the
-  // focused row, or the snapshot silently misses what the GUI already shows.
+  // 引用方案 §6：任何读取 Document 的操作都必须先冲刷聚焦行，
+  // 否则 snapshot 会静默漏掉 GUI 已经显示的内容。
   editor_->CommitFocused();
-  // Save is asynchronous: the snapshot is captured now and written by the
-  // save worker. P0-06: the label follows the authoritative state - the
-  // session flips to Saving on a successful enqueue and the completion
-  // handler renders the outcome; a rejected enqueue shows the failure.
+  // 保存是异步的：snapshot 此刻捕获，由 save worker 写入。P0-06：
+  // 标签跟随权威状态——入队成功时 session 切换为 Saving，完成处理器
+  // 渲染最终结果；入队被拒绝则显示失败。
   auto result = controller_->session().Save();
   if (result.status != SaveResult::Status::Queued) {
     save_state_label_->setText("! Save failed — " + ToQ(result.detail));
@@ -834,9 +830,8 @@ void MainWindow::OnSave() {
 void MainWindow::OnSaveFinished(bool success, const QString &detail) {
   if (shutting_down_)
     return;
-  // P0-06: the completion itself is informational; the label re-derives
-  // from the session state (RenderProjectState is invoked by the
-  // stateChanged emission that follows every completion).
+  // P0-06：完成事件本身只提供信息；标签会从 session 状态重新推导
+  // （每次完成之后都会发出 stateChanged，从而调用 RenderProjectState）。
   if (!success && !detail.isEmpty())
     statusBar()->showMessage("Save: " + detail, 5000);
   RenderProjectState();
@@ -845,8 +840,8 @@ void MainWindow::OnSaveFinished(bool success, const QString &detail) {
 void MainWindow::RenderProjectState() {
   if (shutting_down_)
     return;
-  // P0-06: single source of truth. The label is a pure projection of
-  // ProjectSession's persistence/preview state and current revision.
+  // P0-06：单一事实来源。该标签是 ProjectSession 的
+  // persistence/preview 状态与当前 revision 的纯投影。
   if (!controller_->has_project()) {
     save_state_label_->setText("");
     save_state_label_->setStyleSheet("");
@@ -873,8 +868,8 @@ void MainWindow::RenderProjectState() {
   }
 }
 
-// Undo/redo restore a whole document snapshot, so rows are re-read from the
-// document (their structure may be identical while the text is not).
+// Undo/Redo 会恢复整个文档 snapshot，因此各行需要从文档重新读取
+// （行结构可能相同，但文本未必）。
 void MainWindow::OnUndo() {
   controller_->Undo();
   RefreshDocumentView();
@@ -888,19 +883,18 @@ void MainWindow::OnBuild() {
   if (!controller_->has_project())
     return;
   if (building_) {
-    // The button doubles as Cancel during a build (plan §34/§39). The
-    // worker finishes the attempt as Cancelled; its preview and Problems
-    // results are gated out, its log stays visible until replaced.
+    // build 期间该按钮兼作 Cancel（方案 §34/§39）。worker 会以
+    // Cancelled 结束本次尝试；它的 preview 与 Problems 结果会被 gate
+    // 掉，日志则保持可见，直到被替换。
     controller_->CancelBuild();
     build_button_->setText("Cancelling \u25EF");
     return;
   }
-  // Citation plan §6: Commit → the commit path runs synchronously
-  // (ParagraphContentEdited → EditParagraphRich → EditingSystem → the
-  // Document now holds the fresh content and its revision was bumped) →
-  // only then RequestBuild, so the build snapshot can never lag behind
-  // what the user sees - the exact failure mode that made a freshly
-  // chosen Citation vanish from the PDF.
+  // 引用方案 §6：Commit → 提交路径同步执行
+  // （ParagraphContentEdited → EditParagraphRich → EditingSystem →
+  // Document 此时已持有新内容且 revision 已递增）→ 之后才 RequestBuild，
+  // 这样 build snapshot 绝不会落后于用户所见——正是这个失败模式曾让
+  // 刚选中的 Citation 从 PDF 中消失。
   editor_->CommitFocused();
   build_button_->setText("Building ◌");
   controller_->RequestBuild(true);
@@ -909,8 +903,8 @@ void MainWindow::OnBuild() {
 void MainWindow::OnImportBibliography() {
   if (!controller_->has_project())
     return;
-  // Flush first: the import triggers a validation + build, and validation
-  // reads the Document (citation plan §6/§9).
+  // 先冲刷：导入会触发 validation + build，而 validation 会读取
+  // Document（引用方案 §6/§9）。
   editor_->CommitFocused();
   QString path =
       QFileDialog::getOpenFileName(this, "Import BibTeX", {}, "BibTeX (*.bib)");
@@ -926,8 +920,8 @@ void MainWindow::OnImportBibliography() {
                           .arg(result.entry_count)
                           .arg(path);
     if (!result.duplicate_keys.empty()) {
-      // Citation plan §9: a duplicate key is surfaced, never silently
-      // merged. BibTeX keeps the last definition; so do we.
+      // 引用方案 §9：重复 key 会被显式提示，绝不静默合并。
+      // BibTeX 保留最后一个定义；我们也如此。
       QStringList dups;
       for (const auto &key : result.duplicate_keys) {
         dups << QString::fromStdString(key);
@@ -944,8 +938,8 @@ void MainWindow::OnImportBibliography() {
     }
     RefreshReferenceItems();
   } else {
-    // A failed import leaves the previous bibliography and its
-    // references.bib untouched (citation plan §7).
+    // 导入失败时，原有 bibliography 及其 references.bib 保持不变
+    // （引用方案 §7）。
     QMessageBox::warning(this, "PaperForge",
                          "Failed to parse BibTeX file: nothing was "
                          "imported; the current bibliography is unchanged.");
@@ -953,21 +947,21 @@ void MainWindow::OnImportBibliography() {
 }
 
 void MainWindow::OnChangeTemplate(const QString &template_id) {
-  // A template change re-renders everything from the Document; flush the
-  // focused row first (citation plan §6).
+  // 更换模板会依据 Document 重新渲染全部内容；先冲刷聚焦行
+  // （引用方案 §6）。
   editor_->CommitFocused();
   controller_->ChangeTemplate(template_id);
   UpdateRequiredHints();
 }
 
-// ---------------- Refresh ----------------
+// ---------------- 刷新 ----------------
 
 MainWindow::~MainWindow() {
   shutting_down_ = true;
-  // Best effort: keep whatever the user last typed.
+  // 尽力而为：保留用户最后输入的内容。
   if (editor_)
     editor_->CommitFocused();
-  // Late signals from widgets that are being destroyed must not reach us.
+  // 正在销毁的控件发出的迟到信号绝不能到达此处。
   if (editor_)
     disconnect(editor_, nullptr, this, nullptr);
   if (controller_) {
@@ -982,9 +976,9 @@ void MainWindow::RefreshDocumentView() {
   if (!controller_->has_project())
     return;
   const Document &doc = controller_->session().state().document();
-  // Diagnostics belong to the build that produced them: once the document
-  // moves on, mark the visible set Outdated (plan §49). The content of the
-  // diagnostics is not rewritten - the next build replaces the whole set.
+  // Diagnostic 归属于产生它的那次 build：文档一旦继续变化，就把可见集合
+  // 标记为 Outdated（方案 §49）。diagnostic 的内容不会被改写——下一次
+  // build 会整体替换该集合。
   if (has_built_) {
     const auto revision = controller_->current_revision();
     problems_->SetStale(
@@ -993,21 +987,19 @@ void MainWindow::RefreshDocumentView() {
                              ? revision.value - last_built_revision_.value
                              : 0));
   }
-  // Citation plan §3: hand the editor the document-wide key -> number map
-  // before rebuilding rows. The "[1]" pills in the GUI and the numbers in
-  // the PDF are the same projection of the same citation-order policy.
+  // 引用方案 §3：在重建各行之前，把文档级的 key -> number 映射交给
+  // 编辑器。GUI 中的「[1]」pill 与 PDF 中的编号是同一套引用顺序策略
+  // 的同一种投影。
   editor_->SetCitationNumbers(controller_->CitationNumbers());
-  // The insert and "/" menus are filtered by what the current template can
-  // express (plan §9).
+  // 插入菜单与「/」菜单按当前模板能表达的内容进行过滤（方案 §9）。
   if (const auto *tpl = TemplateRegistry::Instance().Find(
           controller_->session().state().template_selection())) {
     editor_->SetMaxHeadingDepth(tpl->capabilities.max_heading_depth);
   } else {
     editor_->SetMaxHeadingDepth(3);
   }
-  // Never tear the rows down while the user is mid-edit: rebuilding
-  // recreates every editor widget, which would throw away the text being
-  // typed. The refresh is deferred to the next commit instead.
+  // 用户正在编辑时绝不拆除各行：重建会重新创建每个编辑控件，
+  // 从而丢弃正在输入的文本。此时改为把刷新推迟到下一次提交。
   if (editor_->HasUncommittedFocus()) {
     pending_structural_refresh_ = true;
     RefreshSidePanels();
@@ -1018,8 +1010,8 @@ void MainWindow::RefreshDocumentView() {
   RefreshSidePanels();
 }
 
-// Outline, required-field hints and word count: everything except the editor
-// rows, so it is always safe to run.
+// 大纲、必填字段提示与字数统计：除编辑器行之外的一切，
+// 因此任何时候运行都是安全的。
 void MainWindow::RefreshSidePanels() {
   if (shutting_down_)
     return;
@@ -1035,9 +1027,8 @@ void MainWindow::RefreshSidePanels() {
 void MainWindow::OnPreviewUpdated(const pf::PreviewUpdate &update) {
   if (shutting_down_)
     return;
-  // The session's preview gate already dropped stale/foreign results; the
-  // identity is still asserted here so the pane never shows a PDF from a
-  // different project or revision.
+  // session 的 preview gate 已经丢弃了陈旧/异源的结果；这里仍然校验
+  // 身份，确保该面板绝不显示来自其他项目或 revision 的 PDF。
   if (!controller_->has_project())
     return;
   if (update.project_id != controller_->session().state().id())
@@ -1057,8 +1048,8 @@ void MainWindow::OnPreviewUpdated(const pf::PreviewUpdate &update) {
     last_build_revision_ = revision;
     RefreshPreview();
   } else if (last_outcome_ == BuildResult::Outcome::Cancelled) {
-    // A cancelled attempt is not a document failure (plan §34): the
-    // preview keeps showing the last valid PDF and the button says so.
+    // 被取消的尝试不属于文档失败（方案 §34）：preview 继续显示
+    // 最后一个有效 PDF，按钮也如实说明。
     build_button_->setText("Build cancelled");
     build_state_label_->setText("Build: cancelled");
   } else {
@@ -1070,8 +1061,8 @@ void MainWindow::OnPreviewUpdated(const pf::PreviewUpdate &update) {
             .arg(theme::kError));
   }
   QTimer::singleShot(3000, this, [this]() {
-    // A newer attempt may already own the button (Cancel); don't clobber
-    // its state (plan §39).
+    // 更新的尝试可能已经接管该按钮（Cancel）；不要覆盖它的状态
+    // （方案 §39）。
     if (building_)
       return;
     build_button_->setText("Build  ▶");
@@ -1082,21 +1073,21 @@ void MainWindow::OnPreviewUpdated(const pf::PreviewUpdate &update) {
 void MainWindow::OnBuildCompleted(const pf::BuildResult &result) {
   if (shutting_down_)
     return;
-  // One update per finished build (plan §30); the diagnostics are already
-  // structured - nothing here inspects log text.
+  // 每次完成的 build 只更新一次（方案 §30）；diagnostic 已是结构化
+  // 数据——这里不检查任何日志文本。
   problems_->SetDiagnostics(result.diagnostics);
   last_built_revision_ = result.revision;
   last_outcome_ = result.outcome;
   has_built_ = true;
 
   if (result.outcome == BuildResult::Outcome::Cancelled) {
-    // Cancelled builds update neither Preview nor tab visibility; only
-    // the transient status changes (plan §34).
+    // 被取消的 build 既不更新 Preview 也不改变标签页可见性；
+    // 只有瞬时状态会变化（方案 §34）。
     return;
   }
-  // Automatic tab switch (plan §40): success never steals the view; a
-  // document-level failure reveals Problems; a runtime-level failure -
-  // where no Problems entry can name a block - reveals the Build Log.
+  // 自动切换标签页（方案 §40）：成功绝不抢走视图；文档级失败会显示
+  // Problems；运行时级失败——此时没有 Problems 条目能指向具体块——
+  // 则显示 Build Log。
   if (result.outcome == BuildResult::Outcome::Failure) {
     const bool system_failure =
         result.failure_kind == CompileFailureKind::RuntimeMissing ||
@@ -1119,8 +1110,8 @@ void MainWindow::OnBuildEvent(const pf::BuildEvent &event) {
   switch (event.type) {
   case BuildEventType::BuildStarted:
     building_ = true;
-    // Build button becomes Cancel while an attempt is in flight
-    // (plan §39).
+    // 尝试进行中时，Build 按钮变为 Cancel
+    // （方案 §39）。
     build_button_->setText("Cancel  \u25A0");
     break;
   case BuildEventType::BuildSucceeded:
@@ -1136,15 +1127,15 @@ void MainWindow::OnBuildEvent(const pf::BuildEvent &event) {
 void MainWindow::OnProblemActivated(const pf::Diagnostic &diagnostic) {
   if (shutting_down_ || !controller_->has_project())
     return;
-  // Navigation (plan §25/§28/§29/§48): block first, then the Build Log as
-  // fallback, otherwise nothing.
+  // 导航（方案 §25/§28/§29/§48）：优先定位到块，其次回退到 Build Log，
+  // 否则不做任何事。
   if (diagnostic.location.has_block_location()) {
     const Document &doc = controller_->session().state().document();
     if (doc.ContainsNode(diagnostic.location.node)) {
       editor_->RevealNode(ToQ(diagnostic.location.node.value()));
       return;
     }
-    // The block was deleted after this build: report, never crash.
+    // 该块在本次 build 之后已被删除：给出提示，绝不崩溃。
     statusBar()->showMessage(
         "Location unavailable - that block is gone; rebuild to refresh "
         "the problems list",
@@ -1159,9 +1150,9 @@ void MainWindow::OnProblemActivated(const pf::Diagnostic &diagnostic) {
 
 void MainWindow::OnBuildStatusChanged(const QString &status) {
   build_state_label_->setText("Build: " + status);
-  // The phase observer is the reliable "no build in flight" signal: it also
-  // fires when a request is dropped during the debounce. Release the Cancel
-  // affordance whenever the coordinator returns to Idle (plan §39).
+  // 阶段观察者是可靠的「没有 build 在进行」信号：请求在 debounce 期间
+  // 被丢弃时它也会触发。只要 coordinator 回到 Idle，就撤下 Cancel 入口
+  // （方案 §39）。
   if (status == "Idle") {
     building_ = false;
     if (build_button_->text() == "Cancel  \u25A0" ||
@@ -1175,7 +1166,7 @@ void MainWindow::OnBuildStatusChanged(const QString &status) {
 
 void MainWindow::ZoomPreviewForTest(double zoom, double scroll_x,
                                     double scroll_y) {
-  // zoom <= 0 keeps the current zoom and only scrolls.
+  // zoom <= 0 时保持当前缩放，只进行滚动。
   if (zoom > 0.0)
     preview_->SetZoom(zoom);
   preview_->ScrollTo(scroll_x, scroll_y);
@@ -1184,7 +1175,7 @@ void MainWindow::ZoomPreviewForTest(double zoom, double scroll_x,
 void MainWindow::RefreshPreview() {
   if (current_pdf_path_.isEmpty())
     return;
-  // Keep the current zoom and scroll position; only the page changes.
+  // 保持当前缩放与滚动位置；只有页面发生变化。
   preview_->SetDocument(current_pdf_path_);
 }
 

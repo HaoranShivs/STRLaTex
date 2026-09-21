@@ -24,15 +24,14 @@ namespace pf::gui {
 namespace {
 
 constexpr double kPointsPerInch = 72.0;
-constexpr int kBaselineDpi = 96;  // 100% zoom
+constexpr int kBaselineDpi = 96;  // 100% 缩放
 constexpr int kMinRenderDpi = 48;
-// A whole paper stays in memory page by page, so the raster resolution is
-// capped lower than a single page viewer would need.
+// 整篇论文按页驻留内存，因此光栅分辨率上限比单页查看器所需值更低。
 constexpr int kMaxRenderDpi = 300;
 constexpr int kRerenderDelayMs = 140;
-// Pages beyond the viewport that stay resident (a page at 150 DPI is ~8 MB).
+// 视口之外仍保持驻留的页数（150 DPI 下一页约 8 MB）。
 constexpr int kKeepPagesAround = 2;
-constexpr int kPageGap = 14;  // the seam between two pages
+constexpr int kPageGap = 14;  // 两页之间的接缝
 
 QString RunCapture(const QString& program, const QStringList& arguments) {
     QProcess process;
@@ -44,7 +43,7 @@ QString RunCapture(const QString& program, const QStringList& arguments) {
     return QString::fromUtf8(process.readAllStandardOutput());
 }
 
-// Page count from pdfinfo; 0 when it cannot be determined.
+// 通过 pdfinfo 获取的页数；无法确定时返回 0。
 int QueryPageCount(const QString& pdf_path) {
     const QString output = RunCapture("pdfinfo", {pdf_path});
     for (const QString& line : output.split(QLatin1Char('\n'))) {
@@ -58,7 +57,7 @@ int QueryPageCount(const QString& pdf_path) {
     return 0;
 }
 
-// Rasterise one page with pdftoppm. Returns an empty pixmap on failure.
+// 用 pdftoppm 将单页光栅化。失败时返回空 pixmap。
 QPixmap RenderPageToPixmap(const QString& pdf_path, int page, int dpi,
                            double* width_pt, double* height_pt) {
     QTemporaryDir dir;
@@ -72,8 +71,7 @@ QPixmap RenderPageToPixmap(const QString& pdf_path, int page, int dpi,
         process.kill();
         return {};
     }
-    // pdftoppm pads the page number for documents with many pages, so look for
-    // both spellings.
+    // pdftoppm 会为页数较多的文档补零页码，因此两种写法都要尝试。
     const QString prefix = dir.path() + "/page";
     QString png;
     for (const char* form : {"-%1.png", "-%01.png", "-%02.png",
@@ -83,7 +81,7 @@ QPixmap RenderPageToPixmap(const QString& pdf_path, int page, int dpi,
         if (QFileInfo::exists(candidate)) png = candidate;
     }
     if (png.isEmpty()) return {};
-    QPixmap pixmap(png);  // loaded before the temporary directory goes away
+    QPixmap pixmap(png);  // 在临时目录被删除前完成加载
     if (pixmap.isNull()) return {};
     if (page == 1 && width_pt && height_pt) {
         *width_pt = pixmap.width() / static_cast<double>(dpi) * kPointsPerInch;
@@ -189,7 +187,7 @@ PdfPreview::PdfPreview(QWidget* parent) : QWidget(parent) {
     ShowMessage(QStringLiteral("No preview yet — press Build."));
 }
 
-// ---------------------------------------------------------------- document
+// ---------------------------------------------------------------- 文档
 
 void PdfPreview::SetDocument(const QString& pdf_path) {
     pdf_path_ = pdf_path;
@@ -198,7 +196,7 @@ void PdfPreview::SetDocument(const QString& pdf_path) {
         ShowMessage(QStringLiteral("No preview yet — press Build."));
         return;
     }
-    // The first page also tells us the page geometry.
+    // 首页同时给出页面几何尺寸。
     const QPixmap probe = RenderPageToPixmap(pdf_path_, 1, kBaselineDpi,
                                              &page_width_pt_,
                                              &page_height_pt_);
@@ -229,8 +227,7 @@ void PdfPreview::ClearPages() {
     for (PageSlot& slot : pages_) {
         if (slot.label) {
             column_layout_->removeWidget(slot.label);
-            // Hide before the deferred delete, or the old sheet keeps painting
-            // over the new ones.
+            // 必须先隐藏再延迟删除，否则旧页面会继续绘制在新页面之上。
             slot.label->hide();
             slot.label->deleteLater();
         }
@@ -238,7 +235,7 @@ void PdfPreview::ClearPages() {
     pages_.clear();
     page_count_ = 0;
     page_indicator_->clear();
-    // The placeholder message must not stay above the pages it was replaced by.
+    // 占位提示不能残留在取代它的页面之上。
     if (message_label_) {
         column_layout_->removeWidget(message_label_);
         message_label_->hide();
@@ -274,7 +271,7 @@ QLabel* PdfPreview::MakePageLabel(int index) {
     auto* label = new QLabel(column_);
     label->setObjectName("pdfPageSheet");
     label->setAlignment(Qt::AlignCenter);
-    // A white sheet with a hairline border, so two pages are visibly two.
+    // 白色纸张配细边框，让两页清晰可辨。
     label->setStyleSheet(QString("background: #FFFFFF; color: %1;"
                                  " border: 1px solid %2;")
                              .arg(theme::kDisabledText, theme::kDivider));
@@ -294,7 +291,7 @@ QSize PdfPreview::PageSizeAtZoom() const {
     return QSize(width, height);
 }
 
-// ------------------------------------------------------------------ render
+// ------------------------------------------------------------------ 渲染
 
 int PdfPreview::RenderDpiFor(double zoom) const {
     const int dpi = static_cast<int>(std::lround(
@@ -332,8 +329,7 @@ void PdfPreview::ReleaseFarPages(int first, int last) {
     }
 }
 
-// Renders the pages around the viewport and drops the rasters far away, so a
-// long paper costs a bounded amount of memory.
+// 渲染视口附近的页并释放远处页面的光栅，使长篇论文的内存占用有上界。
 void PdfPreview::EnsureVisiblePages() {
     if (pages_.empty()) return;
     const int page_height = PageSizeAtZoom().height();
@@ -361,8 +357,7 @@ void PdfPreview::EnsureVisiblePages() {
 void PdfPreview::RenderAtCurrentZoom() {
     if (pdf_path_.isEmpty() || pages_.empty()) return;
     const int dpi = RenderDpiFor(zoom_);
-    // Drop rasters at the wrong resolution, then let the window logic rebuild
-    // the pages that are actually on screen.
+    // 先丢弃分辨率不符的光栅，再由窗口逻辑重建实际可见的页面。
     for (PageSlot& slot : pages_) {
         if (!slot.pixmap.isNull() && slot.pixmap_dpi != dpi) {
             slot.pixmap = QPixmap();
@@ -374,10 +369,9 @@ void PdfPreview::RenderAtCurrentZoom() {
 
 void PdfPreview::ScheduleRerender() { rerender_timer_->start(); }
 
-// The scrollable column is sized from the page geometry we already know.
-// QWidget::adjustSize() cannot be used here: it reads the layout's cached
-// sizeHint before activating the layout, which is stale right after the pages
-// are (re)created and collapsed the column to zero height.
+// 可滚动列依据已知的页面几何尺寸确定大小。
+// 此处不能用 QWidget::adjustSize()：它会在激活布局前读取布局缓存的
+// sizeHint，而该缓存在页面刚被（重新）创建后已经过期，会把列高度压为 0。
 void PdfPreview::UpdateColumnSize() {
     const int viewport_width = std::max(1, scroll_->viewport()->width());
     column_layout_->activate();
@@ -395,15 +389,14 @@ void PdfPreview::UpdateColumnSize() {
                     count * page.height() + (count - 1) * kPageGap);
 }
 
-// -------------------------------------------------------------------- zoom
+// -------------------------------------------------------------------- 缩放
 
 void PdfPreview::ApplyZoom(bool rerender_now) {
     const QSize size = PageSizeAtZoom();
     for (PageSlot& slot : pages_) {
         if (slot.label) slot.label->setFixedSize(size);
         if (!slot.pixmap.isNull() && slot.label) {
-            // Immediate, slightly soft feedback; the debounced re-render
-            // replaces it with a raster at the right resolution.
+            // 立即给出略模糊的反馈；随后由防抖重渲染替换为正确分辨率的光栅。
             slot.label->setText(QString());
             slot.label->setPixmap(slot.pixmap.scaled(
                 size, Qt::KeepAspectRatio, Qt::SmoothTransformation));
@@ -487,7 +480,7 @@ int PdfPreview::visiblePage() const {
     return std::clamp(index, 0, page_count_ - 1) + 1;
 }
 
-// Zoom so the document point under the cursor does not move.
+// 缩放时保持光标下的文档位置不动。
 void PdfPreview::ZoomAtPoint(double new_zoom, const QPoint& viewport_pos) {
     const double clamped = std::clamp(new_zoom, kMinZoom, kMaxZoom);
     if (std::abs(clamped - zoom_) < 0.001) return;
@@ -512,7 +505,7 @@ void PdfPreview::ZoomAtPoint(double new_zoom, const QPoint& viewport_pos) {
     EnsureVisiblePages();
 }
 
-// -------------------------------------------------------------- interaction
+// -------------------------------------------------------------- 交互
 
 bool PdfPreview::eventFilter(QObject* watched, QEvent* event) {
     if (watched != scroll_->viewport()) {
@@ -523,8 +516,8 @@ bool PdfPreview::eventFilter(QObject* watched, QEvent* event) {
             auto* wheel = static_cast<QWheelEvent*>(event);
             const int delta = wheel->angleDelta().y();
             if (delta == 0) break;
-            // Wheel zooms (as asked); Shift pans horizontally instead, which
-            // is the usual escape hatch once the page is wider than the pane.
+            // 滚轮用于缩放（按需求）；按住 Shift 则改为水平平移，这是页面
+            // 宽于面板时的常用应对方式。
             if (wheel->modifiers() & Qt::ShiftModifier) {
                 scroll_->horizontalScrollBar()->setValue(
                     scroll_->horizontalScrollBar()->value() - delta / 2);
@@ -577,8 +570,7 @@ void PdfPreview::resizeEvent(QResizeEvent* event) {
             std::max(200, scroll_->viewport()->width()));
     }
     UpdateColumnSize();
-    // While "fit width" is active the page tracks the pane, so resizing the
-    // window keeps the whole page visible.
+    // 处于「适应宽度」状态时页面跟随面板，因此调整窗口大小仍能看到整页。
     if (fit_width_ && !pages_.empty()) {
         const double fit = FitZoomFor(scroll_->viewport()->size(),
                                       page_width_pt_, page_height_pt_, false);

@@ -16,7 +16,7 @@ namespace pf::gui {
 namespace {
 QString ToQ(const std::string& s) { return QString::fromStdString(s); }
 
-// The tree item whose node key matches, or null. Keys are stored in UserRole.
+// 返回节点 key 匹配的树项，没有则返回空。key 存储在 UserRole 中。
 QTreeWidgetItem* FindOutlineItem(QTreeWidget* tree, const QString& key) {
     if (key.isEmpty()) return nullptr;
     for (QTreeWidgetItemIterator it(tree); *it; ++it) {
@@ -125,15 +125,14 @@ void OutlinePanel::ApplyReferenceFilter() {
 
 void OutlinePanel::RebuildFromDocument(
     const Document& doc, const std::vector<BibEntry>& references) {
-    // Outline: front matter that readers navigate to, then the structure
-    // (design #17).
+    // 大纲：先是读者可导航到的 front matter，然后是正文结构（设计 #17）。
     outline_->clear();
     const auto& front = doc.front_matter();
     if (front.abstract_text && !pf::InlineIsBlank(*front.abstract_text)) {
         auto* item = new QTreeWidgetItem(outline_);
         item->setText(0, QStringLiteral("Abstract"));
-        // Front matter has no block node, so it is addressed by the editor
-        // row key, which RevealNode understands.
+        // front matter 没有区块节点，因此用编辑器行 key 来寻址，
+        // RevealNode 能识别这种 key。
         item->setData(0, Qt::UserRole, QStringLiteral("front:abstract"));
         QFont font = item->font(0);
         font.setItalic(true);
@@ -169,7 +168,7 @@ void OutlinePanel::RebuildFromDocument(
         }
     }
 
-    // References.
+    // References 部分。
     references_ = references;
     ref_list_->clear();
     for (const auto& entry : references) {
@@ -188,13 +187,12 @@ void OutlinePanel::RebuildFromDocument(
         item->setToolTip(ToQ(entry.title));
     }
     ref_count_->setText(QString("%1 references").arg(references.size()));
-    // Keep the user's search term in force over the freshly built list.
+    // 在新构建出的列表上继续沿用用户的搜索词。
     ApplyReferenceFilter();
 
-    // Re-highlight the row the caret is on: the rebuild replaced every item,
-    // so the tracking highlight (UI plan §10) is restored here. No scroll -
-    // the user may be reading elsewhere in the tree, and a refresh that
-    // yanks the viewport would be worse than no refresh at all.
+    // 重新高亮光标所在行：重建替换了所有项，因此在此恢复
+    // 跟踪高亮（UI 方案 §10）。不滚动——用户可能在树的其他位置
+    // 阅读，刷新时强行拉动视口还不如不刷新。
     if (!selected_key_.isEmpty()) {
         if (QTreeWidgetItem* keep = FindOutlineItem(outline_, selected_key_)) {
             outline_->setCurrentItem(keep);
@@ -215,7 +213,7 @@ void OutlinePanel::SelectNode(const QString& outline_key) {
         outline_->setCurrentItem(item);
         outline_->scrollToItem(item, QAbstractItemView::PositionAtCenter);
     } else {
-        // A deleted node: leave nothing highlighted.
+        // 节点已被删除：不保留任何高亮。
         outline_->setCurrentItem(nullptr);
     }
 }

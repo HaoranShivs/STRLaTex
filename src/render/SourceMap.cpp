@@ -19,7 +19,7 @@ void SourceMap::AddMapping(std::uint32_t line, NodeId node,
 
 std::optional<SourceMapEntry> SourceMap::ResolveEntry(
     std::uint32_t line) const {
-    // Find the last mapping at or before `line` (nearest node start).
+    // 查找位于 `line` 处或之前（节点起始位置最近）的最后一条映射。
     const Entry* best = nullptr;
     for (const auto& entry : line_to_node_) {
         if (entry.line <= line && (!best || entry.line >= best->line)) {

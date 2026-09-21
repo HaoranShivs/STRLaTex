@@ -14,10 +14,9 @@
 namespace pf {
 
 
-// Compile-stage configuration (plan §9): which engine, and where the TeX
-// environment lives. texlive_root is the bundled runtime; empty means "not
-// available" and the compiler reports that as a runtime error, not a
-// document error.
+// 编译阶段配置（方案 §9）：使用哪个引擎，以及 TeX 环境所在的位置。
+// texlive_root 是随附的运行时；为空表示「不可用」，此时编译器将其报为
+// 运行时错误，而不是文档错误。
 struct CompilerConfig {
     LatexEngine engine = LatexEngine::PdfLatex;
     BibliographyEngine bibliography_engine = BibliographyEngine::None;
@@ -25,8 +24,8 @@ struct CompilerConfig {
     bool keep_logs = true;
 };
 
-// Classification of why a compile failed (plan §37). Runtime problems are
-// distinct from document problems so the UI can show them differently.
+// 编译失败原因的归类（方案 §37）。运行时问题与文档问题彼此区分，
+// 以便 UI 以不同方式展示。
 enum class CompileFailureKind : std::uint8_t {
     None,
     RuntimeMissing,
@@ -55,9 +54,9 @@ struct CompilerMessage {
     std::string text;
 };
 
-// Raw output chunk handed to the UI while the compiler runs (Build
-// Diagnostics plan §44): the compiler keeps streaming stdout/stderr into the
-// Build Log even though the Diagnostic parser only sees the finished log.
+// 编译器运行期间交给 UI 的原始输出分片（Build Diagnostics 方案 §44）：
+// 即使 Diagnostic 解析器只看到已完成的日志，编译器仍会持续把 stdout/stderr
+// 流式写入 Build Log。
 struct CompileOutputChunk {
     bool is_stderr = false;
     std::string text;
@@ -66,14 +65,13 @@ struct CompileOutputChunk {
 struct CompileRequest {
     BuildPackage package;
     std::filesystem::path workspace;
-    // Destination name in the generated package -> source file on disk.
+    // 生成的 package 中的目标名称 -> 磁盘上的源文件。
     std::map<std::string, std::filesystem::path> asset_sources;
-    // Resolved toolchain for this build (plan §14): decided by the template at
-    // request time, never re-derived inside the compiler.
+    // 本次 build 已解析的 toolchain（方案 §14）：由模板在请求时确定，
+    // 绝不在编译器内部重新推导。
     BuildToolchain toolchain;
-    // Optional live output hook. Invoked from the compiler's own thread for
-    // each chunk of the child process's stdout/stderr; the receiver must copy
-    // anything it keeps (the chunk is reused).
+    // 可选的实时输出钩子。子进程每产生一段 stdout/stderr，就由编译器自己的
+    // 线程调用一次；接收方必须复制自己需要保留的内容（该分片会被复用）。
     std::function<void(const CompileOutputChunk&)> on_output;
 };
 
@@ -82,12 +80,12 @@ struct CompileResult {
     std::filesystem::path pdf_path;
     std::string log;
     std::vector<CompilerMessage> messages;
-    // Auxiliary logs worth keeping next to build.log (plan §15):
-    // latexmk.log, main.log, main.blg ...
+    // 值得与 build.log 一起保留的辅助日志（方案 §15）：
+    // latexmk.log、main.log、main.blg ...
     std::vector<std::filesystem::path> auxiliary_logs;
     CompileFailureKind failure_kind = CompileFailureKind::None;
-    // Exit code of the compiler process; -1 when no process ran (plan §3:
-    // part of the BuildSession record).
+    // 编译器进程的退出码；没有进程运行时为 -1（方案 §3：
+    // 属于 BuildSession 记录的一部分）。
     int exit_code = -1;
 };
 
@@ -101,10 +99,9 @@ public:
 
 class TectonicCompiler final : public ICompiler {
 public:
-    // cache_dir, when it exists, is exported as TECTONIC_CACHE_DIR and HOME
-    // for the tectonic child process. That pins builds to the bundle shipped
-    // with the project instead of whatever cache the ambient $HOME holds,
-    // which keeps offline builds reproducible.
+    // cache_dir 存在时，会作为 TECTONIC_CACHE_DIR 与 HOME 导出给 tectonic
+    // 子进程。这样可以把 build 固定到项目随附的 bundle，而不是环境 $HOME
+    // 中的任意缓存，从而保证离线 build 可复现。
     explicit TectonicCompiler(std::string executable,
                               std::string cache_dir = {});
 
@@ -117,8 +114,8 @@ private:
     std::string cache_dir_;
 };
 
-// The production backend (plan §10, §30): drives latexmk from the bundled
-// portable TeX Live runtime with an isolated environment.
+// 生产后端（方案 §10、§30）：在隔离环境中，用随附的便携版 TeX Live
+// 运行时驱动 latexmk。
 class TexLiveCompiler final : public ICompiler {
 public:
     explicit TexLiveCompiler(CompilerConfig config);

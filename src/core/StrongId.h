@@ -1,5 +1,5 @@
 #pragma once
-// StrongId: strongly-typed identifiers to prevent cross-type id misuse.
+// StrongId：强类型标识符，防止不同类型的 id 混用。
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -42,7 +42,7 @@ using SaveId = StrongId<SaveIdTag>;
 using SnapshotId = StrongId<SnapshotIdTag>;
 using AffiliationId = StrongId<AffiliationIdTag>;
 
-// Versions
+// 版本
 struct DocumentVersion {
     std::uint64_t value = 0;
     auto operator<=>(const DocumentVersion&) const = default;

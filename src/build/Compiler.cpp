@@ -31,10 +31,10 @@ std::string QuoteShell(const std::string &value) {
 
 bool StagePackage(const CompileRequest &request, std::string *error) {
   std::error_code ec;
-  // Each build gets its own workspace (plan §25), and a retried build must
-  // not inherit the previous attempt's latexmk state: latexmk otherwise
-  // reports "gave an error in previous invocation" and refuses to run, even
-  // though the freshly staged sources are fine.
+  // 每次 build 都拥有独立的工作目录（方案 §25），重试的 build 绝不能
+  // 继承上一次尝试的 latexmk 状态：否则 latexmk 会报告
+  // "gave an error in previous invocation" 并拒绝运行，即使新暂存的源码
+  // 完全正常。
   std::filesystem::remove_all(request.workspace, ec);
   std::filesystem::create_directories(request.workspace, ec);
   if (ec) {
@@ -53,8 +53,8 @@ bool StagePackage(const CompileRequest &request, std::string *error) {
   }
   for (const auto &[destination_name, source] : request.asset_sources) {
     const auto destination = request.workspace / destination_name;
-    // Assets may live in a subdirectory of the package (assets/<file>):
-    // create it before copying, or copy_file reports ENOENT.
+    // 资源可能位于包的子目录中（assets/<file>）：
+    // 复制前先创建该目录，否则 copy_file 会报 ENOENT。
     std::filesystem::create_directories(destination.parent_path(), ec);
     std::filesystem::copy_file(
         source, destination, std::filesystem::copy_options::overwrite_existing,
@@ -67,13 +67,12 @@ bool StagePackage(const CompileRequest &request, std::string *error) {
   return true;
 }
 
-// ---- Diagnostic parsing (plan §16) ----
+// ---- 诊断解析（方案 §16） ----
 //
-// pdfLaTeX logs are free text, so recognition is by pattern. Anything that
-// fails to parse stays literal in the message text: a document never loses a
-// diagnostic because the parser could not classify it.
+// pdfLaTeX 的日志是自由文本，因此只能按模式识别。任何解析失败的内容都会
+// 原样保留在消息文本中：文档绝不会因为解析器无法分类而丢失一条诊断信息。
 
-// A "file:line:" style compiler reference, e.g. "main.tex:13: <message>".
+// "file:line:" 形式的编译器引用，例如 "main.tex:13: <message>"。
 bool ParseFileLine(const std::string &line, CompilerMessage *message) {
   const size_t first = line.find(':');
   if (first == std::string::npos)
@@ -93,9 +92,8 @@ bool ParseFileLine(const std::string &line, CompilerMessage *message) {
   }
 }
 
-// The primary error marker of TeX logs: "!" followed by the message. The
-// source line is found in an accompanying "l.<number>" line or the last
-// file:line reference, both of which follow it.
+// TeX 日志中的主要错误标记：以 "!" 开头、后跟消息。其源码行号来自紧随
+// 其后的 "l.<number>" 行或最近一次 file:line 引用，二者都出现在它之后。
 std::vector<CompilerMessage> ParseMessages(const std::string &log,
                                            CompileFailureKind *failure_kind) {
   std::vector<CompilerMessage> messages;
@@ -115,8 +113,7 @@ std::vector<CompilerMessage> ParseMessages(const std::string &log,
   bool saw_missing_package = false;
   bool saw_bibliography = false;
   while (std::getline(lines, line)) {
-    // Track the last "file:line:" reference so a "!" block can be
-    // attributed to a source location.
+    // 记录最近一次 "file:line:" 引用，以便把 "!" 块归到某个源码位置。
     {
       CompilerMessage reference;
       if (ParseFileLine(line, &reference)) {
@@ -136,8 +133,7 @@ std::vector<CompilerMessage> ParseMessages(const std::string &log,
       continue;
     }
     if (line.rfind("l.", 0) == 0) {
-      // "l.13 The offending text" carries the line number of the
-      // preceding error.
+      // "l.13 The offending text" 携带前一条错误的行号。
       try {
         const size_t space = line.find(' ');
         const std::uint32_t number =
@@ -194,15 +190,14 @@ std::vector<CompilerMessage> ParseMessages(const std::string &log,
   return messages;
 }
 
-// Run `command`, wait up to the deadline, and kill the whole process group on
-// cancel or timeout (plan §36): latexmk spawns pdflatex/bibtex children, so
-// killing only the parent would leave writers behind on the workspace.
+// 运行 `command`，最多等待到 deadline，并在取消或超时时杀掉整个进程组
+// （方案 §36）：latexmk 会派生 pdflatex/bibtex 子进程，只杀父进程会让这些
+// 写者残留在工作目录上。
 //
-// While waiting, the child's stdout and stderr are drained through two pipes
-// and forwarded to `on_output` chunk by chunk (Build Diagnostics plan §44),
-// so the Build Log shows live compiler progress and never loses a byte. The
-// full text of both streams is accumulated for the caller: stdout lands in
-// `combined` (the log the parser reads) and `stderr_text` separately.
+// 等待期间，子进程的 stdout 与 stderr 通过两条管道抽取，并逐块转发给
+// `on_output`（Build Diagnostics 方案 §44），使 Build Log 能实时显示编译
+// 进度且一个字节都不丢失。两路流的完整文本都会累积给调用方：stdout 进入
+// `combined`（解析器读取的日志），stderr 单独进入 `stderr_text`。
 int RunCommand(
     const std::string &command, const std::chrono::seconds timeout,
     const std::atomic<bool> *cancel_requested, bool *cancelled,
@@ -228,7 +223,7 @@ int RunCommand(
 
   const pid_t child = fork();
   if (child == 0) {
-    setpgid(0, 0); // own process group, so a kill reaches the children
+    setpgid(0, 0); // 独立进程组，这样 kill 能波及子进程
     dup2(out_pipe[1], STDOUT_FILENO);
     dup2(err_pipe[1], STDERR_FILENO);
     close(out_pipe[0]);
@@ -246,7 +241,7 @@ int RunCommand(
     return -1;
   }
 
-  // Non-blocking reads keep the wait loop fair to both streams.
+  // 非阻塞读取让等待循环对两路流都保持公平。
   fcntl(out_pipe[0], F_SETFL, fcntl(out_pipe[0], F_GETFL) | O_NONBLOCK);
   fcntl(err_pipe[0], F_SETFL, fcntl(err_pipe[0], F_GETFL) | O_NONBLOCK);
 
@@ -292,7 +287,7 @@ int RunCommand(
     if (!reaped && ((cancel_requested && cancel_requested->load()) ||
                     std::chrono::steady_clock::now() >= deadline)) {
       *cancelled = true;
-      // SIGTERM to the whole group first, then SIGKILL if it survives.
+      // 先向整个进程组发 SIGTERM，若仍存活再发 SIGKILL。
       kill(-child, SIGTERM);
       for (int grace = 0; grace < 20 && !reaped; ++grace) {
         if (waitpid(child, &status, WNOHANG) == child)
@@ -306,7 +301,7 @@ int RunCommand(
         reaped = true;
       }
       drain(/*stop_reading=*/true);
-      // Finish draining whatever is left, then close.
+      // 把剩余内容抽干后再关闭。
       while (out_pipe[0] >= 0 || err_pipe[0] >= 0) {
         const size_t before = (combined ? combined->size() : 0) +
                               (stderr_text ? stderr_text->size() : 0);
@@ -381,7 +376,7 @@ const char *ToString(CompileFailureKind kind) {
   return "?";
 }
 
-// ---- TectonicCompiler (kept, but no longer the production path, §26) ----
+// ---- TectonicCompiler（保留，但已不再是生产路径，§26） ----
 
 TectonicCompiler::TectonicCompiler(std::string executable,
                                    std::string cache_dir)
@@ -390,7 +385,7 @@ TectonicCompiler::TectonicCompiler(std::string executable,
   if (!executable_.empty() && std::filesystem::exists(executable_, ec)) {
     executable_ = std::filesystem::absolute(executable_, ec).string();
   }
-  (void)cache_dir_; // bundle cache resolution stayed as before; see below
+  (void)cache_dir_; // bundle 缓存解析保持原样；见下文
   cache_dir_ = std::move(cache_dir);
   std::error_code ec2;
   if (!cache_dir_.empty() && std::filesystem::exists(cache_dir_, ec2)) {
@@ -424,8 +419,7 @@ TectonicCompiler::Compile(const CompileRequest &request,
   }
 
   const auto log_path = request.workspace / "build.log";
-  // Pin the bundle cache when one was configured for this build so the
-  // build stays offline-reproducible.
+  // 当本次 build 配置了 bundle 缓存时将其固定，以保证 build 可离线复现。
   std::string env_prefix;
   if (!cache_dir_.empty()) {
     env_prefix = "TECTONIC_CACHE_DIR=" + QuoteShell(cache_dir_) +
@@ -443,8 +437,7 @@ TectonicCompiler::Compile(const CompileRequest &request,
       RunCommand(command, std::chrono::minutes{2}, cancel_requested, &cancelled,
                  &stdout_text, &stderr_text, request.on_output);
   result.exit_code = exit_code;
-  // Keep the on-disk log as an artifact; the in-memory text is what the
-  // parser reads (plan §44/§45).
+  // 磁盘上的日志作为产物保留；解析器读取的是内存中的文本（方案 §44/§45）。
   {
     std::ofstream log_file(log_path, std::ios::binary | std::ios::trunc);
     log_file << stdout_text << stderr_text;
@@ -475,7 +468,7 @@ TectonicCompiler::Compile(const CompileRequest &request,
   return result;
 }
 
-// ---- TexLiveCompiler (plan §10, §30) ----
+// ---- TexLiveCompiler（方案 §10、§30） ----
 
 TexLiveCompiler::TexLiveCompiler(CompilerConfig config)
     : config_(std::move(config)) {}
@@ -490,9 +483,9 @@ TexLiveCompiler::Compile(const CompileRequest &request,
     return result;
   }
 
-  // The bundled runtime is the only supported TeX environment (plan §3, §12):
-  // the user's PATH, system TeX Live and MiKTeX are deliberately not
-  // consulted. The executables live in bin/<platform>/.
+  // 内置运行时是唯一受支持的 TeX 环境（方案 §3、§12）：
+  // 刻意不查询用户的 PATH、系统 TeX Live 与 MiKTeX。可执行文件位于
+  // bin/<platform>/。
   std::error_code ec;
   std::filesystem::path bin_dir;
   if (!config_.texlive_root.empty()) {
@@ -524,8 +517,8 @@ TexLiveCompiler::Compile(const CompileRequest &request,
     return result;
   }
 
-  // latexmk drives the whole chain (plan §11): the engine switch selects the
-  // compiler, the remaining flags are the same for every engine.
+  // 整条链路由 latexmk 驱动（方案 §11）：engine 分支用于选择编译器，
+  // 其余参数对所有引擎都相同。
   const char *engine_flag = "-pdf";
   switch (request.toolchain.engine) {
   case LatexEngine::PdfLatex:
@@ -540,9 +533,8 @@ TexLiveCompiler::Compile(const CompileRequest &request,
   }
 
   const auto log_path = request.workspace / "latexmk.log";
-  // Environment isolation (plan §12): only the bundled bin dir is on PATH,
-  // TeX caches live under the runtime, and the ambient shell environment is
-  // not allowed to influence the result.
+  // 环境隔离（方案 §12）：PATH 上只有内置 bin 目录，
+  // TeX 缓存位于运行时目录下，外部 shell 环境不得影响结果。
   const std::string command =
       "cd " + QuoteShell(request.workspace.string()) + " && " +
       "PATH=" + QuoteShell(bin_dir_str + ":/usr/bin:/bin") + " " +
@@ -561,8 +553,8 @@ TexLiveCompiler::Compile(const CompileRequest &request,
       RunCommand(command, std::chrono::seconds{120}, cancel_requested,
                  &cancelled, &stdout_text, &stderr_text, request.on_output);
   result.exit_code = exit_code;
-  // Keep the on-disk latexmk.log artifact (plan §15/§45): what the child
-  // wrote to its terminal streams, collected through the pipe.
+  // 保留磁盘上的 latexmk.log 产物（方案 §15/§45）：内容即子进程写入其
+  // 终端流的内容，通过管道收集。
   {
     std::ofstream log_file(log_path, std::ios::binary | std::ios::trunc);
     log_file << stdout_text << stderr_text;
@@ -571,7 +563,7 @@ TexLiveCompiler::Compile(const CompileRequest &request,
   CompileFailureKind kind = CompileFailureKind::None;
   result.messages = ParseMessages(result.log, &kind);
   result.auxiliary_logs.push_back(log_path);
-  // main.log is the compiler's own log; keep it next to latexmk.log (§15).
+  // main.log 是编译器自身的日志；与 latexmk.log 放在一起（§15）。
   const auto main_log = request.workspace / "main.log";
   if (std::filesystem::exists(main_log, ec)) {
     result.auxiliary_logs.push_back(main_log);
@@ -625,8 +617,8 @@ CompileResult MockCompiler::Compile(const CompileRequest &request,
     result.exit_code = 1;
     result.messages.push_back({"main.tex", 1, true, "simulated error"});
   }
-  // The mock behaves like the real compilers for the output contract: if a
-  // sink was provided, the log reaches it (plan §44).
+  // 在输出契约上，mock 与真实编译器的行为一致：若提供了输出端，
+  // 日志会送达该输出端（方案 §44）。
   if (request.on_output && !result.log.empty()) {
     request.on_output(CompileOutputChunk{false, result.log + "\n"});
   }

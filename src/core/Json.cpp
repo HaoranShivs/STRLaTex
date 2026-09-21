@@ -100,7 +100,7 @@ std::string JsonValue::Dump(int indent) const {
     return out;
 }
 
-// ---------------- Parser ----------------
+// ---------------- 解析器 ----------------
 
 namespace {
 
@@ -129,8 +129,8 @@ public:
         } catch (const ParseAbort&) {
             return nullptr;
         } catch (const std::bad_alloc&) {
-            // A limit race (e.g. string growth between checks) must degrade to
-            // a clean parse failure, never an abort.
+            // 限额判定出现竞态（例如两次检查之间字符串增长）时必须退化为
+            // 一次干净的解析失败，绝不能导致进程终止。
             if (error_) *error_ = "out of memory while parsing";
             return nullptr;
         }
@@ -200,8 +200,8 @@ private:
         }
     }
 
-    // Scoped depth guard: nesting beyond the limit is a parse error, not a
-    // stack overflow.
+    // 作用域深度守卫：嵌套超过限额属于解析错误，而不是
+    // 栈溢出。
     class DepthGuard {
     public:
         DepthGuard(Parser& parser, std::size_t& depth) : parser_(parser), depth_(depth) {
@@ -285,8 +285,8 @@ private:
             } else {
                 out += c;
             }
-            // Bound the accumulated string, not just the raw input, so a
-            // small document of \u escapes cannot expand unboundedly.
+            // 限制累积后字符串的大小，而不只是原始输入，这样一份由 \u 转义
+            // 组成的小文档也无法无限膨胀。
             if (out.size() > limits_.max_string_bytes) {
                 Fail("string exceeds maximum length (" +
                      std::to_string(limits_.max_string_bytes) + " bytes)");
@@ -297,7 +297,7 @@ private:
 
     std::string ParseUnicodeEscape() {
         unsigned cp = ParseHex4();
-        // Surrogate pair handling
+        // 代理对处理
         if (cp >= 0xD800 && cp <= 0xDBFF) {
             if (Next() == '\\' && Next() == 'u') {
                 unsigned low = ParseHex4();
@@ -310,7 +310,7 @@ private:
                 Fail("invalid surrogate pair");
             }
         }
-        // UTF-8 encode
+        // UTF-8 编码
         std::string out;
         if (cp < 0x80) {
             out += static_cast<char>(cp);
@@ -368,15 +368,15 @@ private:
         }
         std::string num = text_.substr(start, pos_ - start);
 
-        // Structured number conversion: every failure is a parse error. No
-        // bare std::stod / std::stoll here - their exceptions used to escape
-        // the parser and crash the process on inputs like "1e999".
+        // 结构化的数字转换：任何失败都是解析错误。这里不使用裸的
+        // std::stod / std::stoll —— 它们的异常曾会逃出解析器，
+        // 并在 "1e999" 这类输入上使进程崩溃。
         if (is_float) {
             try {
                 double v = std::stod(num);
                 if (!std::isfinite(v)) {
-                    // "1e999" parses but overflows to +inf: reject it. NaN
-                    // cannot be spelled in JSON, so this is only overflow.
+                    // "1e999" 能解析但会溢出为 +inf：直接拒绝。JSON 中
+                    // 无法表示 NaN，因此这里只可能是溢出。
                     Fail("number overflow out of representable range: " + num);
                 }
                 return std::make_unique<JsonValue>(v);
@@ -386,9 +386,8 @@ private:
                 Fail("number overflow out of representable range: " + num);
             }
         }
-        // Integer fast path with full-consumption and overflow checks; a
-        // value that does not fit std::int64_t falls back to the (guarded)
-        // double conversion below.
+        // 整数快速路径，带完整消费与溢出检查；无法装入 std::int64_t 的
+        // 值会回退到下面（有防护的）double 转换。
         std::int64_t parsed = 0;
         bool fits = false;
         try {

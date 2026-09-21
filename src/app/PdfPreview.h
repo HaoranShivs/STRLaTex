@@ -1,16 +1,14 @@
 #pragma once
-// PdfPreview: the build-output preview pane.
+// PdfPreview：build 输出的预览窗格。
 //
-// Shows every page of the rendered PDF as a continuous column, the way a
-// reader expects a paper to scroll: one page after the next with a thin seam
-// between them. The design keeps four things in mind:
-//   * the point under the cursor stays under the cursor while zooming, so the
-//     text you are reading does not run away;
-//   * pages are re-rendered at the resolution the current zoom needs instead
-//     of only magnifying a bitmap, so zoomed-in text stays crisp;
-//   * only the pages near the viewport keep a raster, because a 15 page paper
-//     at 200 DPI would otherwise cost hundreds of megabytes;
-//   * once zoomed past the viewport, the page can be dragged with the mouse.
+// 把渲染后 PDF 的每一页排成连续的一列，符合读者对纸张滚动的预期：一页接着
+// 一页，页与页之间只有一道细缝。设计时考虑了四点：
+//   * 缩放时光标下方的位置保持不动，正在阅读的文字不会跑偏；
+//   * 页面按当前缩放所需的清晰度重新渲染，而不是只放大位图，
+//     因此放大后的文字依然锐利；
+//   * 只有视口附近的页面保留栅格位图，否则一份 200 DPI 的 15 页文档
+//     会占用数百 MB 内存；
+//   * 一旦缩放超出视口，就可以用鼠标拖拽页面。
 
 #include <QString>
 #include <QWidget>
@@ -34,12 +32,12 @@ class PdfPreview : public QWidget {
 public:
     explicit PdfPreview(QWidget* parent = nullptr);
 
-    // Point the preview at a built PDF (empty clears the pane).
+    // 让预览指向已构建的 PDF（传空则清空窗格）。
     void SetDocument(const QString& pdf_path);
     void Clear();
     void SetMessage(const QString& text);
 
-    // Zoom in display units: 1.0 shows the page at 100%.
+    // 以显示单位表示的缩放：1.0 表示页面按 100% 显示。
     void SetZoom(double zoom);
     double zoom() const { return zoom_; }
     void ZoomIn();
@@ -47,12 +45,11 @@ public:
     void ResetZoom();
     void FitWidth();
     void FitPage();
-    // Scroll to a fraction of the whole document (0..1).
+    // 滚动到整个文档的指定比例处（0..1）。
     void ScrollTo(double fraction_x, double fraction_y);
 
     int pageCount() const { return page_count_; }
-    // Page whose top is closest to the top of the viewport (1-based, 0 when
-    // there is nothing to show).
+    // 页顶最接近视口顶部的页面（从 1 开始计数，没有内容可显示时为 0）。
     int visiblePage() const;
 
     static constexpr double kMinZoom = 0.25;
@@ -67,9 +64,9 @@ protected:
 
 private:
     struct PageSlot {
-        QLabel* label = nullptr;  // shows the raster or a placeholder
-        QPixmap pixmap;           // cached raster
-        int pixmap_dpi = 0;       // resolution the raster was rendered at
+        QLabel* label = nullptr;  // 显示栅格位图或占位符
+        QPixmap pixmap;           // 缓存的栅格位图
+        int pixmap_dpi = 0;       // 栅格位图渲染时所用的分辨率
     };
 
     QLabel* MakePageLabel(int index);
@@ -100,10 +97,10 @@ private:
     QString pdf_path_;
     std::vector<PageSlot> pages_;
     int page_count_ = 0;
-    double page_width_pt_ = 595.0;  // A4 until the first page is measured
+    double page_width_pt_ = 595.0;  // 测量首页之前暂按 A4 处理
     double page_height_pt_ = 842.0;
     double zoom_ = 1.0;
-    bool fit_width_ = true;  // follow the pane width until the user zooms
+    bool fit_width_ = true;  // 在用户缩放之前跟随窗格宽度
     bool panning_ = false;
     QPoint pan_origin_;
 

@@ -1,8 +1,7 @@
 #pragma once
-// PopupList: lightweight non-modal floating list used by both the "/" block
-// command menu and the "@" reference menu (design #6, #9, #13, #69).
-// A QFrame popup above the editor - never a QDialog. Full keyboard support:
-// Up / Down / Enter / Esc, plus live text filtering.
+// PopupList：轻量的非模态浮动列表，供「/」块命令菜单和「@」引用菜单共用
+// （设计 #6、#9、#13、#69）。它是编辑器上方的 QFrame 弹出层——绝不使用
+// QDialog。支持完整的键盘操作：Up / Down / Enter / Esc，并支持实时文本过滤。
 
 #include <QFrame>
 #include <QLineEdit>
@@ -17,16 +16,16 @@ class PopupList : public QFrame {
 
 public:
     struct Item {
-        QString label;        // main text
-        QString detail;       // right-side hint (e.g. "Equation", author·year)
-        QString group;        // group header (Basic / Academic / References…)
-        QString payload;      // command word or citation key or node id
-        QString search;       // lowercase filter text (defaults to label)
+        QString label;        // 主文本
+        QString detail;       // 右侧提示（例如 "Equation"、作者·年份）
+        QString group;        // 分组标题（Basic / Academic / References…）
+        QString payload;      // 命令词、引用键或节点 id
+        QString search;       // 小写过滤文本（默认为 label）
     };
 
     explicit PopupList(QWidget* parent = nullptr);
 
-    // Show the popup anchored at global position (above caret).
+    // 在全局坐标处显示弹出层（锚定在光标上方）。
     void popup(const QPoint& global_pos, const std::vector<Item>& items,
                const QString& filter = {});
     void SetFilter(const QString& text);

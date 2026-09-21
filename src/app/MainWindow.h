@@ -1,8 +1,7 @@
 #pragma once
-// PaperForge main window per the GUI design doc: Outline | Editor | Preview
-// (18% / 52% / 30%), Build button in the header, status bar with save/build
-// state and word count. Welcome page replaces the workspace when no project
-// is open (design #1, #34, #51, #80).
+// PaperForge 主窗口，遵循 GUI 设计文档：大纲 | 编辑器 | 预览
+//（18% / 52% / 30%），头部放置 Build 按钮，状态栏显示保存/build
+// 状态与字数。未打开项目时由欢迎页取代工作区（设计 #1、#34、#51、#80）。
 
 #include <QList>
 #include <QMainWindow>
@@ -31,40 +30,39 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
     ProjectController* controller() { return controller_; }
-    // Programmatic open (used by tests/tools): switches to the workspace.
+    // 程序化打开（供测试/工具使用）：切换到工作区。
     bool OpenProjectDir(const QString& dir);
-    // Programmatic preview zoom/scroll (used by the UI verification tool).
+    // 程序化预览缩放/滚动（供 UI 验证工具使用）。
     void ZoomPreviewForTest(double zoom, double scroll_x = 0.0,
                             double scroll_y = 0.0);
 
-    // P0-01: the single unsaved-changes guard. Every destructive navigation
-    // (close, new, open, recent-project, project switch) goes through it and
-    // no call site implements its own dirty check.
+    // P0-01：唯一的未保存更改守卫。所有破坏性导航
+    //（关闭、新建、打开、最近项目、切换项目）都必须经过它，
+    // 任何调用点都不得自行实现 dirty 检查。
     enum class DestructiveNavigationDecision : std::uint8_t {
         Proceed,
         Cancel,
     };
-    // Fixed order: commit the focused row, pump completed async events, read
-    // the authoritative persistence state, then ask the user
-    // (Save / Discard / Cancel or Wait / Discard / Cancel or
-    // Retry Save / Discard / Cancel). Only proceeds when the target revision
-    // is actually Clean or the user explicitly chose to discard.
+    // 固定顺序：提交聚焦行、泵出已完成的异步事件、读取
+    // 权威持久化状态，然后询问用户
+    //（保存 / 丢弃 / 取消，或等待 / 丢弃 / 取消，或
+    // 重试保存 / 丢弃 / 取消）。仅当目标 revision
+    // 确实为 Clean，或用户明确选择丢弃时才继续。
     DestructiveNavigationDecision MaybeSaveBeforeDestructiveNavigation();
-    // Blocks until an in-flight save for the current revision has landed,
-    // pumping events so its completion is applied. False on timeout.
+    // 阻塞直至当前 revision 的在途保存落地，其间泵出事件
+    // 以应用其完成结果。超时返回 false。
     bool WaitForUserSaveCompletion(int timeout_ms = 10000);
 
 protected:
-    // P0-01: closing the window is a destructive navigation too; it must go
-    // through the same guard instead of relying on a destructor-time
-    // best-effort CommitFocused().
+    // P0-01：关闭窗口同样是破坏性导航，必须经过同一个守卫，
+    // 而不能依赖析构时的尽力而为 CommitFocused()。
     void closeEvent(QCloseEvent* event) override;
 
 private slots:
     void OnNewProject();
     void OnOpenProject();
-    // P0-01: closing the current project (back to the Welcome page) is a
-    // destructive navigation and shares the same unsaved-changes guard.
+    // P0-01：关闭当前项目（返回欢迎页）属于破坏性导航，
+    // 共用同一个未保存更改守卫。
     void OnCloseProject();
     void OnSave();
     void OnUndo();
@@ -75,20 +73,20 @@ private slots:
 
     void RefreshDocumentView();
     void RefreshSidePanels();
-    // Typed preview event: carries project/build/revision identity of the PDF.
+    // 带类型的预览事件：携带该 PDF 的 project/build/revision 身份标识。
     void OnPreviewUpdated(const pf::PreviewUpdate& update);
-    // P0-06: reports the raw write result; the state label is NOT set here
-    // (it renders from the authoritative session state instead).
+    // P0-06：仅报告原始写入结果；此处不设置状态标签
+    //（状态标签改为从权威 session 状态渲染）。
     void OnSaveFinished(bool success, const QString& detail);
-    // P0-06: single renderer for the save/preview state label. Connected to
-    // ProjectController::stateChanged and invoked from every state-affecting
-    // path; reads ProjectSession::persistence_state() /
-    // preview_state() / current_revision() only. No GUI dirty flag exists.
+    // P0-06：保存/预览状态标签的唯一渲染器。连接到
+    // ProjectController::stateChanged，并由所有影响状态的路径调用；
+    // 只读取 ProjectSession::persistence_state() /
+    // preview_state() / current_revision()。不存在 GUI dirty 标志。
     void RenderProjectState();
-    // Structured diagnostics of the accepted build (Build Diagnostics plan
-    // §36-§37): MainWindow only wires panels to data; no log parsing here.
+    // 已接受 build 的结构化诊断（Build Diagnostics 方案
+    // §36-§37）：MainWindow 只把面板接到数据上，此处不做日志解析。
     void OnBuildCompleted(const pf::BuildResult& result);
-    // One streamed build-log event of the current build.
+    // 当前 build 的一条流式 build 日志事件。
     void OnBuildEvent(const pf::BuildEvent& event);
     void OnBuildStatusChanged(const QString& status);
 
@@ -102,22 +100,21 @@ private:
     void UpdateRequiredHints();
     void RefreshReferenceItems();
     int CountWords() const;
-    // Focus editing mode (UI plan §11): collapse Outline + Preview so the
-    // editor owns the whole window for long writing sessions; the second
-    // click restores the previous splitter sizes.
+    // 专注编辑模式（UI 方案 §11）：折叠大纲 + 预览，让编辑器
+    // 在长时间写作时独占整个窗口；再次点击恢复先前的分隔条尺寸。
     void OnToggleFocusMode(bool on);
-    // Problem -> Block navigation (Build Diagnostics plan §25/§28/§48):
-    // focus the owning block, or fall back to the Build Log; a deleted block
-    // is reported, never a crash.
+    // Problem -> Block 导航（Build Diagnostics 方案 §25/§28/§48）：
+    // 聚焦所属 Block，否则回退到 Build Log；Block 已被删除时给出报告，
+    // 绝不崩溃。
     void OnProblemActivated(const pf::Diagnostic& diagnostic);
 
     ProjectController* controller_;
 
-    // Header
+    // 头部
     QPushButton* build_button_;
     QComboBox* template_combo_ = nullptr;
     QPushButton* focus_button_ = nullptr;
-    // Workspace
+    // 工作区
     QStackedWidget* central_stack_;
     WelcomePage* welcome_;
     QWidget* workspace_;
@@ -130,27 +127,26 @@ private:
     PdfPreview* preview_;
     QWidget* preview_container_;
     ProblemsPanel* problems_;
-    // Status bar
+    // 状态栏
     QLabel* save_state_label_;
     QLabel* build_state_label_;
     QLabel* word_count_label_;
     QString current_pdf_path_;
     int last_build_revision_ = -1;
-    // Revision of the last completed build, for the stale marker (plan §49).
+    // 最近一次完成 build 的 revision，用于过期标记（方案 §49）。
     pf::ProjectRevision last_built_revision_;
-    // Outcome of the last build: OnPreviewUpdated reads it so a Cancelled
-    // attempt reports "cancelled", never "failed" (plan §34).
+    // 最近一次 build 的结果：OnPreviewUpdated 读取它，使 Cancelled
+    // 尝试报告「cancelled」而非「failed」（方案 §34）。
     pf::BuildResult::Outcome last_outcome_ = pf::BuildResult::Outcome::Failure;
     bool has_built_ = false;
-    // True from BuildStarted until the terminal event: the Build button then
-    // acts as Cancel (plan §39) and Problems shows "Building...".
+    // 从 BuildStarted 到终止事件期间为 true：此时 Build 按钮
+    // 充当取消（方案 §39），Problems 显示「Building...」。
     bool building_ = false;
-    // Set once the window is being destroyed: editor signals and document
-    // refreshes must then be ignored entirely.
+    // 窗口开始销毁后置位：此时必须完全忽略编辑器信号与文档刷新。
     bool shutting_down_ = false;
-    // Set when a refresh had to be skipped because the user was typing.
+    // 因用户正在输入而不得不跳过刷新时置位。
     bool pending_structural_refresh_ = false;
-    // Recent projects (QSettings-backed)
+    // 最近项目（由 QSettings 支持）
     QStringList recent_projects_;
 };
 

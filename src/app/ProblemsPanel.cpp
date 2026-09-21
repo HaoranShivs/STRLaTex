@@ -23,9 +23,8 @@ namespace pf::gui {
 namespace {
 QString ToQ(const std::string& s) { return QString::fromStdString(s); }
 
-// Severity ranks (plan §21): Error first, then Warning, then Info; ties keep
-// arrival order, which is document order for validator output and line order
-// for compiler messages.
+// 严重级别排序（方案 §21）：Error 在前，其次是 Warning，最后是 Info；同级
+// 保持到达顺序——对校验器输出而言即文档顺序，对编译器消息而言即行顺序。
 int SeverityRank(DiagnosticSeverity severity) {
     switch (severity) {
         case DiagnosticSeverity::Error: return 0;
@@ -35,7 +34,7 @@ int SeverityRank(DiagnosticSeverity severity) {
     return 3;
 }
 
-// Icons carry the meaning; colour is only an aid (plan §23).
+// 图标承载含义；颜色仅作辅助（方案 §23）。
 const char* SeverityIcon(DiagnosticSeverity severity) {
     switch (severity) {
         case DiagnosticSeverity::Error: return "\xE2\x9C\x95";  // ✕
@@ -77,7 +76,7 @@ ProblemsPanel::ProblemsPanel(QWidget* parent) : QWidget(parent) {
                                     .arg(theme::kSecondaryText));
     header_layout->addWidget(count_label_);
     header_layout->addStretch(1);
-    // Severity filter chips (plan §41: only Errors/Warnings in v1).
+    // 严重级别筛选 chip（方案 §41：v1 只提供 Errors/Warnings）。
     for (const char* f : {"All", "Errors", "Warnings"}) {
         auto* chip = new QPushButton(f, header);
         chip->setCheckable(true);
@@ -123,14 +122,14 @@ ProblemsPanel::ProblemsPanel(QWidget* parent) : QWidget(parent) {
 
     connect(tabs_, &QTabBar::currentChanged, stack_,
             &QStackedWidget::setCurrentIndex);
-    // Start in the "never built" empty state (plan §42) so the panel is
-    // never a blank hole before the first build.
+    // 以「从未构建」的空状态启动（方案 §42），这样面板在首次 build
+    // 之前不会是一块空白。
     Refilter();
 }
 
 QWidget* ProblemsPanel::BuildProblemsTab() {
     list_ = new QListWidget(this);
-    // Object names are the stable seam the widget tests read through.
+    // 对象名是控件测试读取的稳定接缝。
     list_->setObjectName("problemsList");
     list_->setStyleSheet(QString(
         "QListWidget { background: transparent; border: none; }"
@@ -141,7 +140,7 @@ QWidget* ProblemsPanel::BuildProblemsTab() {
     connect(list_, &QListWidget::itemDoubleClicked, this,
             [this](QListWidgetItem* item) {
                 int index = item->data(Qt::UserRole).toInt();
-                if (index < 0) return;  // empty-state row, not a problem
+                if (index < 0) return;  // 空状态行，并非问题项
                 if (index >= 0 &&
                     index < static_cast<int>(diagnostics_.size())) {
                     emit DiagnosticActivated(diagnostics_[index]);
@@ -156,7 +155,7 @@ QWidget* ProblemsPanel::BuildLogTab() {
     page_layout->setContentsMargins(8, 4, 8, 8);
     page_layout->setSpacing(4);
 
-    // Log actions (plan §8).
+    // 日志操作（方案 §8）。
     auto* toolbar = new QHBoxLayout();
     toolbar->setContentsMargins(0, 0, 0, 0);
     toolbar->addStretch(1);
@@ -175,8 +174,7 @@ QWidget* ProblemsPanel::BuildLogTab() {
         QApplication::clipboard()->setText(log_view_->toPlainText());
     });
     add_tool_button("Clear View", [this]() {
-        // Clears the display only; the model and the BuildSession stay
-        // untouched (plan §8).
+        // 只清空显示内容；模型与 BuildSession 保持不变（方案 §8）。
         log_view_->clear();
     });
     auto_scroll_button_ = add_tool_button("Auto Scroll: On", [this]() {
@@ -194,8 +192,8 @@ QWidget* ProblemsPanel::BuildLogTab() {
     log_view_->setReadOnly(true);
     log_view_->setLineWrapMode(QPlainTextEdit::NoWrap);
     log_view_->setFont(theme::MonoFont(8));
-    // Memory cap (plan §43): very old lines fall out instead of growing the
-    // widget without bound when a compiler dumps megabytes of output.
+    // 内存上限（方案 §43）：当编译器倾泻出数 MB 输出时，很旧的行会被挤出，
+    // 而不是让控件无限增长。
     log_view_->setMaximumBlockCount(20000);
     page_layout->addWidget(log_view_, 1);
     return page;
@@ -208,8 +206,8 @@ void ProblemsPanel::SetDiagnostics(
     state_ = ProblemsState::Done;
     stale_ = false;
     diagnostics_ = diagnostics;
-    // Default sort by severity, stable so equal severities keep their
-    // document/line order (plan §21).
+    // 默认按严重级别排序，且使用稳定排序，使相同严重级别保持原有的
+    // 文档/行顺序（方案 §21）。
     std::stable_sort(diagnostics_.begin(), diagnostics_.end(),
                      [](const Diagnostic& a, const Diagnostic& b) {
                          return SeverityRank(a.severity) <
@@ -236,7 +234,7 @@ void ProblemsPanel::SetDiagnostics(
 }
 
 void ProblemsPanel::UpdateHeader() {
-    // Tab title with live count and Outdated marker (plan §24/§49).
+    // 带实时计数和 Outdated 标记的标签页标题（方案 §24/§49）。
     QString tab = "Problems";
     const int total = static_cast<int>(diagnostics_.size());
     if (state_ == ProblemsState::Done && total > 0) {
@@ -249,8 +247,8 @@ void ProblemsPanel::UpdateHeader() {
 }
 
 QString ProblemsPanel::LocationText(const pf::Diagnostic& d) const {
-    // "Figure \u00b7 main.tex:41" style (plan §22/§28): the block kind when
-    // known, plus the generated-file position when it survived mapping.
+    // 「Figure · main.tex:41」这样的风格（方案 §22/§28）：已知时给出块
+    // 类型，映射后仍保留时给出生成文件中的位置。
     QStringList parts;
     if (d.location.has_block_location()) {
         if (!d.location.label.empty()) parts << ToQ(d.location.label);
@@ -270,7 +268,7 @@ QString ProblemsPanel::LocationText(const pf::Diagnostic& d) const {
 void ProblemsPanel::Refilter() {
     list_->clear();
 
-    // Empty states (plan §42).
+    // 空状态（方案 §42）。
     if (state_ != ProblemsState::Done) {
         const QString text = state_ == ProblemsState::Building
                                  ? QStringLiteral("Building\u2026")
@@ -319,9 +317,8 @@ void ProblemsPanel::Refilter() {
 
 void ProblemsPanel::SetStale(bool stale, int behind_by) {
     (void)behind_by;
-    // Status text only (plan §49): the diagnostics themselves are untouched;
-    // the tab title grows the Outdated marker until the next build replaces
-    // the whole set.
+    // 仅状态文本（方案 §49）：Diagnostic 本身不受影响；在下一次 build
+    // 整体替换之前，标签页标题会一直带着 Outdated 标记。
     stale_ = stale;
     UpdateHeader();
 }
@@ -339,8 +336,8 @@ void ProblemsPanel::ShowBuildLog() {
 }
 
 void ProblemsPanel::AppendEvent(const pf::BuildEvent& event) {
-    // A new build owns the log from its first event on (plan §30/§35): the
-    // previous build's display is cleared; only the current Build is kept.
+    // 新的 build 从第一个事件起就接管日志（方案 §30/§35）：上一个 build
+    // 的显示被清空，只保留当前 Build。
     if (event.build_id != log_build_id_) {
         log_view_->clear();
         events_.clear();
@@ -349,8 +346,8 @@ void ProblemsPanel::AppendEvent(const pf::BuildEvent& event) {
         log_build_id_ = event.build_id;
     }
     if (event.type == BuildEventType::BuildStarted) {
-        // A retried snapshot reuses no id, but re-clear so the log starts
-        // empty even when the same build emits two start events (§8).
+        // 重试的 snapshot 不复用任何 id，但仍要再次清空，使同一个 build
+        // 发出两次 start 事件时日志也从空开始（§8）。
         log_view_->clear();
         events_.clear();
         last_stream_.clear();
@@ -365,8 +362,8 @@ void ProblemsPanel::AppendEvent(const pf::BuildEvent& event) {
     QString text;
     if (event.type == BuildEventType::StdOut ||
         event.type == BuildEventType::StdErr) {
-        // Compiler output keeps its raw bytes (plan §7); stream headers make
-        // the two channels readable without timestamps.
+        // 编译器输出保留其原始字节（方案 §7）；流头部让两个通道无需时间戳
+        // 也能区分。
         const bool is_err = event.type == BuildEventType::StdErr;
         const std::string stream = is_err ? "err" : "out";
         if (last_stream_ != stream) {
@@ -378,8 +375,8 @@ void ProblemsPanel::AppendEvent(const pf::BuildEvent& event) {
         }
         text += ToQ(event.message);
     } else {
-        // Close an unterminated raw line before a lifecycle event so the
-        // timestamp always starts a fresh line.
+        // 在生命周期事件之前结束未换行的原始行，使时间戳总是从新的一行
+        // 开始。
         if (log_needs_newline_) text += "\n";
         text += QString("%1 %2")
                     .arg(ToQ(FormatBuildTimestamp(event.timestamp_ms).c_str()),
@@ -390,9 +387,9 @@ void ProblemsPanel::AppendEvent(const pf::BuildEvent& event) {
     const bool was_at_bottom = !log_view_->verticalScrollBar() ||
         log_view_->verticalScrollBar()->value() >=
             log_view_->verticalScrollBar()->maximum();
-    // Incremental append at the document end (no toPlainText() rescans):
-    // raw compiler chunks may split a line mid-way, so the newline bookkeeping
-    // lives in log_needs_newline_ instead of the widget text.
+    // 在文档末尾增量追加（无需用 toPlainText() 重新扫描）：原始编译器数据块
+    // 可能把一行从中间截断，因此换行状态记在 log_needs_newline_ 中，而不是
+    // 依据控件文本推断。
     QTextCursor cursor(log_view_->document());
     cursor.movePosition(QTextCursor::End);
     cursor.insertText(text);

@@ -1,4 +1,4 @@
-// MathPreviewRenderer: real-TeX GUI math with a bounded pure-Qt fallback.
+// MathPreviewRenderer：使用真实 TeX 的 GUI 数学渲染，并带有有界的纯 Qt 回退方案。
 #include "MathPreviewRenderer.h"
 
 #include <QDir>
@@ -37,13 +37,13 @@ namespace pf::gui {
 namespace {
 
 // ---------------------------------------------------------------------------
-// Limits and constants
+// 限制与常量
 // ---------------------------------------------------------------------------
 
-constexpr int kMaxDepth = 48;        // recursion guard for groups/environments
-constexpr qreal kScriptScale = 0.7;  // ^ / _ shrink factor
-constexpr qreal kFracScale = 0.85;   // numerator / denominator shrink factor
-constexpr qreal kMinScale = 0.45;    // never shrink below this (keeps glyphs legible)
+constexpr int kMaxDepth = 48;        // groups/environments 的递归保护
+constexpr qreal kScriptScale = 0.7;  // ^ / _ 的缩放系数
+constexpr qreal kFracScale = 0.85;   // 分子 / 分母的缩放系数
+constexpr qreal kMinScale = 0.45;    // 缩放下限，保证字形清晰可读
 constexpr int kTexTimeoutMs = 12000;
 constexpr int kRasterTimeoutMs = 8000;
 constexpr int kMaxCacheEntries = 256;
@@ -88,7 +88,7 @@ QString CollapseWsTrim(const QString& in) {
 }
 
 // ---------------------------------------------------------------------------
-// Box tree
+// Box 树
 // ---------------------------------------------------------------------------
 
 enum class Kind { HBox, Text, Fraction, Radical, Accent, Script, Limits, Delim, Grid, Space, Rule };
@@ -97,14 +97,14 @@ struct Box;
 using BoxPtr = std::shared_ptr<Box>;
 
 struct Box {
-    qreal w = 0;  // logical width
-    qreal h = 0;  // logical ascent above the baseline
-    qreal d = 0;  // logical descent below the baseline
+    qreal w = 0;  // 逻辑宽度
+    qreal h = 0;  // 基线上方的逻辑上高（ascent）
+    qreal d = 0;  // 基线下方的逻辑下深（descent）
     Kind kind = Kind::HBox;
-    // Large operators (\sum ...) draw their limits above/below.
+    // 大运算符（\sum 等）把上下限画在符号的上方/下方。
     bool limits_op = false;
-    // Set on Script/Limits boxes so a following script can be stacked on the
-    // same base instead of nesting (x_i^2 must put both on x).
+    // 在 Script/Limits box 上设置，使后续脚本能叠加到同一基座上
+    // 而不是嵌套（x_i^2 必须把两者都放在 x 上）。
     BoxPtr op_base, op_sup, op_sub;
     std::function<void(QPainter&, qreal, qreal)> draw = NoopDraw;
 };
@@ -115,7 +115,7 @@ void DrawBox(const BoxPtr& b, QPainter& p, qreal x, qreal baseline) {
     if (b && b->draw) b->draw(p, x, baseline);
 }
 
-// Collapse a list of boxes into a single horizontal box sharing one baseline.
+// 把一组 box 合并为共享同一基线的单个水平 box。
 BoxPtr MakeHBox(const std::vector<BoxPtr>& items) {
     auto box = std::make_shared<Box>();
     box->kind = Kind::HBox;
@@ -146,7 +146,7 @@ BoxPtr MakeSpace(qreal width) {
 }
 
 // ---------------------------------------------------------------------------
-// Fonts
+// 字体
 // ---------------------------------------------------------------------------
 
 struct FontSpec {
@@ -155,9 +155,9 @@ struct FontSpec {
     bool mono = false;
     bool sans = false;
     bool script = false;
-    bool force_upright = false;   // \mathrm, \mathbf, ...
-    bool auto_italic = true;      // plain math letters become italic
-    qreal size = 1.0;             // extra size multiplier (large operators)
+    bool force_upright = false;   // \mathrm、\mathbf 等
+    bool auto_italic = true;      // 普通数学字母自动变斜体
+    qreal size = 1.0;             // 额外的尺寸倍率（大运算符）
 };
 
 struct ParseState {
@@ -215,7 +215,7 @@ BoxPtr MakeText(const QString& text, const QFont& font, const QColor& color) {
 }
 
 // ---------------------------------------------------------------------------
-// Composite boxes
+// 复合 box
 // ---------------------------------------------------------------------------
 
 BoxPtr MakeFraction(const BoxPtr& num, const BoxPtr& den, qreal fontPx, const QColor& color) {
@@ -302,7 +302,7 @@ BoxPtr MakeLimits(const BoxPtr& base, const BoxPtr& sup, const BoxPtr& sub, qrea
 
 BoxPtr AttachScript(const BoxPtr& base, bool isSup, const BoxPtr& script, qreal fontPx) {
     BoxPtr b = base ? base : MakeEmpty();
-    // Scripts stack on one base: x_i^2, \sum_{i=1}^{n}.
+    // 多个脚本叠加在同一基座上：x_i^2、\sum_{i=1}^{n}。
     if (b->kind == Kind::Script || b->kind == Kind::Limits) {
         BoxPtr core = b->op_base ? b->op_base : b;
         BoxPtr s = b->op_sup;
@@ -363,7 +363,7 @@ BoxPtr MakeRadical(const BoxPtr& index, const BoxPtr& radicand, qreal fontPx, co
     return box;
 }
 
-// A delimiter glyph sized to the enclosed box, or a stretched line for `|`.
+// 为被包裹的 box 调整大小的定界符字形；对 `|` 则画一条拉伸的线。
 BoxPtr MakeDelimiterFor(const QString& glyph, qreal contentH, qreal contentD, qreal fontPx,
                         const QColor& color, const ParseState& st) {
     auto box = std::make_shared<Box>();
@@ -515,14 +515,14 @@ BoxPtr MakeGrid(const std::vector<std::vector<BoxPtr>>& rows, ColAlign align, bo
 }
 
 // ---------------------------------------------------------------------------
-// Symbol tables
+// 符号表
 // ---------------------------------------------------------------------------
 
 const QHash<QString, QString>& SymbolTable() {
     static const QHash<QString, QString> table = [] {
         QHash<QString, QString> m;
         auto add = [&m](const char* name, int cp) { m.insert(QString::fromLatin1(name), U(static_cast<char16_t>(cp))); };
-        // Greek, lower case.
+        // 希腊字母，小写。
         add("alpha", 0x03B1);
         add("beta", 0x03B2);
         add("gamma", 0x03B3);
@@ -549,7 +549,7 @@ const QHash<QString, QString>& SymbolTable() {
         add("chi", 0x03C7);
         add("psi", 0x03C8);
         add("omega", 0x03C9);
-        // Greek, upper case.
+        // 希腊字母，大写。
         add("Gamma", 0x0393);
         add("Delta", 0x0394);
         add("Theta", 0x0398);
@@ -561,7 +561,7 @@ const QHash<QString, QString>& SymbolTable() {
         add("Phi", 0x03A6);
         add("Psi", 0x03A8);
         add("Omega", 0x03A9);
-        // Relations / operators / arrows / misc.
+        // 关系符 / 运算符 / 箭头 / 杂项
         add("infty", 0x221E);
         add("partial", 0x2202);
         add("nabla", 0x2207);
@@ -633,13 +633,13 @@ const QHash<QString, QString>& SymbolTable() {
         add("lceil", 0x2308);
         add("rceil", 0x2309);
         add("backslash", 0x005C);
-        add("qquad", 0x2003);  // never looked up as a glyph; handled as spacing
+        add("qquad", 0x2003);  // 从不作为字形查找，按间距处理
         return m;
     }();
     return table;
 }
 
-// Function names rendered upright; the bool is "limits above/below".
+// 以正体渲染的函数名；bool 表示「上下限是否置于上下方」。
 bool FunctionName(const QString& name, bool& limits) {
     static const QHash<QString, bool> funcs = {
         {QStringLiteral("lim"), true},   {QStringLiteral("limsup"), true},
@@ -690,11 +690,11 @@ bool SupportedEnvironment(const QString& env) {
 }
 
 // ---------------------------------------------------------------------------
-// Source scanning helpers (operate on a whole string, nesting aware)
+// 源码扫描辅助函数（作用于整串文本，能识别嵌套）
 // ---------------------------------------------------------------------------
 
-// Split `s` into [start, end) ranges on top-level `&` (onAmp) or `\\`.
-// Group braces and nested \begin/\end environments are respected.
+// 按顶层 `&`（onAmp 为 true 时）或 `\\` 把 `s` 切分为若干 [start, end) 区间。
+// 会正确处理分组花括号以及嵌套的 \begin/\end 环境。
 QVector<QPair<int, int>> SplitTopLevel(const QString& s, bool onAmp) {
     QVector<QPair<int, int>> out;
     int start = 0;
@@ -734,7 +734,7 @@ QVector<QPair<int, int>> SplitTopLevel(const QString& s, bool onAmp) {
 }
 
 // ---------------------------------------------------------------------------
-// Parser
+// 解析器
 // ---------------------------------------------------------------------------
 
 class Parser {
@@ -759,7 +759,7 @@ public:
                     break;
                 }
             }
-            if (c.isSpace()) {  // whitespace collapses to a single gap
+            if (c.isSpace()) {  // 空白折叠为单个间隙
                 while (i_ < s_.size() && s_[i_].isSpace()) ++i_;
                 const bool nextIsScript =
                     (i_ < s_.size() && (s_[i_] == u'^' || s_[i_] == u'_'));
@@ -774,7 +774,7 @@ public:
             if (c == u'^' || c == u'_') {
                 const bool isSup = (c == u'^');
                 ++i_;
-                if (i_ >= s_.size()) {  // dangling marker renders literally
+                if (i_ >= s_.size()) {  // 悬空的标记按字面渲染
                     st_.Fail(QStringLiteral("missing script argument"));
                     items.push_back(MakePlainText(QString(c), false));
                     continue;
@@ -789,7 +789,7 @@ public:
             const int before = i_;
             const BoxPtr atom = ParseAtom();
             if (atom) items.push_back(atom);
-            if (i_ == before) ++i_;  // absolute progress guarantee
+            if (i_ == before) ++i_;  // 保证绝对前进
         }
         return MakeHBox(items);
     }
@@ -807,8 +807,8 @@ private:
         ~ScaleGuard() { p.scale_ = old; }
     };
 
-    // Bounds recursion through command arguments: \frac\frac\frac..., \hat\hat...,
-    // \left(\left(... have no braces, so the group guard alone cannot stop them.
+    // 限制经由命令参数产生的递归：\frac\frac\frac...、\hat\hat...、
+    // \left(\left(... 都不带花括号，仅靠分组守卫无法阻止。
     struct DepthGuard {
         Parser& p;
         explicit DepthGuard(Parser& parser) : p(parser) { ++p.depth_; }
@@ -837,7 +837,7 @@ private:
         return word == QLatin1String("right");
     }
 
-    // -- atoms ------------------------------------------------------------
+    // -- 原子 ------------------------------------------------------------
 
     BoxPtr ParseAtom() {
         if (i_ >= s_.size()) return MakeEmpty();
@@ -862,7 +862,7 @@ private:
     }
 
     BoxPtr ParseBracedGroup() {
-        ++i_;  // past '{'
+        ++i_;  // 越过 '{'
         if (depth_ >= kMaxDepth) {
             st_.Fail(QStringLiteral("nesting too deep"));
             return MakePlainText(CollapseWsTrim(ConsumeRawBalanced()), false);
@@ -875,7 +875,7 @@ private:
         return inner;
     }
 
-    // Reads a balanced {...} body (already past the '{') and consumes the '}'.
+    // 读取配平的 {...} 主体（此时已越过 '{'），并消费掉 '}'。
     QString ConsumeRawBalanced() {
         int nesting = 1;
         const int start = i_;
@@ -924,12 +924,12 @@ private:
         return MakeText(QString(c), FontFor(st_, sp, scale_), st_.color);
     }
 
-    // -- commands ---------------------------------------------------------
+    // -- 命令 ---------------------------------------------------------
 
     BoxPtr ParseCommand() {
         const int backslash = i_;
         if (depth_ >= kMaxDepth) {
-            // Too deep: consume the command name and draw it literally.
+            // 嵌套过深：消费掉命令名并按字面绘制。
             st_.Fail(QStringLiteral("nesting too deep"));
             ++i_;
             if (i_ < s_.size() && s_[i_].isLetter()) {
@@ -940,7 +940,7 @@ private:
             return MakePlainText(CollapseWsTrim(s_.mid(backslash, i_ - backslash)), false);
         }
         DepthGuard guard(*this);
-        ++i_;  // past '\\'
+        ++i_;  // 越过 '\\'
         if (i_ >= s_.size()) return MakePlainText(QStringLiteral("\\"), false);
         if (s_[i_].isLetter()) {
             int k = i_;
@@ -973,7 +973,7 @@ private:
             case u' ':
                 return MakeSpace(0.33 * CurrentFontPx());
             case u'\\':
-                return MakeSpace(0.30 * CurrentFontPx());  // line break inside a group
+                return MakeSpace(0.30 * CurrentFontPx());  // 分组内的换行
             case u'|':
                 return MakePlainText(U(0x2016), false);
             default:
@@ -986,11 +986,11 @@ private:
 
     BoxPtr DispatchWord(const QString& name, int backslash) {
         (void)backslash;
-        // Spacing words.
+        // 间距命令。
         if (name == QLatin1String("quad")) return MakeSpace(CurrentFontPx());
         if (name == QLatin1String("qquad")) return MakeSpace(2.0 * CurrentFontPx());
 
-        // Fractions.
+        // 分数。
         if (name == QLatin1String("frac") || name == QLatin1String("dfrac") ||
             name == QLatin1String("tfrac")) {
             BoxPtr num, den;
@@ -1005,10 +1005,10 @@ private:
             return MakeFraction(num, den, CurrentFontPx(), st_.color);
         }
 
-        // Roots.
+        // 根式。
         if (name == QLatin1String("sqrt")) return ParseSqrt();
 
-        // Delimiters.
+        // 定界符。
         if (name == QLatin1String("left")) return ParseLeft();
         if (name == QLatin1String("right")) {
             st_.Fail(QStringLiteral("unmatched \\right"));
@@ -1018,7 +1018,7 @@ private:
             return MakeDelimiterFor(QString(ch), 0, 0, CurrentFontPx(), st_.color, st_);
         }
 
-        // Font commands.
+        // 字体命令。
         if (name == QLatin1String("mathbf") || name == QLatin1String("boldsymbol") ||
             name == QLatin1String("mathbfit")) {
             return ParseWithFont([&](FontSpec& s) {
@@ -1072,7 +1072,7 @@ private:
             return ParseTextArgument(name);
         }
 
-        // Accents.
+        // 重音符号。
         if (name == QLatin1String("hat") || name == QLatin1String("widehat"))
             return MakeGlyphAccent(ParseArgument(), U(0x02C6), CurrentFontPx(), st_.color, st_);
         if (name == QLatin1String("vec"))
@@ -1088,14 +1088,14 @@ private:
         if (name == QLatin1String("underline"))
             return MakeLineAccent(ParseArgument(), false, CurrentFontPx(), st_.color);
 
-        // Environments.
+        // 环境。
         if (name == QLatin1String("begin")) return ParseBegin();
         if (name == QLatin1String("end")) {
             st_.Fail(QStringLiteral("unmatched \\end"));
             return MakePlainText(QStringLiteral("\\end"), false);
         }
 
-        // Large operators.
+        // 大运算符。
         {
             QString glyph;
             bool limits = false;
@@ -1112,7 +1112,7 @@ private:
             }
         }
 
-        // Upright function names.
+        // 正体函数名。
         {
             bool limits = false;
             if (FunctionName(name, limits)) {
@@ -1126,7 +1126,7 @@ private:
             }
         }
 
-        // Unicode symbol table.
+        // Unicode 符号表。
         const auto it = SymbolTable().constFind(name);
         if (it != SymbolTable().constEnd()) {
             FontSpec sp = spec_;
@@ -1135,7 +1135,7 @@ private:
             return MakeText(it.value(), FontFor(st_, sp, scale_), st_.color);
         }
 
-        // Unknown: literal fallback.
+        // 未知命令：按字面回退。
         st_.Fail(QStringLiteral("unsupported command: \\") + name);
         return MakePlainText(QStringLiteral("\\") + name, false);
     }
@@ -1256,8 +1256,8 @@ private:
             st_.Fail(QStringLiteral("malformed \\begin"));
             return MakePlainText(QStringLiteral("\\begin"), false);
         }
-        const int beginStart = i_ - 6;  // points at the backslash of "\begin"
-        ++i_;  // past '{'
+        const int beginStart = i_ - 6;  // 指向 "\begin" 的反斜杠
+        ++i_;  // 越过 '{'
         const int nameStart = i_;
         while (i_ < s_.size() && s_[i_] != u'}') ++i_;
         const QString env = s_.mid(nameStart, i_ - nameStart);
@@ -1283,7 +1283,7 @@ private:
             st_.Fail(QStringLiteral("nesting too deep"));
             return MakePlainText(CollapseWsTrim(raw), false);
         }
-        const int bodyStart = nameStart + env.size() + 1;  // just past "}{"
+        const int bodyStart = nameStart + env.size() + 1;  // 刚好越过 "}{"
         return BuildEnvironment(env, s_.mid(bodyStart, std::max(0, bodyEnd - bodyStart)));
     }
 
@@ -1395,7 +1395,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// Rasterisation
+// 光栅化
 // ---------------------------------------------------------------------------
 
 MathRenderResult FinishImage(const BoxPtr& content, const MathRenderStyle& style, bool exact,
@@ -1453,9 +1453,8 @@ MathRenderResult FinishImage(const BoxPtr& content, const MathRenderStyle& style
         p.end();
     }
 
-    // P0-07: the pixels stay a QImage here; the QPixmap is created by the
-    // GUI-thread entry point. QPixmap construction is GUI-thread-only, and
-    // this function runs on the math worker thread.
+    // P0-07：此处像素仍保持为 QImage；QPixmap 由 GUI 线程入口创建。
+    // QPixmap 的构造只能在 GUI 线程进行，而本函数运行在 math worker 线程上。
     res.image = img;
     res.device_pixel_ratio = dprWanted > 0 ? dprWanted : 1.0;
     res.width = logicalW;
@@ -1464,7 +1463,7 @@ MathRenderResult FinishImage(const BoxPtr& content, const MathRenderStyle& style
     return res;
 }
 
-// A last-resort renderer: one line of literal text, never throws.
+// 最后手段的渲染器：输出一行字面文本，绝不抛异常。
 MathRenderResult RenderLiteralFallback(const QString& latex, const MathRenderStyle& style,
                                        const QString& note) {
     ParseState st;
@@ -1575,9 +1574,9 @@ bool RunProcess(const QString& program, const QStringList& arguments,
 }
 
 QString TexDocument(const QString& latex) {
-    // A custom one-box page avoids depending on the standalone/preview
-    // packages. PF-* values in the log are TeX box metrics, not bitmap
-    // estimates, so the caller receives a real mathematical baseline.
+    // 使用自定义的单 box 页面可避免依赖 standalone/preview 宏包。
+    // 日志中的 PF-* 值是 TeX box 的度量，而非位图估算值，
+    // 因此调用方得到的是真实的数学基线。
     return QStringLiteral(
                "\\documentclass{article}\n"
                "\\usepackage{amsmath,amssymb}\n"
@@ -1679,8 +1678,8 @@ MathRenderResult RenderWithTex(const QString& latex,
     QImage image;
     bool used_svg = false;
 
-    // Keep the TeX PDF vector geometry through the last possible step. Qt's
-    // SVG image plugin is optional, so PNG remains the deterministic fallback.
+    // 尽可能在最后一步之前保留 TeX PDF 的矢量几何。Qt 的 SVG 图像插件
+    // 属于可选组件，因此 PNG 仍是确定性的回退方案。
     const QString svg_path = prefix + QStringLiteral(".svg");
     if (RunProcess(rasterizer,
                    {QStringLiteral("-svg"), directory.filePath("main.pdf"),
@@ -1721,7 +1720,7 @@ MathRenderResult RenderWithTex(const QString& latex,
         }
     }
 
-    // P0-07: image only - see FinishImage.
+    // P0-07：仅图像——参见 FinishImage。
     result.image = image;
     result.device_pixel_ratio = dpr;
     result.width = qMax(1, qRound(image.width() / dpr));
@@ -1758,8 +1757,8 @@ QMutex& RenderCacheMutex() {
 
 }  // namespace
 
-// P0-07: the shared cache stores IMAGE-ONLY results so it is safe to touch
-// from the math worker thread (a QPixmap must never cross that boundary).
+// P0-07：共享缓存只存储纯图像结果，因此可以在 math worker 线程中安全访问
+// （QPixmap 绝不能跨越该边界）。
 MathRenderResult RenderMathPreviewImage(const QString& latex,
                                         const MathRenderStyle& style) {
     MathRenderResult empty;
@@ -1811,8 +1810,8 @@ MathRenderResult RenderMathPreviewImage(const QString& latex,
 
 MathRenderResult RenderMathPreview(const QString& latex,
                                    const MathRenderStyle& style) {
-    // GUI-thread entry point: render (or reuse) the image, then materialise
-    // the QPixmap here, where QPixmap construction is legal.
+    // GUI 线程入口：渲染（或复用）图像，然后在此处实体化 QPixmap，
+    // 因为这里的 QPixmap 构造是合法的。
     MathRenderResult rendered = RenderMathPreviewImage(latex, style);
     if (!rendered.image.isNull() && rendered.pixmap.isNull()) {
         rendered.pixmap = QPixmap::fromImage(rendered.image);

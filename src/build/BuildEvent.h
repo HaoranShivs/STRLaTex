@@ -1,8 +1,7 @@
 #pragma once
-// BuildEvent: one structured line in a build's lifecycle (Build Diagnostics
-// plan §4). The BuildController publishes only these events; the Build Log
-// view renders them, and no GUI code parses compiler output to learn what
-// happened.
+// BuildEvent：build 生命周期中的一条结构化记录（Build Diagnostics
+// 方案 §4）。BuildController 只发布这些事件；Build Log 视图负责渲染，
+// 没有任何 GUI 代码通过解析编译器输出来得知发生了什么。
 
 #include <chrono>
 #include <cstdint>
@@ -27,7 +26,7 @@ enum class BuildEventType : std::uint8_t {
     BuildFailed,
     BuildCancelled,
 
-    // Messages from STRTex itself (validator, runtime, parser trouble).
+    // 来自 STRTex 自身的消息（validator、runtime、parser 故障）。
     InternalMessage,
 };
 
@@ -35,19 +34,19 @@ const char* ToString(BuildEventType type);
 
 struct BuildEvent {
     BuildId build_id;
-    // Wall-clock time the event was emitted, in ms since the epoch; the GUI
-    // renders it as [HH:mm:ss.zzz] (plan §7).
+    // 事件发出时的墙上时钟时间，单位为自 epoch 起的毫秒数；GUI 将其渲染为
+    // [HH:mm:ss.zzz]（方案 §7）。
     std::int64_t timestamp_ms = 0;
     BuildEventType type = BuildEventType::InternalMessage;
-    // For lifecycle events: the human-readable message ("Generating LaTeX").
-    // For StdOut/StdErr: the raw compiler text, unmodified (plan §7).
+    // 对于生命周期事件：人类可读的消息（"Generating LaTeX"）。
+    // 对于 StdOut/StdErr：未经修改的编译器原始文本（方案 §7）。
     std::string message;
 };
 
-// Current wall-clock time in ms since epoch, for event stamping.
+// 当前墙上时钟时间，单位为自 epoch 起的毫秒数，用于给事件打时间戳。
 std::int64_t BuildEventNowMs();
 
-// Formats one event's timestamp as [HH:mm:ss.zzz] in local time.
+// 将单个事件的时间戳按本地时间格式化为 [HH:mm:ss.zzz]。
 std::string FormatBuildTimestamp(std::int64_t timestamp_ms);
 
 }  // namespace pf

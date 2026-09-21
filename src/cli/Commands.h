@@ -1,5 +1,5 @@
 #pragma once
-// CLI command implementations.
+// CLI 命令实现。
 #include <string>
 #include <vector>
 

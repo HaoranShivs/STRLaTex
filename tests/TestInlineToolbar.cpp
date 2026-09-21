@@ -1,10 +1,10 @@
-// Reproduces the two GUI reports:
-//   1. clicking the format buttons grows the text row into a big blank area
-//      (Delete then "restores" it);
-//   2. bold/italic work under the default template but not under IEEE.
+// 复现两个 GUI 报告的问题：
+//   1. 点击格式按钮会把文本行撑成一大片空白区域
+//      （随后按 Delete 又能「恢复」）；
+//   2. 粗体/斜体在默认模板下有效，在 IEEE 下却无效。
 //
-// Both are driven through the real MainWindow, the real toolbar and the real
-// InlineEditor, because neither symptom exists in the domain layer.
+// 两者都通过真实的 MainWindow、真实工具栏和真实 InlineEditor 驱动，
+// 因为这两个症状在领域层都不存在。
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QThread>
@@ -43,7 +43,7 @@ void Spin(int ms) {
     }
 }
 
-// The visible rich editor for a node id.
+// 某个节点 id 对应的可见富文本编辑器。
 InlineEditor* FindRich(MainWindow& window, const QString& node_id) {
     for (InlineEditor* edit : window.findChildren<InlineEditor*>()) {
         if (!edit->isVisible()) continue;
@@ -52,11 +52,11 @@ InlineEditor* FindRich(MainWindow& window, const QString& node_id) {
     return nullptr;
 }
 
-// Every QToolButton on the format bar of the card that owns `editor`.
+// 拥有 `editor` 的那张卡片上格式栏中的每个 QToolButton。
 std::vector<QToolButton*> ToolbarButtons(MainWindow& window) {
     std::vector<QToolButton*> out;
     for (QToolButton* button : window.findChildren<QToolButton*>()) {
-        if (!button->isVisible()) continue;  // stale toolbar from a rebuild
+        if (!button->isVisible()) continue;  // 来自某次重建的陈旧工具栏
         const QString text = button->text();
         if (text == "B" || text == "I" || text == "Inline Math" ||
             text == "Citation" || text == "Reference") {
@@ -73,7 +73,7 @@ QToolButton* FindButton(MainWindow& window, const QString& text) {
     return nullptr;
 }
 
-// Build a project with one Text row holding one word, ready to be formatted.
+// 构建一个项目，其中只有一个包含单个单词的 Text 行，可供格式化。
 struct Fixture {
     MainWindow window;
     QString node_id;
@@ -84,9 +84,8 @@ struct Fixture {
         auto dir = std::filesystem::temp_directory_path() /
                    dir_name.toStdString();
         std::filesystem::remove_all(dir);
-        // Create the project, then save+reopen it: opening is what switches
-        // the window from the welcome page to the workspace, exactly like a
-        // real session. Without this the editor rows stay hidden.
+        // 先创建项目，再保存并重新打开：正是「打开」这一操作把窗口从欢迎页
+        // 切换到工作区，与真实会话完全一致。缺少这一步，编辑器行会一直隐藏。
         window.controller()->NewProject(QString::fromStdString(dir.string()));
         window.controller()->Save();
         window.controller()->FlushSaves();
@@ -101,7 +100,7 @@ struct Fixture {
     }
 };
 
-// What the document stores for the single paragraph.
+// document 为单个段落存储的内容。
 const Paragraph* StoredParagraph(MainWindow& window) {
     Document& doc = window.controller()->session().mutable_document();
     const auto& sections = BodyOf(doc).sections;
@@ -122,7 +121,7 @@ std::string RenderedTex(MainWindow& window) {
 
 }  // namespace
 
-// ---- Question 1: does a toolbar click blow up the row height? ----
+// ---- 问题 1：点击工具栏会不会把行高撑大？----
 
 PF_TEST(ToolbarClickDoesNotGrowTheTextRow) {
     EnsureQApplication();
@@ -133,13 +132,12 @@ PF_TEST(ToolbarClickDoesNotGrowTheTextRow) {
 
     const int before = editor->height();
 
-    // A real user clicks into the paragraph before reaching for the toolbar:
-    // the format strip is part of the block chrome and only shows on
-    // hover/focus (UI plan §2), so focus first, then find the button.
+    // 真实用户在操作工具栏之前会先点进段落：格式条属于 block 界面外壳的一部分，
+    // 仅在悬停/聚焦时显示（UI 方案 §2），因此先聚焦，再查找按钮。
     editor->setFocus(Qt::MouseFocusReason);
     Spin(120);
 
-    // Click the italic button exactly as a user would.
+    // 完全按照用户的操作点击斜体按钮。
     QToolButton* italic = FindButton(fixture.window, QStringLiteral("I"));
     PF_CHECK(italic != nullptr);
     if (!italic) return;
@@ -154,7 +152,7 @@ PF_TEST(ToolbarClickDoesNotGrowTheTextRow) {
     const int after = after_editor->height();
     std::cout << "    row height before=" << before << " after=" << after
               << " widget_width=" << after_editor->width() << "\n";
-    // The row may be reconstructed, but it must not become a tall blank box.
+    // 该行可能被重建，但绝不能变成一大块空白框。
     PF_CHECK(after <= before + 20);
 }
 
@@ -173,18 +171,18 @@ PF_TEST(ToolbarClickKeepsTheCaretInTheRow) {
     italic->click();
     Spin(300);
 
-    // Focus must stay in the row, otherwise clicking a button commits the row
-    // and rebuilds every card mid-edit.
+    // 焦点必须留在该行内，否则点击按钮会在编辑过程中提交该行
+    // 并重建每一张卡片。
     InlineEditor* after_editor = FindRich(fixture.window, fixture.node_id);
     PF_CHECK(after_editor != nullptr && after_editor->hasFocus());
 }
 
-// ---- Question 2: marks under both templates ----
+// ---- 问题 2：两种模板下的标记 ----
 
 namespace {
 
-// Applies bold+italic to the first word of the Text row, through the real
-// toolbar, and reports back what the document and the LaTeX ended up with.
+// 通过真实工具栏给 Text 行的第一个单词加上粗体和斜体，
+// 并回传 document 与 LaTeX 最终得到的结果。
 struct MarkOutcome {
     bool document_bold = false;
     bool document_italic = false;
@@ -196,11 +194,11 @@ MarkOutcome FormatFirstWord(MainWindow& window, const QString& node_id) {
     MarkOutcome outcome;
     InlineEditor* editor = FindRich(window, node_id);
     if (!editor) return outcome;
-    // A real user clicks into the paragraph before reaching for the toolbar.
+    // 真实用户在操作工具栏之前会先点进段落。
     editor->setFocus(Qt::MouseFocusReason);
     Spin(120);
 
-    // Select the whole word.
+    // 选中整个单词。
     QTextCursor cursor(editor->document());
     cursor.setPosition(0);
     cursor.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
@@ -213,7 +211,7 @@ MarkOutcome FormatFirstWord(MainWindow& window, const QString& node_id) {
     if (bold) bold->click();
     Spin(300);
 
-    // Commit the way a user does: leave the row (click elsewhere).
+    // 按用户的方式提交：离开该行（点击别处）。
     if (InlineEditor* current = FindRich(window, node_id)) {
         current->clearFocus();
     }
@@ -241,7 +239,7 @@ MarkOutcome FormatFirstWord(MainWindow& window, const QString& node_id) {
         }
     }
     const std::string tex = RenderedTex(window);
-    // Bold+italic nests as \textbf{\emph{word}}, so accept either form.
+    // 粗体+斜体嵌套为 \textbf{\emph{word}}，因此两种形式都接受。
     outcome.tex_bold = tex.find("\\textbf{") != std::string::npos &&
                        tex.find("word") != std::string::npos;
     outcome.tex_italic = tex.find("\\emph{") != std::string::npos &&

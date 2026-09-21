@@ -17,7 +17,7 @@ MigrationResult ProjectMigrator::MigrateToCurrent(SerializedProject* project) {
     result.from_version = project->schema_version;
 
     if (project->schema_version.empty()) {
-        // Very old or hand-written files: treat as V1 and record a warning.
+        // 非常旧或手写的文件：视为 V1 并记录一条警告。
         project->schema_version = kSchemaVersionV1;
         result.from_version = kSchemaVersionV1;
         result.warnings.push_back(
@@ -34,12 +34,10 @@ MigrationResult ProjectMigrator::MigrateToCurrent(SerializedProject* project) {
         return result;
     }
 
-    // V1 -> V2: the third heading level was introduced. A V1 document has no
-    // subsubsection field at all, so the in-memory representation is already
-    // correct (every Subsection starts with an empty subsubsections vector);
-    // the migration is a version stamp plus a note that the document was
-    // interpreted under the new schema. Nothing is dropped or renamed, which
-    // is why the step is lossless by construction.
+    // V1 -> V2：引入了第三级标题。V1 文档完全没有 subsubsection 字段，
+    // 因此内存中的表示本就正确（每个 Subsection 都以空的 subsubsections
+    // vector 开始）；本次迁移只是打一个版本戳，外加一条该文档按新 schema
+    // 解释的说明。没有任何内容被丢弃或重命名，因此该步骤在构造上就是无损的。
     if (project->schema_version == kSchemaVersionV1) {
         MigrationStep step;
         step.from_version = kSchemaVersionV1;
@@ -50,10 +48,10 @@ MigrationResult ProjectMigrator::MigrateToCurrent(SerializedProject* project) {
         project->schema_version = kSchemaVersionV2;
     }
 
-    // V2 -> V3: math moved to MathExpression. The reader has always understood
-    // both the old ("inlineEquation"/"displayEquation" + "math") and the new
-    // ("inline_math"/"equation" + "latex") spellings, so the step is a version
-    // stamp: nothing is dropped and the stored source is preserved verbatim.
+    // V2 -> V3：math 迁移到 MathExpression。读取器一直同时理解旧写法
+    // （"inlineEquation"/"displayEquation" + "math"）和新写法
+    // （"inline_math"/"equation" + "latex"），因此该步骤只是一个版本戳：
+    // 不丢弃任何内容，存储的源码原样保留。
     if (project->schema_version == kSchemaVersionV2) {
         MigrationStep step;
         step.from_version = kSchemaVersionV2;
