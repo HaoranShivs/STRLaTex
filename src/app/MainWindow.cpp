@@ -14,6 +14,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
+#include <QScopedValueRollback>
 #include <QSettings>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -328,6 +329,7 @@ void MainWindow::WireEditor() {
           [this](QString node, const InlineContent &content) {
             if (shutting_down_)
               return;
+            QScopedValueRollback<bool> keep_rows(editor_change_in_progress_, true);
             controller_->EditParagraphRich(NodeId(node.toStdString()), content);
           });
   connect(editor_, &BlockEditor::EquationEdited, this,
@@ -428,6 +430,7 @@ void MainWindow::WireEditor() {
           [this](QString node, bool double_column) {
             if (shutting_down_)
               return;
+            QScopedValueRollback<bool> keep_rows(editor_change_in_progress_, true);
             const auto result = controller_->EditFigureSpan(
                 NodeId(node.toStdString()), double_column);
             if (result.status != pf::EditStatus::Applied) {
@@ -991,6 +994,13 @@ void MainWindow::RefreshDocumentView() {
   // 编辑器。GUI 中的「[1]」pill 与 PDF 中的编号是同一套引用顺序策略
   // 的同一种投影。
   editor_->SetCitationNumbers(controller_->CitationNumbers());
+  // InlineEditor 的富内容和 Figure 的复选框已经显示了刚提交的值。
+  // documentChanged 在提交栈内同步发出；此时只刷新由文档派生的 UI。
+  // 若先前有结构变更待处理，RowCommitted 仍会在提交后完成那次重建。
+  if (editor_change_in_progress_) {
+    RefreshSidePanels();
+    return;
+  }
   // 插入菜单与「/」菜单按当前模板能表达的内容进行过滤（方案 §9）。
   if (const auto *tpl = TemplateRegistry::Instance().Find(
           controller_->session().state().template_selection())) {

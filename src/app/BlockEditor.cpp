@@ -798,8 +798,7 @@ void BlockEditor::ShowCitationPicker(InlineEditor* editor) {
         guard->InsertCitationObject({key});
         guard->setFocus(Qt::OtherFocusReason);
         CommitInlineRow(guard.data());
-        // 上面的提交会用新的引用编号重建各行；
-        // 重新附着到（新的）行上，以便紧接着插入的 pill 继续输入。
+        // 提交会刷新引用编号；把光标放回 pill 之后，便于继续输入。
         const int after = caret + 1;
         QTimer::singleShot(0, this, [this, node_id, after]() {
             for (auto& block : blocks_) {
@@ -1830,8 +1829,7 @@ void BlockEditor::RebuildFromDocument(const Document& doc) {
     QString pending_key;
     QString pending_text;
     bool has_pending = false;
-    // 富文本行在重建期间同样保留其光标：引用选择器通过一次行重建来提交，
-    // 并期望输入精确地从插入 pill 的位置继续（引用方案 §4）。
+    // 富文本行在确实需要重建时同样保留其光标。
     if (auto* rich = qobject_cast<InlineEditor*>(focusWidget())) {
         focus_node_ = rich->property("row_focus_key").toString();
         focus_pos_ = rich->textCursor().position();

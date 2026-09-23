@@ -12,7 +12,11 @@
 #include <QElapsedTimer>
 #include <QKeyEvent>
 #include <QFocusEvent>
+#include <QCheckBox>
+#include <QImage>
 #include <QMetaObject>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextFragment>
@@ -514,9 +518,10 @@ PF_TEST(CitationCommitFlowReachesDocumentAndPillRepaints) {
         PF_CHECK(last && last->text == "after");
     }
 
-    // 2. 提交重建了该 row；*新* widget 中的 pill 显示 [1]。
+    // 2. 提交后原 row 保持存活，pill 的显示编号就地更新为 [1]。
     InlineEditor* reloaded_row = FindRow(window, fixture.node_id);
     PF_CHECK(reloaded_row != nullptr);
+    PF_CHECK(reloaded_row == row);
     if (reloaded_row) {
         const QString plain = reloaded_row->toPlainText();
         const int pill = plain.indexOf(QChar(0xFFFC));
@@ -527,6 +532,93 @@ PF_TEST(CitationCommitFlowReachesDocumentAndPillRepaints) {
                          .toString() == QStringLiteral("[1]"));
         }
     }
+}
+
+PF_TEST(InlineReferencesAndFigureSpanKeepEditorPosition) {
+    EnsureQApplication();
+    Fixture fixture("pf-editor-position");
+    MainWindow& window = fixture.window;
+    auto* editor = window.findChild<BlockEditor*>();
+    auto* row = FindRow(window, fixture.node_id);
+    PF_CHECK(editor != nullptr && row != nullptr);
+    if (!editor || !row) return;
+
+    // 后续块使主编辑区能够滚动。
+    const auto section_id = window.controller()->session().state()
+                                .document().body().sections.front().id;
+    auto filler = window.controller()->InsertParagraph(
+        section_id, QStringLiteral("filler"));
+    PF_CHECK(filler.status == EditStatus::Applied);
+    for (int i = 0; i < 16; ++i)
+        window.controller()->InsertParagraph(section_id, QStringLiteral("filler"));
+    Spin(80);
+    row = FindRow(window, fixture.node_id);
+    auto* scroll = editor->findChild<QScrollArea*>();
+    PF_CHECK(row != nullptr);
+    PF_CHECK(scroll != nullptr);
+    if (!row || !scroll) return;
+    Spin(80);
+    auto* bar = scroll->verticalScrollBar();
+    PF_CHECK(bar->maximum() > 0);
+    if (bar->maximum() == 0) return;
+    row->setFocus(Qt::OtherFocusReason);
+    bar->setValue(qMin(80, bar->maximum()));
+    const int position = bar->value();
+
+    PF_CHECK(editor->InsertCitationIntoParagraph(
+        fixture.node_id, QStringLiteral("smith2024"), 7));
+    Spin(80);
+    PF_CHECK(FindRow(window, fixture.node_id) == row);
+    PF_CHECK(bar->value() == position);
+
+    row->InsertCrossReferenceObject(QString::fromStdString(section_id.value()));
+    editor->CommitFocused();
+    Spin(80);
+    PF_CHECK(FindRow(window, fixture.node_id) == row);
+    PF_CHECK(bar->value() == position);
+    const Paragraph* stored = StoredParagraph(window);
+    PF_CHECK(stored != nullptr);
+    if (stored) {
+        bool has_reference = false;
+        for (const auto& node : stored->content)
+            has_reference |= std::holds_alternative<CrossReference>(node);
+        PF_CHECK(has_reference);
+    }
+
+    const auto image_path = std::filesystem::temp_directory_path() /
+                            "pf-editor-position.png";
+    QImage image(2, 2, QImage::Format_RGB32);
+    image.fill(Qt::white);
+    PF_CHECK(image.save(QString::fromStdString(image_path.string())));
+    auto figure = window.controller()->InsertFigureAfter(
+        NodeId(filler.created_node.value()),
+        QString::fromStdString(image_path.string()));
+    PF_CHECK(figure.status == EditStatus::Applied);
+    std::filesystem::remove(image_path);
+    if (figure.status != EditStatus::Applied) return;
+    QCheckBox* span = nullptr;
+    const QString figure_id = QString::fromStdString(figure.created_node.value());
+    for (auto* box : editor->findChildren<QCheckBox*>()) {
+        if (box->property("row_node").toString() == figure_id) span = box;
+    }
+    PF_CHECK(span != nullptr);
+    if (!span) return;
+    bar->setValue(qMin(80, bar->maximum()));
+    const int figure_position = bar->value();
+    span->setChecked(true);
+    Spin(80);
+    PF_CHECK(span->isChecked());
+    PF_CHECK(bar->value() == figure_position);
+    PF_CHECK(span->isVisible());
+    bool stored_double_column = false;
+    VisitBlocks(window.controller()->session().state().document(),
+                [&](const Block& block, const NodeAddress&) {
+                    if (const auto* value = std::get_if<Figure>(&block))
+                        if (value->id == figure.created_node)
+                            stored_double_column =
+                                value->span == FigureSpan::DoubleColumn;
+                });
+    PF_CHECK(stored_double_column);
 }
 
 PF_TEST(SecondCitationNumbersIncrementallyInGui) {

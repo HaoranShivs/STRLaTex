@@ -146,6 +146,8 @@ private:
     bool shutting_down_ = false;
     // 因用户正在输入而不得不跳过刷新时置位。
     bool pending_structural_refresh_ = false;
+    // 编辑器控件已同步呈现的内容变更只需刷新派生信息，不能拆掉所有行。
+    bool editor_change_in_progress_ = false;
     // 最近项目（由 QSettings 支持）
     QStringList recent_projects_;
 };
