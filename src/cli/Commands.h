@@ -11,4 +11,4 @@ int CmdBuild(const std::vector<std::string>& args);
 int CmdDemo(const std::vector<std::string>& args);
 int CmdInfo(const std::vector<std::string>& args);
 
-}  // namespace pf::cli
+} // namespace pf::cli

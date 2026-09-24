@@ -5,8 +5,8 @@
 //     project.paper 先存在，导致这部分工作无法触达并丢失；
 //   * 恢复必须优先选择 project.paper / autosave.paper 中较新的一个；
 //   * EnsureDirectories 失败时不得让项目进入 Open。
-#include "TestMain.hpp"
 #include "ScopedTempDir.hpp"
+#include "TestMain.hpp"
 
 #include <fstream>
 #include <memory>
@@ -23,9 +23,8 @@ using namespace pf;
 namespace {
 
 class NullCompiler final : public ICompiler {
-public:
-    CompileResult Compile(const CompileRequest&,
-                          const std::atomic<bool>*) override {
+  public:
+    CompileResult Compile(const CompileRequest&, const std::atomic<bool>*) override {
         CompileResult result;
         result.status = CompileStatus::Success;
         return result;
@@ -40,9 +39,7 @@ std::filesystem::path TempDir(const std::string& name) {
 
 ProjectSession::Config MakeConfig() {
     ProjectSession::Config config;
-    config.compiler_factory = []() -> std::unique_ptr<ICompiler> {
-        return std::make_unique<NullCompiler>();
-    };
+    config.compiler_factory = []() -> std::unique_ptr<ICompiler> { return std::make_unique<NullCompiler>(); };
     config.debounce = std::chrono::milliseconds{0};
     // 每个测试进程独享：`ctest -j` 会同时运行多个二进制，固定的 workspace 根目录
     // 会让它们互相覆盖。
@@ -68,12 +65,10 @@ std::string CurrentTitle(const ProjectSession& session) {
 }
 
 void Settle(ProjectSession& session, int timeout_ms = 5000) {
-    auto deadline = std::chrono::steady_clock::now() +
-                    std::chrono::milliseconds(timeout_ms);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     while (std::chrono::steady_clock::now() < deadline) {
         session.WaitForApplicationEvent(std::chrono::milliseconds{20});
-        if (!session.HasPendingApplicationEvents() &&
-            session.pending_saves() == 0) {
+        if (!session.HasPendingApplicationEvents() && session.pending_saves() == 0) {
             break;
         }
     }
@@ -94,8 +89,7 @@ PF_TEST(RecoveryFromAutosaveOnlyNewProject) {
     PF_CHECK(autosave.status == SaveResult::Status::Queued);
     writer.FlushSaves();
     PF_CHECK(!std::filesystem::exists(dir / "project.paper"));
-    PF_CHECK(std::filesystem::exists(dir / ".paperforge" / "autosave" /
-                                     "autosave.paper"));
+    PF_CHECK(std::filesystem::exists(dir / ".paperforge" / "autosave" / "autosave.paper"));
 
     // 一个新会话以恢复方式打开该目录。
     ProjectSession reader(MakeConfig());

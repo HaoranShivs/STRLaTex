@@ -14,10 +14,10 @@ namespace pf {
 struct TemplateRequiredFields {
     bool title = true;
     bool authors = true;
-    bool affiliations = false;   // 至少一个 affiliation
+    bool affiliations = false; // 至少一个 affiliation
     bool abstract_text = true;
     bool keywords = false;
-    bool author_affiliations = false;  // 每位作者至少需要 1 个 affiliation
+    bool author_affiliations = false; // 每位作者至少需要 1 个 affiliation
 };
 
 // 模板能够表达的内容。驱动插入菜单（只支持两级的模板不提供 Subsubsection
@@ -30,7 +30,7 @@ struct TemplateCapabilities {
 struct TemplateDefinition {
     std::string id;
     std::string name;
-    std::string document_class;  // 例如 "article"、"IEEEtran"
+    std::string document_class; // 例如 "article"、"IEEEtran"
     std::vector<std::string> class_options;
     bool two_column = false;
     std::string bibliography_style = "plain";
@@ -44,17 +44,17 @@ struct TemplateDefinition {
 };
 
 class TemplateRegistry {
-public:
+  public:
     static TemplateRegistry& Instance();
 
     const TemplateDefinition* Find(const std::string& id) const;
     std::vector<TemplateDefinition> All() const;
 
-private:
+  private:
     TemplateRegistry();
     std::map<std::string, TemplateDefinition> templates_;
 };
 
-using TemplateSelection = std::string;  // 模板 id
+using TemplateSelection = std::string; // 模板 id
 
-}  // namespace pf
+} // namespace pf

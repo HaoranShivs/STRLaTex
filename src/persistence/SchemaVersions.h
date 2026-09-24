@@ -25,11 +25,11 @@ struct MigrationStep {
 };
 
 struct MigrationResult {
-    bool migrated = false;             // 某一步确实改变了文档
-    std::string from_version;          // 从磁盘读取时的版本
-    std::string to_version;            // 迁移后的版本
+    bool migrated = false;    // 某一步确实改变了文档
+    std::string from_version; // 从磁盘读取时的版本
+    std::string to_version;   // 迁移后的版本
     std::vector<MigrationStep> applied;
     std::vector<std::string> warnings;
 };
 
-}  // namespace pf
+} // namespace pf

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <QObject>
 #include <QAbstractTextDocumentLayout>
+#include <QObject>
 #include <QTextFormat>
 
 namespace pf::gui {
@@ -18,24 +18,20 @@ inline constexpr int kRenderFontPxProperty = QTextFormat::UserProperty + 23;
 inline constexpr int kImageWidthProperty = QTextFormat::UserProperty + 24;
 inline constexpr int kImageHeightProperty = QTextFormat::UserProperty + 25;
 inline constexpr int kSourceBaselineProperty = QTextFormat::UserProperty + 26;
-}  // namespace inline_math_format
+} // namespace inline_math_format
 
 // 完整胶囊尺寸参与 QTextDocument 排版；位图始终绘制在胶囊内部，
 // 不越过对象矩形，也不会依赖正文极小的下沉空间。
-class InlineMathObjectRenderer final : public QObject,
-                                       public QTextObjectInterface {
+class InlineMathObjectRenderer final : public QObject, public QTextObjectInterface {
     Q_OBJECT
     Q_INTERFACES(QTextObjectInterface)
 
-public:
-    explicit InlineMathObjectRenderer(QObject* parent = nullptr)
-        : QObject(parent) {}
+  public:
+    explicit InlineMathObjectRenderer(QObject* parent = nullptr) : QObject(parent) {}
 
-    QSizeF intrinsicSize(QTextDocument* document, int positionInDocument,
-                         const QTextFormat& format) override;
-    void drawObject(QPainter* painter, const QRectF& rect,
-                    QTextDocument* document, int positionInDocument,
+    QSizeF intrinsicSize(QTextDocument* document, int positionInDocument, const QTextFormat& format) override;
+    void drawObject(QPainter* painter, const QRectF& rect, QTextDocument* document, int positionInDocument,
                     const QTextFormat& format) override;
 };
 
-}  // namespace pf::gui
+} // namespace pf::gui

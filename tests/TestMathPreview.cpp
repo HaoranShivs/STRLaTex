@@ -11,8 +11,8 @@
 
 #include <QDir>
 #include <QFileInfo>
-#include <QStringList>
 #include <QStandardPaths>
+#include <QStringList>
 
 #include "app/MathPreviewRenderer.h"
 
@@ -30,47 +30,45 @@ MathRenderStyle Style() {
 }
 
 bool HasTightTransparentMargins(const QImage& image) {
-    if (image.isNull()) return false;
+    if (image.isNull())
+        return false;
     int left = image.width(), top = image.height();
     int right = -1, bottom = -1;
     for (int y = 0; y < image.height(); ++y) {
         for (int x = 0; x < image.width(); ++x) {
-            if (qAlpha(image.pixel(x, y)) == 0) continue;
+            if (qAlpha(image.pixel(x, y)) == 0)
+                continue;
             left = qMin(left, x);
             top = qMin(top, y);
             right = qMax(right, x);
             bottom = qMax(bottom, y);
         }
     }
-    return right >= left && left <= 1 && top <= 1 &&
-           image.width() - 1 - right <= 1 &&
-           image.height() - 1 - bottom <= 1;
+    return right >= left && left <= 1 && top <= 1 && image.width() - 1 - right <= 1 && image.height() - 1 - bottom <= 1;
 }
 
 bool HasTransparentBorder(const QImage& image) {
     if (image.isNull() || image.width() < 3 || image.height() < 3)
         return false;
     for (int x = 0; x < image.width(); ++x) {
-        if (qAlpha(image.pixel(x, 0)) != 0 ||
-            qAlpha(image.pixel(x, image.height() - 1)) != 0)
+        if (qAlpha(image.pixel(x, 0)) != 0 || qAlpha(image.pixel(x, image.height() - 1)) != 0)
             return false;
     }
     for (int y = 0; y < image.height(); ++y) {
-        if (qAlpha(image.pixel(0, y)) != 0 ||
-            qAlpha(image.pixel(image.width() - 1, y)) != 0)
+        if (qAlpha(image.pixel(0, y)) != 0 || qAlpha(image.pixel(image.width() - 1, y)) != 0)
             return false;
     }
     return true;
 }
 
-}  // namespace
+} // namespace
 
 PF_TEST(MathPreviewRendersFractionWithDescent) {
     const MathRenderStyle style = Style();
     const MathRenderResult res = RenderMathPreview(QStringLiteral("\\frac{a}{b}"), style);
 
-    std::cout << "  frac: w=" << res.width << " h=" << res.height
-              << " baseline=" << res.baseline << " exact=" << res.exact << "\n";
+    std::cout << "  frac: w=" << res.width << " h=" << res.height << " baseline=" << res.baseline
+              << " exact=" << res.exact << "\n";
 
     PF_CHECK(!res.pixmap.isNull());
     PF_CHECK(res.width > 0);
@@ -84,23 +82,18 @@ PF_TEST(MathPreviewRendersFractionWithDescent) {
 
 PF_TEST(RealTexImageFitsInsideItsPdfPageWhenAvailable) {
     bool has_tex = !QStandardPaths::findExecutable("pdflatex").isEmpty();
-    const QDir bundled(QStringLiteral(PF_INSTALL_ROOT) +
-                       QStringLiteral("/runtime/texlive/bin"));
-    for (const QFileInfo& platform : bundled.entryInfoList(
-             QDir::Dirs | QDir::NoDotAndDotDot)) {
-        if (QFileInfo::exists(platform.absoluteFilePath() +
-                              QStringLiteral("/pdflatex")))
+    const QDir bundled(QStringLiteral(PF_INSTALL_ROOT) + QStringLiteral("/runtime/texlive/bin"));
+    for (const QFileInfo& platform : bundled.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        if (QFileInfo::exists(platform.absoluteFilePath() + QStringLiteral("/pdflatex")))
             has_tex = true;
     }
     if (!has_tex || QStandardPaths::findExecutable("pdftocairo").isEmpty())
         return;
     MathRenderStyle style = Style();
     style.backend = MathRenderBackend::RealTexPreferred;
-    const QStringList formulas = {
-        QStringLiteral("x"),
-        QStringLiteral("\\frac{\\partial u}{\\partial t}"),
-        QStringLiteral("\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}"),
-        QStringLiteral("\\sqrt{x^2+y^2}")};
+    const QStringList formulas = {QStringLiteral("x"), QStringLiteral("\\frac{\\partial u}{\\partial t}"),
+                                  QStringLiteral("\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}"),
+                                  QStringLiteral("\\sqrt{x^2+y^2}")};
     for (const QString& formula : formulas) {
         const MathRenderResult result = RenderMathPreviewImage(formula, style);
         PF_CHECK(result.HasPixels());
@@ -120,8 +113,7 @@ PF_TEST(MathPreviewRendersScriptsAndGreek) {
     const MathRenderResult plain = RenderMathPreview(QStringLiteral("x"), style);
     const MathRenderResult scripted = RenderMathPreview(QStringLiteral("x_i^2 + \\alpha"), style);
 
-    std::cout << "  x: w=" << plain.width << " h=" << plain.height
-              << " baseline=" << plain.baseline << "\n";
+    std::cout << "  x: w=" << plain.width << " h=" << plain.height << " baseline=" << plain.baseline << "\n";
     std::cout << "  x_i^2 + alpha: w=" << scripted.width << " h=" << scripted.height
               << " baseline=" << scripted.baseline << " exact=" << scripted.exact << "\n";
 
@@ -140,8 +132,8 @@ PF_TEST(MathPreviewRendersAlignedRows) {
         RenderMathPreview(QStringLiteral("\\begin{aligned}a&=b\\\\c&=d\\end{aligned}"), style);
 
     std::cout << "  a=b: w=" << single.width << " h=" << single.height << "\n";
-    std::cout << "  aligned: w=" << aligned.width << " h=" << aligned.height
-              << " baseline=" << aligned.baseline << " exact=" << aligned.exact << "\n";
+    std::cout << "  aligned: w=" << aligned.width << " h=" << aligned.height << " baseline=" << aligned.baseline
+              << " exact=" << aligned.exact << "\n";
 
     PF_CHECK(!single.pixmap.isNull());
     PF_CHECK(!aligned.pixmap.isNull());
@@ -152,15 +144,13 @@ PF_TEST(MathPreviewRendersAlignedRows) {
 
 PF_TEST(MathPreviewRendersCasesAndMatrix) {
     const MathRenderStyle style = Style();
-    const MathRenderResult cases =
-        RenderMathPreview(QStringLiteral("\\begin{cases}x&y\\\\z&w\\end{cases}"), style);
+    const MathRenderResult cases = RenderMathPreview(QStringLiteral("\\begin{cases}x&y\\\\z&w\\end{cases}"), style);
     const MathRenderResult pmatrix =
         RenderMathPreview(QStringLiteral("\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}"), style);
 
-    std::cout << "  cases: w=" << cases.width << " h=" << cases.height
-              << " baseline=" << cases.baseline << "\n";
-    std::cout << "  pmatrix: w=" << pmatrix.width << " h=" << pmatrix.height
-              << " baseline=" << pmatrix.baseline << "\n";
+    std::cout << "  cases: w=" << cases.width << " h=" << cases.height << " baseline=" << cases.baseline << "\n";
+    std::cout << "  pmatrix: w=" << pmatrix.width << " h=" << pmatrix.height << " baseline=" << pmatrix.baseline
+              << "\n";
 
     PF_CHECK(!cases.pixmap.isNull());
     PF_CHECK(cases.width > 0);
@@ -172,14 +162,13 @@ PF_TEST(MathPreviewRendersCasesAndMatrix) {
 
 PF_TEST(MathPreviewFallsBackInsteadOfCrashing) {
     const MathRenderStyle style = Style();
-    const MathRenderResult unknown =
-        RenderMathPreview(QStringLiteral("\\thisIsNotACommand{"), style);
+    const MathRenderResult unknown = RenderMathPreview(QStringLiteral("\\thisIsNotACommand{"), style);
     const MathRenderResult truncated = RenderMathPreview(QStringLiteral("\\frac{a"), style);
 
-    std::cout << "  unknown: w=" << unknown.width << " h=" << unknown.height
-              << " exact=" << unknown.exact << " note=" << unknown.note.toStdString() << "\n";
-    std::cout << "  frac-truncated: w=" << truncated.width << " h=" << truncated.height
-              << " exact=" << truncated.exact << " note=" << truncated.note.toStdString() << "\n";
+    std::cout << "  unknown: w=" << unknown.width << " h=" << unknown.height << " exact=" << unknown.exact
+              << " note=" << unknown.note.toStdString() << "\n";
+    std::cout << "  frac-truncated: w=" << truncated.width << " h=" << truncated.height << " exact=" << truncated.exact
+              << " note=" << truncated.note.toStdString() << "\n";
 
     PF_CHECK(!unknown.pixmap.isNull());
     PF_CHECK(!truncated.pixmap.isNull());
@@ -255,7 +244,8 @@ PF_TEST(MathPreviewNeverNullOnFuzz) {
     int rendered = 0;
     for (const QString& src : fuzz) {
         const MathRenderResult res = RenderMathPreview(src, style);
-        if (src.trimmed().isEmpty()) continue;
+        if (src.trimmed().isEmpty())
+            continue;
         PF_CHECK(!res.pixmap.isNull());
         PF_CHECK(res.width > 0);
         PF_CHECK(res.height > 0);
@@ -270,10 +260,8 @@ PF_TEST(MathPreviewNeverNullOnFuzz) {
     stress << QStringLiteral("\\frac").repeated(300) + QStringLiteral(" a b");
     stress << QStringLiteral("\\hat").repeated(300) + QStringLiteral(" x");
     stress << QStringLiteral("\\sqrt").repeated(300) + QStringLiteral(" x");
-    stress << QStringLiteral("\\left(").repeated(300) + QStringLiteral("x") +
-                  QStringLiteral("\\right)").repeated(300);
-    stress << QStringLiteral("{").repeated(1000) + QStringLiteral("x") +
-                  QStringLiteral("}").repeated(1000);
+    stress << QStringLiteral("\\left(").repeated(300) + QStringLiteral("x") + QStringLiteral("\\right)").repeated(300);
+    stress << QStringLiteral("{").repeated(1000) + QStringLiteral("x") + QStringLiteral("}").repeated(1000);
     for (const QString& src : stress) {
         const MathRenderResult res = RenderMathPreview(src, style);
         PF_CHECK(!res.pixmap.isNull());
@@ -283,9 +271,8 @@ PF_TEST(MathPreviewNeverNullOnFuzz) {
         PF_CHECK(res.baseline < res.height);
         ++rendered;
     }
-    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now() - start)
-                        .count();
+    const auto ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
     std::cout << "  fuzz: rendered " << rendered << " inputs in " << ms << " ms\n";
     PF_CHECK(rendered > 30);
     PF_CHECK(ms < 5000);

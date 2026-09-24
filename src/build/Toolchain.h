@@ -46,4 +46,4 @@ struct TemplateToolchainRequirement {
     std::vector<std::string> required_packages;
 };
 
-}  // namespace pf
+} // namespace pf

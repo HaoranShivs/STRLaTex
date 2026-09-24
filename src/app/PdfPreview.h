@@ -10,9 +10,9 @@
 //     会占用数百 MB 内存；
 //   * 一旦缩放超出视口，就可以用鼠标拖拽页面。
 
+#include <QPixmap>
 #include <QString>
 #include <QWidget>
-#include <QPixmap>
 
 #include <vector>
 
@@ -29,7 +29,7 @@ namespace pf::gui {
 class PdfPreview : public QWidget {
     Q_OBJECT
 
-public:
+  public:
     explicit PdfPreview(QWidget* parent = nullptr);
 
     // 让预览指向已构建的 PDF（传空则清空窗格）。
@@ -39,7 +39,9 @@ public:
 
     // 以显示单位表示的缩放：1.0 表示页面按 100% 显示。
     void SetZoom(double zoom);
-    double zoom() const { return zoom_; }
+    double zoom() const {
+        return zoom_;
+    }
     void ZoomIn();
     void ZoomOut();
     void ResetZoom();
@@ -48,25 +50,27 @@ public:
     // 滚动到整个文档的指定比例处（0..1）。
     void ScrollTo(double fraction_x, double fraction_y);
 
-    int pageCount() const { return page_count_; }
+    int pageCount() const {
+        return page_count_;
+    }
     // 页顶最接近视口顶部的页面（从 1 开始计数，没有内容可显示时为 0）。
     int visiblePage() const;
 
     static constexpr double kMinZoom = 0.25;
     static constexpr double kMaxZoom = 8.0;
 
-signals:
+  signals:
     void zoomChanged(double zoom);
 
-protected:
+  protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
 
-private:
+  private:
     struct PageSlot {
-        QLabel* label = nullptr;  // 显示栅格位图或占位符
-        QPixmap pixmap;           // 缓存的栅格位图
-        int pixmap_dpi = 0;       // 栅格位图渲染时所用的分辨率
+        QLabel* label = nullptr; // 显示栅格位图或占位符
+        QPixmap pixmap;          // 缓存的栅格位图
+        int pixmap_dpi = 0;      // 栅格位图渲染时所用的分辨率
     };
 
     QLabel* MakePageLabel(int index);
@@ -97,14 +101,14 @@ private:
     QString pdf_path_;
     std::vector<PageSlot> pages_;
     int page_count_ = 0;
-    double page_width_pt_ = 595.0;  // 测量首页之前暂按 A4 处理
+    double page_width_pt_ = 595.0; // 测量首页之前暂按 A4 处理
     double page_height_pt_ = 842.0;
     double zoom_ = 1.0;
-    bool fit_width_ = true;  // 在用户缩放之前跟随窗格宽度
+    bool fit_width_ = true; // 在用户缩放之前跟随窗格宽度
     bool panning_ = false;
     QPoint pan_origin_;
 
     QTimer* rerender_timer_ = nullptr;
 };
 
-}  // namespace pf::gui
+} // namespace pf::gui

@@ -22,10 +22,9 @@ namespace {
 constexpr int kPreviewFontPx = 22;
 constexpr int kDebounceMs = 140;
 
-}  // namespace
+} // namespace
 
-MathEditorDialog::MathEditorDialog(const QString& latex, QWidget* parent)
-    : QDialog(parent) {
+MathEditorDialog::MathEditorDialog(const QString& latex, QWidget* parent) : QDialog(parent) {
     setWindowTitle(QStringLiteral("Inline Math"));
     setModal(true);
     resize(520, 380);
@@ -35,8 +34,7 @@ MathEditorDialog::MathEditorDialog(const QString& latex, QWidget* parent)
     layout->setSpacing(8);
 
     auto* source_label = new QLabel(QStringLiteral("LaTeX source"), this);
-    source_label->setStyleSheet(
-        QString("color: %1; font-weight: 600;").arg(theme::kSecondaryText));
+    source_label->setStyleSheet(QString("color: %1; font-weight: 600;").arg(theme::kSecondaryText));
     layout->addWidget(source_label);
 
     source_ = new QPlainTextEdit(this);
@@ -48,24 +46,21 @@ MathEditorDialog::MathEditorDialog(const QString& latex, QWidget* parent)
     layout->addWidget(source_);
 
     auto* preview_label = new QLabel(QStringLiteral("Preview"), this);
-    preview_label->setStyleSheet(
-        QString("color: %1; font-weight: 600;").arg(theme::kSecondaryText));
+    preview_label->setStyleSheet(QString("color: %1; font-weight: 600;").arg(theme::kSecondaryText));
     layout->addWidget(preview_label);
 
     preview_ = new QLabel(this);
     preview_->setAlignment(Qt::AlignCenter);
     preview_->setMinimumHeight(96);
-    preview_->setStyleSheet(
-        QString("background: %1; border: 1px solid %2; border-radius: 6px;")
-            .arg(theme::kEditorBackground, theme::kDivider));
+    preview_->setStyleSheet(QString("background: %1; border: 1px solid %2; border-radius: 6px;")
+                                .arg(theme::kEditorBackground, theme::kDivider));
     layout->addWidget(preview_, 1);
 
     status_ = new QLabel(this);
     status_->setWordWrap(true);
     layout->addWidget(status_);
 
-    auto* buttons = new QDialogButtonBox(
-        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Insert"));
     layout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -74,31 +69,24 @@ MathEditorDialog::MathEditorDialog(const QString& latex, QWidget* parent)
     debounce_ = new QTimer(this);
     debounce_->setSingleShot(true);
     debounce_->setInterval(kDebounceMs);
-    connect(debounce_, &QTimer::timeout, this,
-            [this]() { RefreshPreview(); });
+    connect(debounce_, &QTimer::timeout, this, [this]() { RefreshPreview(); });
     // P0-07：预览在共享 worker 线程上渲染。关闭对话框会销毁本对象，
     // 服务的 QPointer 守卫随即丢弃任何仍在途的回复。
     static std::atomic<std::uint64_t> next_dialog_id{0};
-    const QString dialog_id =
-        QStringLiteral("math-dialog-%1").arg(next_dialog_id.fetch_add(1));
+    const QString dialog_id = QStringLiteral("math-dialog-%1").arg(next_dialog_id.fetch_add(1));
     setObjectName(dialog_id);
     MathRenderService* service = MathRenderService::Shared();
     service->RegisterClient(dialog_id, this);
-    connect(service, &MathRenderService::mathRendered, this,
-            [this](const MathRenderResponse& response) {
-                if (response.editor_id != objectName())
-                    return;
-                // 对话框自行重新校验；此处只应用像素。
-                ApplyRenderedPreview(
-                    response.latex, response.result.image,
-                    response.result.width, response.result.height,
-                    response.result.baseline,
-                    response.result.device_pixel_ratio, response.result.note,
-                    response.result.exact);
-            });
+    connect(service, &MathRenderService::mathRendered, this, [this](const MathRenderResponse& response) {
+        if (response.editor_id != objectName())
+            return;
+        // 对话框自行重新校验；此处只应用像素。
+        ApplyRenderedPreview(response.latex, response.result.image, response.result.width, response.result.height,
+                             response.result.baseline, response.result.device_pixel_ratio, response.result.note,
+                             response.result.exact);
+    });
     // 实时（防抖）预览：源码变化 -> 校验 -> 渲染。
-    connect(source_, &QPlainTextEdit::textChanged, this,
-            [this]() { debounce_->start(); });
+    connect(source_, &QPlainTextEdit::textChanged, this, [this]() { debounce_->start(); });
 
     RefreshPreviewNow();
     source_->setFocus();
@@ -110,7 +98,8 @@ QString MathEditorDialog::latex() const {
 }
 
 void MathEditorDialog::SetSourceForTest(const QString& latex) {
-    if (source_) source_->setPlainText(latex);
+    if (source_)
+        source_->setPlainText(latex);
     RefreshPreviewNow();
 }
 
@@ -119,24 +108,23 @@ QString MathEditorDialog::StateText() const {
 }
 
 void MathEditorDialog::RefreshPreviewNow() {
-    if (debounce_) debounce_->stop();
+    if (debounce_)
+        debounce_->stop();
     RefreshPreview();
 }
 
 void MathEditorDialog::RefreshPreview() {
-    if (!source_ || !preview_ || !status_) return;
+    if (!source_ || !preview_ || !status_)
+        return;
     const QString body = source_->toPlainText();
-    const pf::MathValidation validation =
-        pf::ValidateMath(body.toStdString(), pf::MathFlavor::Inline);
+    const pf::MathValidation validation = pf::ValidateMath(body.toStdString(), pf::MathFlavor::Inline);
 
     if (validation.invalid()) {
-        status_->setText(QStringLiteral("Invalid — %1")
-                             .arg(QString::fromStdString(validation.error)));
+        status_->setText(QStringLiteral("Invalid — %1").arg(QString::fromStdString(validation.error)));
         status_->setStyleSheet(QString("color: %1;").arg(theme::kError));
     } else if (validation.pending()) {
         status_->setText(QStringLiteral("Type a math body, e.g. \\frac{a}{b}"));
-        status_->setStyleSheet(
-            QString("color: %1;").arg(theme::kSecondaryText));
+        status_->setStyleSheet(QString("color: %1;").arg(theme::kSecondaryText));
     } else {
         status_->setText(QStringLiteral("Valid"));
         status_->setStyleSheet(QString("color: %1;").arg(theme::kAccent));
@@ -154,16 +142,11 @@ void MathEditorDialog::RefreshPreview() {
     preview_->setText(QStringLiteral("…"));
     preview_->setPixmap(QPixmap());
     ++preview_generation_;
-    MathRenderService::Shared()->Request(objectName(),
-                                         QStringLiteral("preview"), body,
-                                         style);
+    MathRenderService::Shared()->Request(objectName(), QStringLiteral("preview"), body, style);
 }
 
-void MathEditorDialog::ApplyRenderedPreview(const QString& latex,
-                                            const QImage& image, int width,
-                                            int height, int baseline,
-                                            qreal device_pixel_ratio,
-                                            const QString& note, bool exact) {
+void MathEditorDialog::ApplyRenderedPreview(const QString& latex, const QImage& image, int width, int height,
+                                            int baseline, qreal device_pixel_ratio, const QString& note, bool exact) {
     if (!preview_ || !status_ || image.isNull())
         return;
     // 对话框通过标签缩放 pixmap，因此逻辑尺寸仅用于
@@ -188,4 +171,4 @@ void MathEditorDialog::ApplyRenderedPreview(const QString& latex,
     }
 }
 
-}  // namespace pf::gui
+} // namespace pf::gui

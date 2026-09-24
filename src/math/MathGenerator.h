@@ -20,7 +20,6 @@ std::string GenerateInlineMath(const MathExpression& expression);
 
 // display 公式。`label` 是编号公式的 LaTeX label；为空时不输出 \label。
 // `numbered == false` 时使用 \[...\] 并忽略 label。
-std::string GenerateDisplayMath(const MathExpression& expression, bool numbered,
-                                const std::string& label);
+std::string GenerateDisplayMath(const MathExpression& expression, bool numbered, const std::string& label);
 
-}  // namespace pf
+} // namespace pf

@@ -40,10 +40,10 @@ namespace {
 // 限制与常量
 // ---------------------------------------------------------------------------
 
-constexpr int kMaxDepth = 48;        // groups/environments 的递归保护
-constexpr qreal kScriptScale = 0.7;  // ^ / _ 的缩放系数
-constexpr qreal kFracScale = 0.85;   // 分子 / 分母的缩放系数
-constexpr qreal kMinScale = 0.45;    // 缩放下限，保证字形清晰可读
+constexpr int kMaxDepth = 48;       // groups/environments 的递归保护
+constexpr qreal kScriptScale = 0.7; // ^ / _ 的缩放系数
+constexpr qreal kFracScale = 0.85;  // 分子 / 分母的缩放系数
+constexpr qreal kMinScale = 0.45;   // 缩放下限，保证字形清晰可读
 constexpr int kTexTimeoutMs = 12000;
 constexpr int kRasterTimeoutMs = 8000;
 constexpr int kMaxCacheEntries = 256;
@@ -54,7 +54,9 @@ constexpr qreal kPagePaddingPt = 4.0;
 
 void NoopDraw(QPainter&, qreal, qreal) {}
 
-QString U(char16_t cp) { return QString(QChar(cp)); }
+QString U(char16_t cp) {
+    return QString(QChar(cp));
+}
 
 bool IsAsciiLetter(QChar c) {
     const char16_t u = c.unicode();
@@ -62,14 +64,14 @@ bool IsAsciiLetter(QChar c) {
 }
 
 bool IsSpecialChar(QChar c) {
-    return c == u'\\' || c == u'{' || c == u'}' || c == u'^' || c == u'_' ||
-           c.isSpace();
+    return c == u'\\' || c == u'{' || c == u'}' || c == u'^' || c == u'_' || c.isSpace();
 }
 
 QString CollapseSpaces(const QString& in) {
     QString out;
     out.reserve(in.size());
-    for (QChar c : in) out.append(c.isSpace() ? QChar(u' ') : c);
+    for (QChar c : in)
+        out.append(c.isSpace() ? QChar(u' ') : c);
     return out;
 }
 
@@ -82,7 +84,8 @@ QString CollapseWsTrim(const QString& in) {
             pendingSpace = !out.isEmpty();
             continue;
         }
-        if (pendingSpace) out.append(QChar(u' '));
+        if (pendingSpace)
+            out.append(QChar(u' '));
         pendingSpace = false;
         out.append(c);
     }
@@ -99,9 +102,9 @@ struct Box;
 using BoxPtr = std::shared_ptr<Box>;
 
 struct Box {
-    qreal w = 0;  // 逻辑宽度
-    qreal h = 0;  // 基线上方的逻辑上高（ascent）
-    qreal d = 0;  // 基线下方的逻辑下深（descent）
+    qreal w = 0; // 逻辑宽度
+    qreal h = 0; // 基线上方的逻辑上高（ascent）
+    qreal d = 0; // 基线下方的逻辑下深（descent）
     Kind kind = Kind::HBox;
     // 大运算符（\sum 等）把上下限画在符号的上方/下方。
     bool limits_op = false;
@@ -111,10 +114,13 @@ struct Box {
     std::function<void(QPainter&, qreal, qreal)> draw = NoopDraw;
 };
 
-BoxPtr MakeEmpty() { return std::make_shared<Box>(); }
+BoxPtr MakeEmpty() {
+    return std::make_shared<Box>();
+}
 
 void DrawBox(const BoxPtr& b, QPainter& p, qreal x, qreal baseline) {
-    if (b && b->draw) b->draw(p, x, baseline);
+    if (b && b->draw)
+        b->draw(p, x, baseline);
 }
 
 // 把一组 box 合并为共享同一基线的单个水平 box。
@@ -125,8 +131,10 @@ BoxPtr MakeHBox(const std::vector<BoxPtr>& items) {
     placed.reserve(items.size());
     qreal x = 0;
     for (const BoxPtr& it : items) {
-        if (!it) continue;
-        if (it->w == 0 && it->h == 0 && it->d == 0) continue;
+        if (!it)
+            continue;
+        if (it->w == 0 && it->h == 0 && it->d == 0)
+            continue;
         placed.emplace_back(it, x);
         x += it->w;
         box->h = std::max(box->h, it->h);
@@ -135,7 +143,8 @@ BoxPtr MakeHBox(const std::vector<BoxPtr>& items) {
     box->w = x;
     box->draw = [placed](QPainter& p, qreal ox, qreal baseline) {
         for (const auto& pr : placed)
-            if (pr.first && pr.first->draw) pr.first->draw(p, ox + pr.second, baseline);
+            if (pr.first && pr.first->draw)
+                pr.first->draw(p, ox + pr.second, baseline);
     };
     return box;
 }
@@ -157,9 +166,9 @@ struct FontSpec {
     bool mono = false;
     bool sans = false;
     bool script = false;
-    bool force_upright = false;   // \mathrm、\mathbf 等
-    bool auto_italic = true;      // 普通数学字母自动变斜体
-    qreal size = 1.0;             // 额外的尺寸倍率（大运算符）
+    bool force_upright = false; // \mathrm、\mathbf 等
+    bool auto_italic = true;    // 普通数学字母自动变斜体
+    qreal size = 1.0;           // 额外的尺寸倍率（大运算符）
 };
 
 struct ParseState {
@@ -180,12 +189,15 @@ struct ParseState {
 QFont FontFor(const ParseState& st, const FontSpec& spec, qreal scale) {
     QFont f = st.base_font;
     qreal eff = scale * spec.size;
-    if (!(eff > 0.01)) eff = kMinScale;
+    if (!(eff > 0.01))
+        eff = kMinScale;
     eff = std::clamp(eff, kMinScale, 3.0);
     const int px = static_cast<int>(std::lround(st.style->font_px * eff));
     f.setPixelSize(std::max(4, px));
-    if (spec.bold) f.setBold(true);
-    if (spec.italic && !spec.force_upright) f.setItalic(true);
+    if (spec.bold)
+        f.setBold(true);
+    if (spec.italic && !spec.force_upright)
+        f.setItalic(true);
     if (spec.mono) {
         f.setFamily(QStringLiteral("monospace"));
         f.setStyleHint(QFont::Monospace);
@@ -203,7 +215,8 @@ QFont FontFor(const ParseState& st, const FontSpec& spec, qreal scale) {
 BoxPtr MakeText(const QString& text, const QFont& font, const QColor& color) {
     auto box = std::make_shared<Box>();
     box->kind = Kind::Text;
-    if (text.isEmpty()) return box;
+    if (text.isEmpty())
+        return box;
     const QFontMetricsF fm(font);
     box->w = std::max(0.0, fm.horizontalAdvance(text));
     box->h = std::max(0.0, fm.ascent());
@@ -253,18 +266,24 @@ BoxPtr MakeScriptSide(const BoxPtr& base, const BoxPtr& sup, const BoxPtr& sub, 
     const qreal supShift = std::max(fontPx * 0.42, b->h - fontPx * 0.25);
     const qreal subShift = std::max(fontPx * 0.20, b->d + fontPx * 0.10);
     qreal scriptW = 0;
-    if (sup) scriptW = std::max(scriptW, sup->w);
-    if (sub) scriptW = std::max(scriptW, sub->w);
+    if (sup)
+        scriptW = std::max(scriptW, sup->w);
+    if (sub)
+        scriptW = std::max(scriptW, sub->w);
     box->w = b->w + gapx + scriptW;
     box->h = b->h;
     box->d = b->d;
-    if (sup) box->h = std::max(box->h, supShift + sup->h);
-    if (sub) box->d = std::max(box->d, subShift + sub->d);
+    if (sup)
+        box->h = std::max(box->h, supShift + sup->h);
+    if (sub)
+        box->d = std::max(box->d, subShift + sub->d);
     const qreal scriptX = b->w + gapx;
     box->draw = [b, sup, sub, scriptX, supShift, subShift](QPainter& p, qreal x, qreal baseline) {
         DrawBox(b, p, x, baseline);
-        if (sup) DrawBox(sup, p, x + scriptX, baseline - supShift);
-        if (sub) DrawBox(sub, p, x + scriptX, baseline + subShift);
+        if (sup)
+            DrawBox(sup, p, x + scriptX, baseline - supShift);
+        if (sub)
+            DrawBox(sub, p, x + scriptX, baseline + subShift);
     };
     return box;
 }
@@ -279,8 +298,10 @@ BoxPtr MakeLimits(const BoxPtr& base, const BoxPtr& sup, const BoxPtr& sub, qrea
     box->op_sub = sub;
     const qreal gap = std::max(1.0, std::round(fontPx * 0.14));
     box->w = b->w;
-    if (sup) box->w = std::max(box->w, sup->w);
-    if (sub) box->w = std::max(box->w, sub->w);
+    if (sup)
+        box->w = std::max(box->w, sup->w);
+    if (sub)
+        box->w = std::max(box->w, sub->w);
     qreal supBase = 0;
     qreal subBase = 0;
     box->h = b->h;
@@ -296,8 +317,10 @@ BoxPtr MakeLimits(const BoxPtr& base, const BoxPtr& sup, const BoxPtr& sub, qrea
     const qreal w = box->w;
     box->draw = [b, sup, sub, w, supBase, subBase](QPainter& p, qreal x, qreal baseline) {
         DrawBox(b, p, x + (w - b->w) / 2.0, baseline);
-        if (sup) DrawBox(sup, p, x + (w - sup->w) / 2.0, baseline + supBase);
-        if (sub) DrawBox(sub, p, x + (w - sub->w) / 2.0, baseline + subBase);
+        if (sup)
+            DrawBox(sup, p, x + (w - sup->w) / 2.0, baseline + supBase);
+        if (sub)
+            DrawBox(sub, p, x + (w - sub->w) / 2.0, baseline + subBase);
     };
     return box;
 }
@@ -309,12 +332,16 @@ BoxPtr AttachScript(const BoxPtr& base, bool isSup, const BoxPtr& script, qreal 
         BoxPtr core = b->op_base ? b->op_base : b;
         BoxPtr s = b->op_sup;
         BoxPtr u = b->op_sub;
-        if (isSup) s = script;
-        else u = script;
-        if (b->limits_op) return MakeLimits(core, s, u, fontPx);
+        if (isSup)
+            s = script;
+        else
+            u = script;
+        if (b->limits_op)
+            return MakeLimits(core, s, u, fontPx);
         return MakeScriptSide(core, s, u, fontPx);
     }
-    if (b->limits_op) return MakeLimits(b, isSup ? script : nullptr, isSup ? nullptr : script, fontPx);
+    if (b->limits_op)
+        return MakeLimits(b, isSup ? script : nullptr, isSup ? nullptr : script, fontPx);
     return MakeScriptSide(b, isSup ? script : nullptr, isSup ? nullptr : script, fontPx);
 }
 
@@ -342,8 +369,8 @@ BoxPtr MakeRadical(const BoxPtr& index, const BoxPtr& radicand, qreal fontPx, co
     const qreal radX = contentX;
     const qreal rH = r->h;
     const qreal rD = r->d;
-    box->draw = [index, r, t, rw, contentX, top, idxBase, totalW, radX, rH, rD, color](
-                    QPainter& p, qreal x, qreal baseline) {
+    box->draw = [index, r, t, rw, contentX, top, idxBase, totalW, radX, rH, rD, color](QPainter& p, qreal x,
+                                                                                       qreal baseline) {
         const qreal yTop = baseline - top + t / 2.0;
         const qreal yBot = baseline + rD;
         const qreal glyphX = x + contentX - rw;
@@ -359,18 +386,20 @@ BoxPtr MakeRadical(const BoxPtr& index, const BoxPtr& radicand, qreal fontPx, co
         p.setPen(pen);
         p.setBrush(Qt::NoBrush);
         p.drawPath(path);
-        if (index) DrawBox(index, p, x, baseline + idxBase);
+        if (index)
+            DrawBox(index, p, x, baseline + idxBase);
         DrawBox(r, p, x + radX, baseline);
     };
     return box;
 }
 
 // 为被包裹的 box 调整大小的定界符字形；对 `|` 则画一条拉伸的线。
-BoxPtr MakeDelimiterFor(const QString& glyph, qreal contentH, qreal contentD, qreal fontPx,
-                        const QColor& color, const ParseState& st) {
+BoxPtr MakeDelimiterFor(const QString& glyph, qreal contentH, qreal contentD, qreal fontPx, const QColor& color,
+                        const ParseState& st) {
     auto box = std::make_shared<Box>();
     box->kind = Kind::Delim;
-    if (glyph.isEmpty()) return box;
+    if (glyph.isEmpty())
+        return box;
     const qreal target = std::max(fontPx, contentH + contentD) * 1.02;
     if (glyph == QStringLiteral("|") || glyph == U(0x2016)) {
         const qreal w = std::max(1.0, std::round(fontPx * (glyph == QStringLiteral("|") ? 0.09 : 0.16)));
@@ -389,10 +418,12 @@ BoxPtr MakeDelimiterFor(const QString& glyph, qreal contentH, qreal contentD, qr
         const QFontMetricsF fm(f);
         const QRectF r = fm.boundingRect(glyph);
         const qreal gh = r.height();
-        if (gh <= 0.5) break;
+        if (gh <= 0.5)
+            break;
         const qreal k = target / gh;
         const int px = std::clamp(static_cast<int>(std::lround(f.pixelSize() * k)), 4, 4000);
-        if (px == f.pixelSize()) break;
+        if (px == f.pixelSize())
+            break;
         f.setPixelSize(px);
     }
     const QFontMetricsF fm(f);
@@ -466,20 +497,25 @@ BoxPtr MakeLineAccent(const BoxPtr& base, bool above, qreal fontPx, const QColor
 
 enum class ColAlign { Left, Center, Right };
 
-BoxPtr MakeGrid(const std::vector<std::vector<BoxPtr>>& rows, ColAlign align, bool rlAlternate,
-                qreal colGap, qreal rowGap) {
+BoxPtr MakeGrid(const std::vector<std::vector<BoxPtr>>& rows, ColAlign align, bool rlAlternate, qreal colGap,
+                qreal rowGap) {
     auto box = std::make_shared<Box>();
     box->kind = Kind::Grid;
-    if (rows.empty()) return box;
+    if (rows.empty())
+        return box;
     size_t ncols = 0;
-    for (const auto& r : rows) ncols = std::max(ncols, r.size());
-    if (ncols == 0) return box;
+    for (const auto& r : rows)
+        ncols = std::max(ncols, r.size());
+    if (ncols == 0)
+        return box;
     std::vector<qreal> colW(ncols, 0.0);
     for (const auto& r : rows)
         for (size_t j = 0; j < r.size(); ++j)
-            if (r[j]) colW[j] = std::max(colW[j], r[j]->w);
+            if (r[j])
+                colW[j] = std::max(colW[j], r[j]->w);
     std::vector<qreal> colX(ncols, 0.0);
-    for (size_t j = 1; j < ncols; ++j) colX[j] = colX[j - 1] + colW[j - 1] + colGap;
+    for (size_t j = 1; j < ncols; ++j)
+        colX[j] = colX[j - 1] + colW[j - 1] + colGap;
     std::vector<qreal> rowBase(rows.size(), 0.0);
     qreal cursor = 0;
     for (size_t i = 0; i < rows.size(); ++i) {
@@ -500,12 +536,16 @@ BoxPtr MakeGrid(const std::vector<std::vector<BoxPtr>>& rows, ColAlign align, bo
     for (size_t i = 0; i < rows.size(); ++i) {
         for (size_t j = 0; j < rows[i].size(); ++j) {
             const BoxPtr& c = rows[i][j];
-            if (!c || (c->w == 0 && c->h == 0 && c->d == 0)) continue;
+            if (!c || (c->w == 0 && c->h == 0 && c->d == 0))
+                continue;
             ColAlign a = align;
-            if (rlAlternate) a = (j % 2 == 0) ? ColAlign::Right : ColAlign::Left;
+            if (rlAlternate)
+                a = (j % 2 == 0) ? ColAlign::Right : ColAlign::Left;
             qreal x = colX[j];
-            if (a == ColAlign::Right) x += colW[j] - c->w;
-            else if (a == ColAlign::Center) x += (colW[j] - c->w) / 2.0;
+            if (a == ColAlign::Right)
+                x += colW[j] - c->w;
+            else if (a == ColAlign::Center)
+                x += (colW[j] - c->w) / 2.0;
             placed.emplace_back(c, x, rowBase[i] - rowBase[0]);
         }
     }
@@ -523,7 +563,9 @@ BoxPtr MakeGrid(const std::vector<std::vector<BoxPtr>>& rows, ColAlign align, bo
 const QHash<QString, QString>& SymbolTable() {
     static const QHash<QString, QString> table = [] {
         QHash<QString, QString> m;
-        auto add = [&m](const char* name, int cp) { m.insert(QString::fromLatin1(name), U(static_cast<char16_t>(cp))); };
+        auto add = [&m](const char* name, int cp) {
+            m.insert(QString::fromLatin1(name), U(static_cast<char16_t>(cp)));
+        };
         // 希腊字母，小写。
         add("alpha", 0x03B1);
         add("beta", 0x03B2);
@@ -635,7 +677,7 @@ const QHash<QString, QString>& SymbolTable() {
         add("lceil", 0x2308);
         add("rceil", 0x2309);
         add("backslash", 0x005C);
-        add("qquad", 0x2003);  // 从不作为字形查找，按间距处理
+        add("qquad", 0x2003); // 从不作为字形查找，按间距处理
         return m;
     }();
     return table;
@@ -644,49 +686,89 @@ const QHash<QString, QString>& SymbolTable() {
 // 以正体渲染的函数名；bool 表示「上下限是否置于上下方」。
 bool FunctionName(const QString& name, bool& limits) {
     static const QHash<QString, bool> funcs = {
-        {QStringLiteral("lim"), true},   {QStringLiteral("limsup"), true},
-        {QStringLiteral("liminf"), true},{QStringLiteral("max"), true},
-        {QStringLiteral("min"), true},   {QStringLiteral("sup"), true},
-        {QStringLiteral("inf"), true},   {QStringLiteral("det"), true},
-        {QStringLiteral("gcd"), true},   {QStringLiteral("log"), false},
-        {QStringLiteral("ln"), false},   {QStringLiteral("exp"), false},
-        {QStringLiteral("sin"), false},  {QStringLiteral("cos"), false},
-        {QStringLiteral("tan"), false},  {QStringLiteral("cot"), false},
-        {QStringLiteral("sec"), false},  {QStringLiteral("csc"), false},
-        {QStringLiteral("arcsin"), false},{QStringLiteral("arccos"), false},
-        {QStringLiteral("arctan"), false},{QStringLiteral("sinh"), false},
-        {QStringLiteral("cosh"), false}, {QStringLiteral("tanh"), false},
-        {QStringLiteral("deg"), false},  {QStringLiteral("dim"), false},
-        {QStringLiteral("ker"), false},  {QStringLiteral("hom"), false},
-        {QStringLiteral("arg"), false},  {QStringLiteral("mod"), false},
-        {QStringLiteral("bmod"), false}, {QStringLiteral("Pr"), true},
+        {QStringLiteral("lim"), true},     {QStringLiteral("limsup"), true},  {QStringLiteral("liminf"), true},
+        {QStringLiteral("max"), true},     {QStringLiteral("min"), true},     {QStringLiteral("sup"), true},
+        {QStringLiteral("inf"), true},     {QStringLiteral("det"), true},     {QStringLiteral("gcd"), true},
+        {QStringLiteral("log"), false},    {QStringLiteral("ln"), false},     {QStringLiteral("exp"), false},
+        {QStringLiteral("sin"), false},    {QStringLiteral("cos"), false},    {QStringLiteral("tan"), false},
+        {QStringLiteral("cot"), false},    {QStringLiteral("sec"), false},    {QStringLiteral("csc"), false},
+        {QStringLiteral("arcsin"), false}, {QStringLiteral("arccos"), false}, {QStringLiteral("arctan"), false},
+        {QStringLiteral("sinh"), false},   {QStringLiteral("cosh"), false},   {QStringLiteral("tanh"), false},
+        {QStringLiteral("deg"), false},    {QStringLiteral("dim"), false},    {QStringLiteral("ker"), false},
+        {QStringLiteral("hom"), false},    {QStringLiteral("arg"), false},    {QStringLiteral("mod"), false},
+        {QStringLiteral("bmod"), false},   {QStringLiteral("Pr"), true},
     };
     const auto it = funcs.constFind(name);
-    if (it == funcs.constEnd()) return false;
+    if (it == funcs.constEnd())
+        return false;
     limits = it.value();
     return true;
 }
 
 bool LargeOperator(const QString& name, QString& glyph, bool& limits, qreal& size) {
-    if (name == QLatin1String("sum")) { glyph = U(0x2211); limits = true; size = 1.55; return true; }
-    if (name == QLatin1String("prod")) { glyph = U(0x220F); limits = true; size = 1.55; return true; }
-    if (name == QLatin1String("coprod")) { glyph = U(0x2210); limits = true; size = 1.55; return true; }
-    if (name == QLatin1String("int")) { glyph = U(0x222B); limits = false; size = 1.7; return true; }
-    if (name == QLatin1String("oint")) { glyph = U(0x222E); limits = false; size = 1.7; return true; }
-    if (name == QLatin1String("iint")) { glyph = U(0x222C); limits = false; size = 1.7; return true; }
-    if (name == QLatin1String("iiint")) { glyph = U(0x222D); limits = false; size = 1.7; return true; }
-    if (name == QLatin1String("bigcup")) { glyph = U(0x22C3); limits = true; size = 1.55; return true; }
-    if (name == QLatin1String("bigcap")) { glyph = U(0x22C2); limits = true; size = 1.55; return true; }
+    if (name == QLatin1String("sum")) {
+        glyph = U(0x2211);
+        limits = true;
+        size = 1.55;
+        return true;
+    }
+    if (name == QLatin1String("prod")) {
+        glyph = U(0x220F);
+        limits = true;
+        size = 1.55;
+        return true;
+    }
+    if (name == QLatin1String("coprod")) {
+        glyph = U(0x2210);
+        limits = true;
+        size = 1.55;
+        return true;
+    }
+    if (name == QLatin1String("int")) {
+        glyph = U(0x222B);
+        limits = false;
+        size = 1.7;
+        return true;
+    }
+    if (name == QLatin1String("oint")) {
+        glyph = U(0x222E);
+        limits = false;
+        size = 1.7;
+        return true;
+    }
+    if (name == QLatin1String("iint")) {
+        glyph = U(0x222C);
+        limits = false;
+        size = 1.7;
+        return true;
+    }
+    if (name == QLatin1String("iiint")) {
+        glyph = U(0x222D);
+        limits = false;
+        size = 1.7;
+        return true;
+    }
+    if (name == QLatin1String("bigcup")) {
+        glyph = U(0x22C3);
+        limits = true;
+        size = 1.55;
+        return true;
+    }
+    if (name == QLatin1String("bigcap")) {
+        glyph = U(0x22C2);
+        limits = true;
+        size = 1.55;
+        return true;
+    }
     return false;
 }
 
 bool SupportedEnvironment(const QString& env) {
     static const QSet<QString> envs = {
-        QStringLiteral("aligned"), QStringLiteral("align"),  QStringLiteral("align*"),
-        QStringLiteral("gathered"),QStringLiteral("gather"), QStringLiteral("gather*"),
-        QStringLiteral("cases"),   QStringLiteral("dcases"), QStringLiteral("matrix"),
-        QStringLiteral("smallmatrix"), QStringLiteral("pmatrix"), QStringLiteral("bmatrix"),
-        QStringLiteral("Bmatrix"), QStringLiteral("vmatrix"), QStringLiteral("Vmatrix"),
+        QStringLiteral("aligned"), QStringLiteral("align"),       QStringLiteral("align*"),  QStringLiteral("gathered"),
+        QStringLiteral("gather"),  QStringLiteral("gather*"),     QStringLiteral("cases"),   QStringLiteral("dcases"),
+        QStringLiteral("matrix"),  QStringLiteral("smallmatrix"), QStringLiteral("pmatrix"), QStringLiteral("bmatrix"),
+        QStringLiteral("Bmatrix"), QStringLiteral("vmatrix"),     QStringLiteral("Vmatrix"),
     };
     return envs.contains(env);
 }
@@ -716,16 +798,22 @@ QVector<QPair<int, int>> SplitTopLevel(const QString& s, bool onAmp) {
                 continue;
             }
             int k = j + 1;
-            while (k < n && s[k].isLetter()) ++k;
+            while (k < n && s[k].isLetter())
+                ++k;
             const QString word = s.mid(j + 1, k - j - 1);
-            if (word == QLatin1String("begin")) ++env;
-            else if (word == QLatin1String("end") && env > 0) --env;
+            if (word == QLatin1String("begin"))
+                ++env;
+            else if (word == QLatin1String("end") && env > 0)
+                --env;
             j = (k > j + 1) ? k : std::min(n, j + 2);
             continue;
         }
-        if (c == u'{') ++brace;
-        else if (c == u'}') { if (brace > 0) --brace; }
-        else if (onAmp && c == u'&' && brace == 0 && env == 0) {
+        if (c == u'{')
+            ++brace;
+        else if (c == u'}') {
+            if (brace > 0)
+                --brace;
+        } else if (onAmp && c == u'&' && brace == 0 && env == 0) {
             out.push_back({start, j});
             start = j + 1;
         }
@@ -740,7 +828,7 @@ QVector<QPair<int, int>> SplitTopLevel(const QString& s, bool onAmp) {
 // ---------------------------------------------------------------------------
 
 class Parser {
-public:
+  public:
     Parser(QString src, ParseState& st, int depth, const FontSpec& spec)
         : s_(std::move(src)), st_(st), depth_(depth), spec_(spec) {}
 
@@ -749,7 +837,8 @@ public:
         while (i_ < s_.size()) {
             const QChar c = s_[i_];
             if (c == u'}') {
-                if (stopAtBrace) break;
+                if (stopAtBrace)
+                    break;
                 st_.Fail(QStringLiteral("unbalanced brace"));
                 items.push_back(MakePlainText(QStringLiteral("}")));
                 ++i_;
@@ -761,14 +850,14 @@ public:
                     break;
                 }
             }
-            if (c.isSpace()) {  // 空白折叠为单个间隙
-                while (i_ < s_.size() && s_[i_].isSpace()) ++i_;
-                const bool nextIsScript =
-                    (i_ < s_.size() && (s_[i_] == u'^' || s_[i_] == u'_'));
+            if (c.isSpace()) { // 空白折叠为单个间隙
+                while (i_ < s_.size() && s_[i_].isSpace())
+                    ++i_;
+                const bool nextIsScript = (i_ < s_.size() && (s_[i_] == u'^' || s_[i_] == u'_'));
                 const bool nextIsRight = (i_ < s_.size() && s_[i_] == u'\\' && NextIsRightCommand());
                 const bool alreadySpaced = (!items.empty() && items.back()->kind == Kind::Space);
-                if (!items.empty() && i_ < s_.size() && s_[i_] != u'}' && !nextIsScript &&
-                    !nextIsRight && !alreadySpaced) {
+                if (!items.empty() && i_ < s_.size() && s_[i_] != u'}' && !nextIsScript && !nextIsRight &&
+                    !alreadySpaced) {
                     items.push_back(MakeSpace(CurrentFontPx() * 0.30));
                 }
                 continue;
@@ -776,7 +865,7 @@ public:
             if (c == u'^' || c == u'_') {
                 const bool isSup = (c == u'^');
                 ++i_;
-                if (i_ >= s_.size()) {  // 悬空的标记按字面渲染
+                if (i_ >= s_.size()) { // 悬空的标记按字面渲染
                     st_.Fail(QStringLiteral("missing script argument"));
                     items.push_back(MakePlainText(QString(c), false));
                     continue;
@@ -790,31 +879,43 @@ public:
             }
             const int before = i_;
             const BoxPtr atom = ParseAtom();
-            if (atom) items.push_back(atom);
-            if (i_ == before) ++i_;  // 保证绝对前进
+            if (atom)
+                items.push_back(atom);
+            if (i_ == before)
+                ++i_; // 保证绝对前进
         }
         return MakeHBox(items);
     }
 
-    void SetScale(qreal s) { scale_ = s; }
-    qreal Scale() const { return scale_; }
+    void SetScale(qreal s) {
+        scale_ = s;
+    }
+    qreal Scale() const {
+        return scale_;
+    }
 
-private:
+  private:
     struct ScaleGuard {
         Parser& p;
         qreal old;
         ScaleGuard(Parser& parser, qreal factor) : p(parser), old(parser.scale_) {
             p.scale_ = old * factor;
         }
-        ~ScaleGuard() { p.scale_ = old; }
+        ~ScaleGuard() {
+            p.scale_ = old;
+        }
     };
 
     // 限制经由命令参数产生的递归：\frac\frac\frac...、\hat\hat...、
     // \left(\left(... 都不带花括号，仅靠分组守卫无法阻止。
     struct DepthGuard {
         Parser& p;
-        explicit DepthGuard(Parser& parser) : p(parser) { ++p.depth_; }
-        ~DepthGuard() { --p.depth_; }
+        explicit DepthGuard(Parser& parser) : p(parser) {
+            ++p.depth_;
+        }
+        ~DepthGuard() {
+            --p.depth_;
+        }
     };
 
     qreal CurrentFontPx() const {
@@ -824,12 +925,14 @@ private:
 
     BoxPtr MakePlainText(const QString& text, bool autoItalic = true) {
         FontSpec sp = spec_;
-        if (!autoItalic) sp.italic = false;
+        if (!autoItalic)
+            sp.italic = false;
         return MakeText(text, FontFor(st_, sp, scale_), st_.color);
     }
 
     bool NextIsRightCommand() const {
-        if (i_ >= s_.size() || s_[i_] != u'\\') return false;
+        if (i_ >= s_.size() || s_[i_] != u'\\')
+            return false;
         int k = i_ + 1;
         QString word;
         while (k < s_.size() && s_[k].isLetter()) {
@@ -842,10 +945,13 @@ private:
     // -- 原子 ------------------------------------------------------------
 
     BoxPtr ParseAtom() {
-        if (i_ >= s_.size()) return MakeEmpty();
+        if (i_ >= s_.size())
+            return MakeEmpty();
         const QChar c = s_[i_];
-        if (c == u'{') return ParseBracedGroup();
-        if (c == u'\\') return ParseCommand();
+        if (c == u'{')
+            return ParseBracedGroup();
+        if (c == u'\\')
+            return ParseCommand();
         if (c == u'^' || c == u'_') {
             ++i_;
             return MakePlainText(QString(c), false);
@@ -856,7 +962,8 @@ private:
     BoxPtr ParsePlainRun() {
         const bool letter = IsAsciiLetter(s_[i_]);
         const int start = i_;
-        while (i_ < s_.size() && !IsSpecialChar(s_[i_]) && IsAsciiLetter(s_[i_]) == letter) ++i_;
+        while (i_ < s_.size() && !IsSpecialChar(s_[i_]) && IsAsciiLetter(s_[i_]) == letter)
+            ++i_;
         const QString text = s_.mid(start, i_ - start);
         FontSpec sp = spec_;
         sp.italic = letter && sp.auto_italic;
@@ -864,7 +971,7 @@ private:
     }
 
     BoxPtr ParseBracedGroup() {
-        ++i_;  // 越过 '{'
+        ++i_; // 越过 '{'
         if (depth_ >= kMaxDepth) {
             st_.Fail(QStringLiteral("nesting too deep"));
             return MakePlainText(CollapseWsTrim(ConsumeRawBalanced()), false);
@@ -872,8 +979,10 @@ private:
         ++depth_;
         BoxPtr inner = Parse(true, false);
         --depth_;
-        if (i_ < s_.size() && s_[i_] == u'}') ++i_;
-        else st_.Fail(QStringLiteral("unbalanced brace"));
+        if (i_ < s_.size() && s_[i_] == u'}')
+            ++i_;
+        else
+            st_.Fail(QStringLiteral("unbalanced brace"));
         return inner;
     }
 
@@ -882,7 +991,8 @@ private:
         int nesting = 1;
         const int start = i_;
         while (i_ < s_.size()) {
-            if (s_[i_] == u'{') ++nesting;
+            if (s_[i_] == u'{')
+                ++nesting;
             else if (s_[i_] == u'}') {
                 --nesting;
                 if (nesting == 0) {
@@ -903,8 +1013,10 @@ private:
             st_.Fail(QStringLiteral("missing script argument"));
             return MakeEmpty();
         }
-        if (s_[i_] == u'{') return ParseBracedGroup();
-        if (s_[i_] == u'\\') return ParseCommand();
+        if (s_[i_] == u'{')
+            return ParseBracedGroup();
+        if (s_[i_] == u'\\')
+            return ParseCommand();
         const QChar c = s_[i_];
         ++i_;
         FontSpec sp = spec_;
@@ -917,8 +1029,10 @@ private:
             st_.Fail(QStringLiteral("missing argument"));
             return MakeEmpty();
         }
-        if (s_[i_] == u'{') return ParseBracedGroup();
-        if (s_[i_] == u'\\') return ParseCommand();
+        if (s_[i_] == u'{')
+            return ParseBracedGroup();
+        if (s_[i_] == u'\\')
+            return ParseCommand();
         const QChar c = s_[i_];
         ++i_;
         FontSpec sp = spec_;
@@ -935,18 +1049,21 @@ private:
             st_.Fail(QStringLiteral("nesting too deep"));
             ++i_;
             if (i_ < s_.size() && s_[i_].isLetter()) {
-                while (i_ < s_.size() && s_[i_].isLetter()) ++i_;
+                while (i_ < s_.size() && s_[i_].isLetter())
+                    ++i_;
             } else if (i_ < s_.size()) {
                 ++i_;
             }
             return MakePlainText(CollapseWsTrim(s_.mid(backslash, i_ - backslash)), false);
         }
         DepthGuard guard(*this);
-        ++i_;  // 越过 '\\'
-        if (i_ >= s_.size()) return MakePlainText(QStringLiteral("\\"), false);
+        ++i_; // 越过 '\\'
+        if (i_ >= s_.size())
+            return MakePlainText(QStringLiteral("\\"), false);
         if (s_[i_].isLetter()) {
             int k = i_;
-            while (k < s_.size() && s_[k].isLetter()) ++k;
+            while (k < s_.size() && s_[k].isLetter())
+                ++k;
             const QString name = s_.mid(i_, k - i_);
             i_ = k;
             return DispatchWord(name, backslash);
@@ -958,28 +1075,28 @@ private:
 
     BoxPtr DispatchSymbol(QChar c, int backslash) {
         switch (c.unicode()) {
-            case u'{':
-            case u'}':
-            case u'_':
-            case u'&':
-            case u'%':
-            case u'#':
-            case u'$':
-                return MakePlainText(QString(c), false);
-            case u',':
-                return MakeSpace(0.17 * CurrentFontPx());
-            case u';':
-                return MakeSpace(0.28 * CurrentFontPx());
-            case u'!':
-                return MakeSpace(-0.17 * CurrentFontPx());
-            case u' ':
-                return MakeSpace(0.33 * CurrentFontPx());
-            case u'\\':
-                return MakeSpace(0.30 * CurrentFontPx());  // 分组内的换行
-            case u'|':
-                return MakePlainText(U(0x2016), false);
-            default:
-                break;
+        case u'{':
+        case u'}':
+        case u'_':
+        case u'&':
+        case u'%':
+        case u'#':
+        case u'$':
+            return MakePlainText(QString(c), false);
+        case u',':
+            return MakeSpace(0.17 * CurrentFontPx());
+        case u';':
+            return MakeSpace(0.28 * CurrentFontPx());
+        case u'!':
+            return MakeSpace(-0.17 * CurrentFontPx());
+        case u' ':
+            return MakeSpace(0.33 * CurrentFontPx());
+        case u'\\':
+            return MakeSpace(0.30 * CurrentFontPx()); // 分组内的换行
+        case u'|':
+            return MakePlainText(U(0x2016), false);
+        default:
+            break;
         }
         st_.Fail(QStringLiteral("unsupported command: \\") + QString(c));
         (void)backslash;
@@ -989,12 +1106,13 @@ private:
     BoxPtr DispatchWord(const QString& name, int backslash) {
         (void)backslash;
         // 间距命令。
-        if (name == QLatin1String("quad")) return MakeSpace(CurrentFontPx());
-        if (name == QLatin1String("qquad")) return MakeSpace(2.0 * CurrentFontPx());
+        if (name == QLatin1String("quad"))
+            return MakeSpace(CurrentFontPx());
+        if (name == QLatin1String("qquad"))
+            return MakeSpace(2.0 * CurrentFontPx());
 
         // 分数。
-        if (name == QLatin1String("frac") || name == QLatin1String("dfrac") ||
-            name == QLatin1String("tfrac")) {
+        if (name == QLatin1String("frac") || name == QLatin1String("dfrac") || name == QLatin1String("tfrac")) {
             BoxPtr num, den;
             {
                 ScaleGuard guard(*this, kFracScale);
@@ -1008,15 +1126,18 @@ private:
         }
 
         // 根式。
-        if (name == QLatin1String("sqrt")) return ParseSqrt();
+        if (name == QLatin1String("sqrt"))
+            return ParseSqrt();
 
         // 定界符。
-        if (name == QLatin1String("left")) return ParseLeft();
+        if (name == QLatin1String("left"))
+            return ParseLeft();
         if (name == QLatin1String("right")) {
             st_.Fail(QStringLiteral("unmatched \\right"));
             QChar ch;
             const bool present = ReadDelimiter(ch);
-            if (!present) return MakeEmpty();
+            if (!present)
+                return MakeEmpty();
             return MakeDelimiterFor(QString(ch), 0, 0, CurrentFontPx(), st_.color, st_);
         }
 
@@ -1034,8 +1155,7 @@ private:
                 }
             });
         }
-        if (name == QLatin1String("mathcal") || name == QLatin1String("mathscr") ||
-            name == QLatin1String("mathfrak")) {
+        if (name == QLatin1String("mathcal") || name == QLatin1String("mathscr") || name == QLatin1String("mathfrak")) {
             return ParseWithFont([&](FontSpec& s) {
                 s.script = true;
                 s.italic = true;
@@ -1068,9 +1188,8 @@ private:
                 s.auto_italic = false;
             });
         }
-        if (name == QLatin1String("text") || name == QLatin1String("operatorname") ||
-            name == QLatin1String("textrm") || name == QLatin1String("textnormal") ||
-            name == QLatin1String("mbox")) {
+        if (name == QLatin1String("text") || name == QLatin1String("operatorname") || name == QLatin1String("textrm") ||
+            name == QLatin1String("textnormal") || name == QLatin1String("mbox")) {
             return ParseTextArgument(name);
         }
 
@@ -1091,7 +1210,8 @@ private:
             return MakeLineAccent(ParseArgument(), false, CurrentFontPx(), st_.color);
 
         // 环境。
-        if (name == QLatin1String("begin")) return ParseBegin();
+        if (name == QLatin1String("begin"))
+            return ParseBegin();
         if (name == QLatin1String("end")) {
             st_.Fail(QStringLiteral("unmatched \\end"));
             return MakePlainText(QStringLiteral("\\end"), false);
@@ -1142,8 +1262,7 @@ private:
         return MakePlainText(QStringLiteral("\\") + name, false);
     }
 
-    template <typename Fn>
-    BoxPtr ParseWithFont(Fn&& configure) {
+    template <typename Fn> BoxPtr ParseWithFont(Fn&& configure) {
         const FontSpec old = spec_;
         configure(spec_);
         BoxPtr box = ParseArgument();
@@ -1177,13 +1296,19 @@ private:
             int nesting = 0;
             const int start = i_;
             while (i_ < s_.size() && !(s_[i_] == u']' && nesting == 0)) {
-                if (s_[i_] == u'{') ++nesting;
-                else if (s_[i_] == u'}') { if (nesting > 0) --nesting; }
+                if (s_[i_] == u'{')
+                    ++nesting;
+                else if (s_[i_] == u'}') {
+                    if (nesting > 0)
+                        --nesting;
+                }
                 ++i_;
             }
             const QString idxStr = s_.mid(start, i_ - start);
-            if (i_ < s_.size() && s_[i_] == u']') ++i_;
-            else st_.Fail(QStringLiteral("unbalanced bracket in \\sqrt"));
+            if (i_ < s_.size() && s_[i_] == u']')
+                ++i_;
+            else
+                st_.Fail(QStringLiteral("unbalanced bracket in \\sqrt"));
             Parser p(idxStr, st_, depth_ + 1, spec_);
             p.SetScale(scale_ * 0.62);
             index = p.Parse(false, false);
@@ -1193,41 +1318,78 @@ private:
     }
 
     bool ReadDelimiter(QChar& out) {
-        while (i_ < s_.size() && s_[i_].isSpace()) ++i_;
-        if (i_ >= s_.size()) return false;
+        while (i_ < s_.size() && s_[i_].isSpace())
+            ++i_;
+        if (i_ >= s_.size())
+            return false;
         if (s_[i_] == u'\\') {
             ++i_;
-            if (i_ >= s_.size()) return false;
+            if (i_ >= s_.size())
+                return false;
             if (s_[i_].isLetter()) {
                 int k = i_;
-                while (k < s_.size() && s_[k].isLetter()) ++k;
+                while (k < s_.size() && s_[k].isLetter())
+                    ++k;
                 const QString word = s_.mid(i_, k - i_);
                 i_ = k;
-                if (word == QLatin1String("lvert") || word == QLatin1String("rvert") ||
-                    word == QLatin1String("vert")) { out = u'|'; return true; }
-                if (word == QLatin1String("lVert") || word == QLatin1String("rVert") ||
-                    word == QLatin1String("Vert")) { out = QChar(0x2016); return true; }
-                if (word == QLatin1String("langle")) { out = QChar(0x27E8); return true; }
-                if (word == QLatin1String("rangle")) { out = QChar(0x27E9); return true; }
-                if (word == QLatin1String("lfloor")) { out = QChar(0x230A); return true; }
-                if (word == QLatin1String("rfloor")) { out = QChar(0x230B); return true; }
-                if (word == QLatin1String("lceil")) { out = QChar(0x2308); return true; }
-                if (word == QLatin1String("rceil")) { out = QChar(0x2309); return true; }
-                if (word == QLatin1String("lbrace")) { out = u'{'; return true; }
-                if (word == QLatin1String("rbrace")) { out = u'}'; return true; }
-                if (word == QLatin1String("backslash")) { out = u'\\'; return true; }
+                if (word == QLatin1String("lvert") || word == QLatin1String("rvert") || word == QLatin1String("vert")) {
+                    out = u'|';
+                    return true;
+                }
+                if (word == QLatin1String("lVert") || word == QLatin1String("rVert") || word == QLatin1String("Vert")) {
+                    out = QChar(0x2016);
+                    return true;
+                }
+                if (word == QLatin1String("langle")) {
+                    out = QChar(0x27E8);
+                    return true;
+                }
+                if (word == QLatin1String("rangle")) {
+                    out = QChar(0x27E9);
+                    return true;
+                }
+                if (word == QLatin1String("lfloor")) {
+                    out = QChar(0x230A);
+                    return true;
+                }
+                if (word == QLatin1String("rfloor")) {
+                    out = QChar(0x230B);
+                    return true;
+                }
+                if (word == QLatin1String("lceil")) {
+                    out = QChar(0x2308);
+                    return true;
+                }
+                if (word == QLatin1String("rceil")) {
+                    out = QChar(0x2309);
+                    return true;
+                }
+                if (word == QLatin1String("lbrace")) {
+                    out = u'{';
+                    return true;
+                }
+                if (word == QLatin1String("rbrace")) {
+                    out = u'}';
+                    return true;
+                }
+                if (word == QLatin1String("backslash")) {
+                    out = u'\\';
+                    return true;
+                }
                 st_.Fail(QStringLiteral("unsupported delimiter: \\") + word);
                 return false;
             }
             const QChar c = s_[i_];
             ++i_;
-            if (c == u'.') return false;
+            if (c == u'.')
+                return false;
             out = (c == u'|') ? QChar(0x2016) : c;
             return true;
         }
         const QChar c = s_[i_];
         ++i_;
-        if (c == u'.') return false;
+        if (c == u'.')
+            return false;
         out = c;
         return true;
     }
@@ -1240,16 +1402,16 @@ private:
         bool hasClose = false;
         if (stopped_at_right_) {
             stopped_at_right_ = false;
-            i_ += 6;  // "\right"
+            i_ += 6; // "\right"
             hasClose = ReadDelimiter(closeCh);
         } else {
             st_.Fail(QStringLiteral("unmatched \\left"));
         }
         const qreal fpx = CurrentFontPx();
-        BoxPtr left = hasOpen ? MakeDelimiterFor(QString(openCh), content->h, content->d, fpx, st_.color, st_)
-                              : MakeEmpty();
-        BoxPtr right = hasClose ? MakeDelimiterFor(QString(closeCh), content->h, content->d, fpx, st_.color, st_)
-                                : MakeEmpty();
+        BoxPtr left =
+            hasOpen ? MakeDelimiterFor(QString(openCh), content->h, content->d, fpx, st_.color, st_) : MakeEmpty();
+        BoxPtr right =
+            hasClose ? MakeDelimiterFor(QString(closeCh), content->h, content->d, fpx, st_.color, st_) : MakeEmpty();
         return MakeHBox({left, content, right});
     }
 
@@ -1258,13 +1420,16 @@ private:
             st_.Fail(QStringLiteral("malformed \\begin"));
             return MakePlainText(QStringLiteral("\\begin"), false);
         }
-        const int beginStart = i_ - 6;  // 指向 "\begin" 的反斜杠
-        ++i_;  // 越过 '{'
+        const int beginStart = i_ - 6; // 指向 "\begin" 的反斜杠
+        ++i_;                          // 越过 '{'
         const int nameStart = i_;
-        while (i_ < s_.size() && s_[i_] != u'}') ++i_;
+        while (i_ < s_.size() && s_[i_] != u'}')
+            ++i_;
         const QString env = s_.mid(nameStart, i_ - nameStart);
-        if (i_ < s_.size()) ++i_;
-        else st_.Fail(QStringLiteral("unbalanced brace after \\begin"));
+        if (i_ < s_.size())
+            ++i_;
+        else
+            st_.Fail(QStringLiteral("unbalanced brace after \\begin"));
 
         int bodyEnd = -1;
         int afterEnd = -1;
@@ -1285,7 +1450,7 @@ private:
             st_.Fail(QStringLiteral("nesting too deep"));
             return MakePlainText(CollapseWsTrim(raw), false);
         }
-        const int bodyStart = nameStart + env.size() + 1;  // 刚好越过 "}{"
+        const int bodyStart = nameStart + env.size() + 1; // 刚好越过 "}{"
         return BuildEnvironment(env, s_.mid(bodyStart, std::max(0, bodyEnd - bodyStart)));
     }
 
@@ -1300,14 +1465,16 @@ private:
                     continue;
                 }
                 int k = j + 1;
-                while (k < n && s_[k].isLetter()) ++k;
+                while (k < n && s_[k].isLetter())
+                    ++k;
                 const QString word = s_.mid(j + 1, k - j - 1);
                 if (word == QLatin1String("begin")) {
                     ++nesting;
                 } else if (word == QLatin1String("end")) {
                     if (nesting == 0) {
                         int b = k;
-                        while (b < n && s_[b].isSpace()) ++b;
+                        while (b < n && s_[b].isSpace())
+                            ++b;
                         if (b < n && s_[b] == u'{') {
                             const int e = s_.indexOf(u'}', b);
                             const int nameEnd = (e < 0) ? n : e;
@@ -1335,9 +1502,9 @@ private:
 
     BoxPtr BuildEnvironment(const QString& env, const QString& body) {
         const qreal fpx = CurrentFontPx();
-        const bool isAligned = (env == QLatin1String("aligned") || env == QLatin1String("align") ||
-                                env == QLatin1String("align*") || env == QLatin1String("gathered") ||
-                                env == QLatin1String("gather") || env == QLatin1String("gather*"));
+        const bool isAligned =
+            (env == QLatin1String("aligned") || env == QLatin1String("align") || env == QLatin1String("align*") ||
+             env == QLatin1String("gathered") || env == QLatin1String("gather") || env == QLatin1String("gather*"));
         const bool isCases = (env == QLatin1String("cases") || env == QLatin1String("dcases"));
         const bool isMatrix = (env == QLatin1String("matrix") || env == QLatin1String("smallmatrix"));
         const ColAlign align = isAligned ? ColAlign::Right : (isCases ? ColAlign::Left : ColAlign::Center);
@@ -1356,10 +1523,12 @@ private:
                 Parser p(cellStr, st_, depth_ + 1, spec_);
                 p.SetScale(scale_);
                 BoxPtr cell = p.Parse(false, false);
-                if (cell && (cell->w > 0 || cell->h > 0 || cell->d > 0)) any = true;
+                if (cell && (cell->w > 0 || cell->h > 0 || cell->d > 0))
+                    any = true;
                 row.push_back(cell);
             }
-            if (any || cells.empty()) cells.push_back(std::move(row));
+            if (any || cells.empty())
+                cells.push_back(std::move(row));
         }
 
         const BoxPtr grid = MakeGrid(cells, align, isAligned, colGap, rowGap);
@@ -1400,8 +1569,8 @@ private:
 // 光栅化
 // ---------------------------------------------------------------------------
 
-MathRenderResult FinishImage(const BoxPtr& content, const MathRenderStyle& style, bool exact,
-                             const QString& note, qreal dprWanted) {
+MathRenderResult FinishImage(const BoxPtr& content, const MathRenderStyle& style, bool exact, const QString& note,
+                             qreal dprWanted) {
     MathRenderResult res;
     res.exact = exact;
     res.note = note;
@@ -1409,9 +1578,12 @@ MathRenderResult FinishImage(const BoxPtr& content, const MathRenderStyle& style
     qreal W = content ? content->w : 0.0;
     qreal H = content ? content->h : 0.0;
     qreal D = content ? content->d : 0.0;
-    if (!std::isfinite(W) || W < 0) W = 0;
-    if (!std::isfinite(H) || H < 0) H = 0;
-    if (!std::isfinite(D) || D < 0) D = 0;
+    if (!std::isfinite(W) || W < 0)
+        W = 0;
+    if (!std::isfinite(H) || H < 0)
+        H = 0;
+    if (!std::isfinite(D) || D < 0)
+        D = 0;
 
     const qreal pad = std::max(2.0, std::round(style.font_px * 0.16));
     int logicalW = static_cast<int>(std::ceil(W + 2.0 * pad));
@@ -1420,7 +1592,8 @@ MathRenderResult FinishImage(const BoxPtr& content, const MathRenderStyle& style
     logicalH = std::clamp(logicalH, 1, 20000);
 
     qreal dpr = dprWanted;
-    if (!std::isfinite(dpr) || dpr <= 0) dpr = 1.0;
+    if (!std::isfinite(dpr) || dpr <= 0)
+        dpr = 1.0;
     dpr = std::clamp(dpr, 0.5, 4.0);
 
     int pxW = std::max(1, static_cast<int>(std::ceil(logicalW * dpr)));
@@ -1429,14 +1602,16 @@ MathRenderResult FinishImage(const BoxPtr& content, const MathRenderStyle& style
     QImage img;
     for (int attempt = 0; attempt < 2; ++attempt) {
         img = QImage(pxW, pxH, QImage::Format_ARGB32_Premultiplied);
-        if (!img.isNull()) break;
+        if (!img.isNull())
+            break;
         dpr = 1.0;
         pxW = logicalW;
         pxH = logicalH;
     }
     if (img.isNull()) {
         res.exact = false;
-        if (res.note.isEmpty()) res.note = QStringLiteral("image allocation failed");
+        if (res.note.isEmpty())
+            res.note = QStringLiteral("image allocation failed");
         return res;
     }
     img.fill(Qt::transparent);
@@ -1451,7 +1626,8 @@ MathRenderResult FinishImage(const BoxPtr& content, const MathRenderStyle& style
         p.setRenderHint(QPainter::SmoothPixmapTransform, true);
         p.scale(dpr, dpr);
         p.translate(pad, baseline);
-        if (content && content->draw) content->draw(p, 0, 0);
+        if (content && content->draw)
+            content->draw(p, 0, 0);
         p.end();
     }
 
@@ -1466,13 +1642,13 @@ MathRenderResult FinishImage(const BoxPtr& content, const MathRenderStyle& style
 }
 
 // 最后手段的渲染器：输出一行字面文本，绝不抛异常。
-MathRenderResult RenderLiteralFallback(const QString& latex, const MathRenderStyle& style,
-                                       const QString& note) {
+MathRenderResult RenderLiteralFallback(const QString& latex, const MathRenderStyle& style, const QString& note) {
     ParseState st;
     st.style = &style;
     st.color = style.color;
     st.base_font = QGuiApplication::font();
-    if (!style.font_family.isEmpty()) st.base_font.setFamily(style.font_family);
+    if (!style.font_family.isEmpty())
+        st.base_font.setFamily(style.font_family);
     st.base_font.setPixelSize(std::max(4, style.font_px));
     FontSpec sp;
     sp.auto_italic = false;
@@ -1481,14 +1657,14 @@ MathRenderResult RenderLiteralFallback(const QString& latex, const MathRenderSty
     return FinishImage(box, style, false, note, style.device_pixel_ratio);
 }
 
-MathRenderResult RenderApproximate(const QString& latex,
-                                   const MathRenderStyle& style) {
+MathRenderResult RenderApproximate(const QString& latex, const MathRenderStyle& style) {
     try {
         ParseState st;
         st.style = &style;
         st.color = style.color;
         st.base_font = QGuiApplication::font();
-        if (!style.font_family.isEmpty()) st.base_font.setFamily(style.font_family);
+        if (!style.font_family.isEmpty())
+            st.base_font.setFamily(style.font_family);
         st.base_font.setPixelSize(std::max(4, style.font_px));
 
         const qreal fpx = std::max(4.0, static_cast<qreal>(style.font_px));
@@ -1501,13 +1677,10 @@ MathRenderResult RenderApproximate(const QString& latex,
             row.push_back(p.Parse(false, false));
             lines.push_back(std::move(row));
         }
-        const BoxPtr content =
-            MakeGrid(lines, ColAlign::Left, false, 0.0, fpx * 0.45);
-        return FinishImage(content, style, st.exact, st.note,
-                           style.device_pixel_ratio);
+        const BoxPtr content = MakeGrid(lines, ColAlign::Left, false, 0.0, fpx * 0.45);
+        return FinishImage(content, style, st.exact, st.note, style.device_pixel_ratio);
     } catch (...) {
-        return RenderLiteralFallback(
-            latex, style, QStringLiteral("internal error: literal fallback"));
+        return RenderLiteralFallback(latex, style, QStringLiteral("internal error: literal fallback"));
     }
 }
 
@@ -1523,14 +1696,11 @@ TexExecutable FindTexExecutable() {
     }
 
 #ifdef PF_INSTALL_ROOT
-    const QString texlive_root =
-        QDir(QStringLiteral(PF_INSTALL_ROOT)).filePath("runtime/texlive");
+    const QString texlive_root = QDir(QStringLiteral(PF_INSTALL_ROOT)).filePath("runtime/texlive");
     const QDir bin_root(QDir(texlive_root).filePath("bin"));
-    const QFileInfoList platforms = bin_root.entryInfoList(
-        QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    const QFileInfoList platforms = bin_root.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
     for (const QFileInfo& platform : platforms) {
-        const QString executable =
-            QDir(platform.absoluteFilePath()).filePath("pdflatex");
+        const QString executable = QDir(platform.absoluteFilePath()).filePath("pdflatex");
         if (QFileInfo::exists(executable)) {
             return {executable, texlive_root};
         }
@@ -1543,7 +1713,8 @@ TexExecutable FindTexExecutable() {
 
 QProcessEnvironment TexEnvironment(const TexExecutable& executable) {
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    if (executable.texlive_root.isEmpty()) return environment;
+    if (executable.texlive_root.isEmpty())
+        return environment;
 
     const QDir root(executable.texlive_root);
     const QString bin = QFileInfo(executable.path).absolutePath();
@@ -1555,10 +1726,8 @@ QProcessEnvironment TexEnvironment(const TexExecutable& executable) {
     return environment;
 }
 
-bool RunProcess(const QString& program, const QStringList& arguments,
-                const QString& working_directory,
-                const QProcessEnvironment& environment, int timeout_ms,
-                QString* output) {
+bool RunProcess(const QString& program, const QStringList& arguments, const QString& working_directory,
+                const QProcessEnvironment& environment, int timeout_ms, QString* output) {
     QProcess process;
     process.setProgram(program);
     process.setArguments(arguments);
@@ -1569,26 +1738,26 @@ bool RunProcess(const QString& program, const QStringList& arguments,
     if (!process.waitForStarted(2000) || !process.waitForFinished(timeout_ms)) {
         process.kill();
         process.waitForFinished(1000);
-        if (output) *output = QStringLiteral("renderer process timed out");
+        if (output)
+            *output = QStringLiteral("renderer process timed out");
         return false;
     }
-    if (output) *output = QString::fromUtf8(process.readAll());
-    return process.exitStatus() == QProcess::NormalExit &&
-           process.exitCode() == 0;
+    if (output)
+        *output = QString::fromUtf8(process.readAll());
+    return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
 }
 
 QString TexDocument(const QString& latex) {
     // 使用自定义的单 box 页面可避免依赖 standalone/preview 宏包。
     // 日志中的 PF-* 值是 TeX box 的度量，而非位图估算值，
     // 因此调用方得到的是真实的数学基线。
-    return QStringLiteral(
-               "\\documentclass{article}\n"
-               "\\usepackage{amsmath,amssymb}\n"
-               "\\newsavebox{\\PFMathBox}\n"
-               "\\newdimen\\PFPad\\PFPad=%1pt\n"
-               "\\pagestyle{empty}\n"
-               "\\begin{document}\n"
-               "\\sbox{\\PFMathBox}{$\\textstyle ")
+    return QStringLiteral("\\documentclass{article}\n"
+                          "\\usepackage{amsmath,amssymb}\n"
+                          "\\newsavebox{\\PFMathBox}\n"
+                          "\\newdimen\\PFPad\\PFPad=%1pt\n"
+                          "\\pagestyle{empty}\n"
+                          "\\begin{document}\n"
+                          "\\sbox{\\PFMathBox}{$\\textstyle ")
                .arg(QString::number(kPagePaddingPt, 'f', 2)) +
            latex +
            QStringLiteral(
@@ -1612,50 +1781,48 @@ QString TexDocument(const QString& latex) {
 }
 
 qreal ParsePointMetric(const QString& log, const QString& name) {
-    const QRegularExpression expression(
-        QStringLiteral("PF-%1=([0-9]+(?:\\.[0-9]+)?)pt").arg(name));
+    const QRegularExpression expression(QStringLiteral("PF-%1=([0-9]+(?:\\.[0-9]+)?)pt").arg(name));
     const QRegularExpressionMatch match = expression.match(log);
-    if (!match.hasMatch()) return -1.0;
+    if (!match.hasMatch())
+        return -1.0;
     bool ok = false;
     const qreal value = match.captured(1).toDouble(&ok);
     return ok ? value : -1.0;
 }
 
-MathRenderResult RenderWithTex(const QString& latex,
-                               const MathRenderStyle& style,
-                               QString* failure) {
+MathRenderResult RenderWithTex(const QString& latex, const MathRenderStyle& style, QString* failure) {
     MathRenderResult result;
     const TexExecutable tex = FindTexExecutable();
     const QString rasterizer = QStandardPaths::findExecutable("pdftocairo");
     if (tex.path.isEmpty() || rasterizer.isEmpty()) {
-        if (failure) *failure = QStringLiteral("real TeX renderer unavailable");
+        if (failure)
+            *failure = QStringLiteral("real TeX renderer unavailable");
         return result;
     }
 
-    QTemporaryDir directory(QDir(QDir::tempPath()).filePath(
-        QStringLiteral("strlatex-inline-math-XXXXXX")));
+    QTemporaryDir directory(QDir(QDir::tempPath()).filePath(QStringLiteral("strlatex-inline-math-XXXXXX")));
     if (!directory.isValid()) {
-        if (failure) *failure = QStringLiteral("cannot create render workspace");
+        if (failure)
+            *failure = QStringLiteral("cannot create render workspace");
         return result;
     }
 
     QFile source(directory.filePath("main.tex"));
-    if (!source.open(QIODevice::WriteOnly | QIODevice::Truncate) ||
-        source.write(TexDocument(latex).toUtf8()) < 0) {
-        if (failure) *failure = QStringLiteral("cannot write render source");
+    if (!source.open(QIODevice::WriteOnly | QIODevice::Truncate) || source.write(TexDocument(latex).toUtf8()) < 0) {
+        if (failure)
+            *failure = QStringLiteral("cannot write render source");
         return result;
     }
     source.close();
 
     QString compiler_output;
-    const QStringList compiler_arguments = {
-        QStringLiteral("-interaction=nonstopmode"),
-        QStringLiteral("-halt-on-error"), QStringLiteral("-file-line-error"),
-        QStringLiteral("-no-shell-escape"), QStringLiteral("main.tex")};
+    const QStringList compiler_arguments = {QStringLiteral("-interaction=nonstopmode"),
+                                            QStringLiteral("-halt-on-error"), QStringLiteral("-file-line-error"),
+                                            QStringLiteral("-no-shell-escape"), QStringLiteral("main.tex")};
     const QProcessEnvironment environment = TexEnvironment(tex);
-    if (!RunProcess(tex.path, compiler_arguments, directory.path(), environment,
-                    kTexTimeoutMs, &compiler_output)) {
-        if (failure) *failure = QStringLiteral("TeX compile failed");
+    if (!RunProcess(tex.path, compiler_arguments, directory.path(), environment, kTexTimeoutMs, &compiler_output)) {
+        if (failure)
+            *failure = QStringLiteral("TeX compile failed");
         return result;
     }
 
@@ -1668,20 +1835,19 @@ MathRenderResult RenderWithTex(const QString& latex,
     const qreal descent_pt = ParsePointMetric(log, QStringLiteral("DESCENT"));
     const qreal width_pt = ParsePointMetric(log, QStringLiteral("WIDTH"));
     if (ascent_pt < 0 || descent_pt < 0 || width_pt <= 0) {
-        if (failure) *failure = QStringLiteral("TeX metrics unavailable");
+        if (failure)
+            *failure = QStringLiteral("TeX metrics unavailable");
         return result;
     }
 
     qreal dpr = style.device_pixel_ratio;
-    if (!std::isfinite(dpr) || dpr <= 0) dpr = 1.0;
+    if (!std::isfinite(dpr) || dpr <= 0)
+        dpr = 1.0;
     dpr = std::clamp(dpr, 1.0, 4.0);
     const qreal scale = std::max(4, style.font_px) / kTexBasePointSize;
     const int dpi = std::clamp(qRound(72.0 * scale * dpr), 96, 1200);
-    const int target_width = qMax(
-        1, qCeil((width_pt + 2.0 * kPagePaddingPt) * scale * dpr));
-    const int target_height = qMax(
-        1, qCeil((ascent_pt + descent_pt + 2.0 * kPagePaddingPt) *
-                 scale * dpr));
+    const int target_width = qMax(1, qCeil((width_pt + 2.0 * kPagePaddingPt) * scale * dpr));
+    const int target_height = qMax(1, qCeil((ascent_pt + descent_pt + 2.0 * kPagePaddingPt) * scale * dpr));
     QString raster_output;
     const QString prefix = directory.filePath("formula");
     QImage image;
@@ -1690,11 +1856,8 @@ MathRenderResult RenderWithTex(const QString& latex,
     // 尽可能在最后一步之前保留 TeX PDF 的矢量几何。Qt 的 SVG 图像插件
     // 属于可选组件，因此 PNG 仍是确定性的回退方案。
     const QString svg_path = prefix + QStringLiteral(".svg");
-    if (RunProcess(rasterizer,
-                   {QStringLiteral("-svg"), directory.filePath("main.pdf"),
-                    svg_path},
-                   directory.path(), environment, kRasterTimeoutMs,
-                   &raster_output)) {
+    if (RunProcess(rasterizer, {QStringLiteral("-svg"), directory.filePath("main.pdf"), svg_path}, directory.path(),
+                   environment, kRasterTimeoutMs, &raster_output)) {
         QImageReader svg_reader(svg_path);
         svg_reader.setScaledSize(QSize(target_width, target_height));
         image = svg_reader.read();
@@ -1703,20 +1866,18 @@ MathRenderResult RenderWithTex(const QString& latex,
 
     if (image.isNull()) {
         if (!RunProcess(rasterizer,
-                        {QStringLiteral("-png"),
-                         QStringLiteral("-singlefile"),
-                         QStringLiteral("-transp"), QStringLiteral("-r"),
-                         QString::number(dpi), directory.filePath("main.pdf"),
-                         prefix},
-                        directory.path(), environment, kRasterTimeoutMs,
-                        &raster_output)) {
-            if (failure) *failure = QStringLiteral("PDF rasterization failed");
+                        {QStringLiteral("-png"), QStringLiteral("-singlefile"), QStringLiteral("-transp"),
+                         QStringLiteral("-r"), QString::number(dpi), directory.filePath("main.pdf"), prefix},
+                        directory.path(), environment, kRasterTimeoutMs, &raster_output)) {
+            if (failure)
+                *failure = QStringLiteral("PDF rasterization failed");
             return result;
         }
         image.load(prefix + QStringLiteral(".png"));
     }
     if (image.isNull()) {
-        if (failure) *failure = QStringLiteral("rendered image unavailable");
+        if (failure)
+            *failure = QStringLiteral("rendered image unavailable");
         return result;
     }
     image = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
@@ -1724,8 +1885,7 @@ MathRenderResult RenderWithTex(const QString& latex,
         QRgb* scan = reinterpret_cast<QRgb*>(image.scanLine(y));
         for (int x = 0; x < image.width(); ++x) {
             const int alpha = qAlpha(scan[x]);
-            scan[x] = qPremultiply(qRgba(style.color.red(), style.color.green(),
-                                         style.color.blue(), alpha));
+            scan[x] = qPremultiply(qRgba(style.color.red(), style.color.green(), style.color.blue(), alpha));
         }
     }
 
@@ -1735,23 +1895,18 @@ MathRenderResult RenderWithTex(const QString& latex,
     result.width = qMax(1, qRound(image.width() / dpr));
     result.height = qMax(1, qRound(image.height() / dpr));
     const qreal total_pt = ascent_pt + descent_pt + 2.0 * kPagePaddingPt;
-    const qreal baseline_ratio =
-        (ascent_pt + kPagePaddingPt) / qMax<qreal>(0.01, total_pt);
-    result.baseline = std::clamp(qRound(result.height * baseline_ratio), 1,
-                                 qMax(1, result.height - 1));
+    const qreal baseline_ratio = (ascent_pt + kPagePaddingPt) / qMax<qreal>(0.01, total_pt);
+    result.baseline = std::clamp(qRound(result.height * baseline_ratio), 1, qMax(1, result.height - 1));
     result.exact = true;
     result.used_tex = true;
-    result.note = used_svg ? QStringLiteral("real TeX (SVG)")
-                           : QStringLiteral("real TeX (raster fallback)");
+    result.note = used_svg ? QStringLiteral("real TeX (SVG)") : QStringLiteral("real TeX (raster fallback)");
     return result;
 }
 
 QString CacheKey(const QString& latex, const MathRenderStyle& style) {
-    return latex + QChar(0x1f) + QString::number(style.font_px) + QChar(0x1f) +
-           style.color.name(QColor::HexArgb) + QChar(0x1f) +
-           QString::number(style.device_pixel_ratio, 'f', 2) + QChar(0x1f) +
-           style.font_family + QChar(0x1f) + style.template_id + QChar(0x1f) +
-           QString::number(static_cast<int>(style.backend));
+    return latex + QChar(0x1f) + QString::number(style.font_px) + QChar(0x1f) + style.color.name(QColor::HexArgb) +
+           QChar(0x1f) + QString::number(style.device_pixel_ratio, 'f', 2) + QChar(0x1f) + style.font_family +
+           QChar(0x1f) + style.template_id + QChar(0x1f) + QString::number(static_cast<int>(style.backend));
 }
 
 QHash<QString, MathRenderResult>& RenderCache() {
@@ -1765,7 +1920,8 @@ QMutex& RenderCacheMutex() {
 }
 
 void TrimTransparentMargins(MathRenderResult& result) {
-    if (result.image.isNull()) return;
+    if (result.image.isNull())
+        return;
     const QImage& image = result.image;
     int left = image.width();
     int top = image.height();
@@ -1773,27 +1929,27 @@ void TrimTransparentMargins(MathRenderResult& result) {
     int bottom = -1;
     for (int y = 0; y < image.height(); ++y) {
         for (int x = 0; x < image.width(); ++x) {
-            if (qAlpha(image.pixel(x, y)) == 0) continue;
+            if (qAlpha(image.pixel(x, y)) == 0)
+                continue;
             left = qMin(left, x);
             top = qMin(top, y);
             right = qMax(right, x);
             bottom = qMax(bottom, y);
         }
     }
-    if (right < left) return;
+    if (right < left)
+        return;
     // One physical pixel protects the antialiased fringe when scaled down.
-    const QRect bounds = QRect(QPoint(left, top), QPoint(right, bottom))
-                             .adjusted(-1, -1, 1, 1)
-                             .intersected(image.rect());
-    const qreal dpr = result.device_pixel_ratio > 0
-                          ? result.device_pixel_ratio : 1.0;
-    if (bounds != image.rect()) result.image = image.copy(bounds);
+    const QRect bounds =
+        QRect(QPoint(left, top), QPoint(right, bottom)).adjusted(-1, -1, 1, 1).intersected(image.rect());
+    const qreal dpr = result.device_pixel_ratio > 0 ? result.device_pixel_ratio : 1.0;
+    if (bounds != image.rect())
+        result.image = image.copy(bounds);
     // Preserve the renderer's baseline contract even for an empty-looking
     // command whose visible output occupies a single logical pixel.
     const int min_pixel_height = qMax(2, qCeil(2.0 * dpr));
     if (result.image.height() < min_pixel_height) {
-        QImage padded(result.image.width(), min_pixel_height,
-                      QImage::Format_ARGB32_Premultiplied);
+        QImage padded(result.image.width(), min_pixel_height, QImage::Format_ARGB32_Premultiplied);
         padded.fill(Qt::transparent);
         QPainter painter(&padded);
         painter.drawImage(0, 0, result.image);
@@ -1802,18 +1958,17 @@ void TrimTransparentMargins(MathRenderResult& result) {
     }
     result.width = qMax(1, qRound(result.image.width() / dpr));
     result.height = qMax(1, qRound(result.image.height() / dpr));
-    result.baseline = qBound(1, qRound(result.baseline - bounds.top() / dpr),
-                             result.height - 1);
+    result.baseline = qBound(1, qRound(result.baseline - bounds.top() / dpr), result.height - 1);
 }
 
-}  // namespace
+} // namespace
 
 // P0-07：共享缓存只存储纯图像结果，因此可以在 math worker 线程中安全访问
 // （QPixmap 绝不能跨越该边界）。
-MathRenderResult RenderMathPreviewImage(const QString& latex,
-                                        const MathRenderStyle& style) {
+MathRenderResult RenderMathPreviewImage(const QString& latex, const MathRenderStyle& style) {
     MathRenderResult empty;
-    if (latex.trimmed().isEmpty()) return empty;
+    if (latex.trimmed().isEmpty())
+        return empty;
     if (!QGuiApplication::instance()) {
         MathRenderResult res;
         res.exact = false;
@@ -1824,28 +1979,26 @@ MathRenderResult RenderMathPreviewImage(const QString& latex,
     {
         QMutexLocker lock(&RenderCacheMutex());
         const auto found = RenderCache().constFind(cache_key);
-        if (found != RenderCache().constEnd()) return found.value();
+        if (found != RenderCache().constEnd())
+            return found.value();
     }
 
     MathRenderResult rendered;
     if (style.backend == MathRenderBackend::RealTexPreferred) {
         QString failure;
-        const pf::MathValidation validation =
-            pf::ValidateMath(latex.toStdString(), pf::MathFlavor::Inline);
+        const pf::MathValidation validation = pf::ValidateMath(latex.toStdString(), pf::MathFlavor::Inline);
         if (validation.valid()) {
             rendered = RenderWithTex(latex, style, &failure);
         } else {
-            failure = validation.pending()
-                          ? QStringLiteral("math source is incomplete")
-                          : QStringLiteral("math source is invalid");
+            failure = validation.pending() ? QStringLiteral("math source is incomplete")
+                                           : QStringLiteral("math source is invalid");
         }
         if (!rendered.HasPixels()) {
             rendered = RenderApproximate(latex, style);
             rendered.exact = false;
             rendered.used_tex = false;
-            rendered.note = failure.isEmpty()
-                                ? QStringLiteral("approximate fallback")
-                                : failure + QStringLiteral("; approximate fallback");
+            rendered.note = failure.isEmpty() ? QStringLiteral("approximate fallback")
+                                              : failure + QStringLiteral("; approximate fallback");
         }
     } else {
         rendered = RenderApproximate(latex, style);
@@ -1855,24 +2008,22 @@ MathRenderResult RenderMathPreviewImage(const QString& latex,
 
     {
         QMutexLocker lock(&RenderCacheMutex());
-        if (RenderCache().size() >= kMaxCacheEntries) RenderCache().clear();
+        if (RenderCache().size() >= kMaxCacheEntries)
+            RenderCache().clear();
         RenderCache().insert(cache_key, rendered);
     }
     return rendered;
 }
 
-MathRenderResult RenderMathPreview(const QString& latex,
-                                   const MathRenderStyle& style) {
+MathRenderResult RenderMathPreview(const QString& latex, const MathRenderStyle& style) {
     // GUI 线程入口：渲染（或复用）图像，然后在此处实体化 QPixmap，
     // 因为这里的 QPixmap 构造是合法的。
     MathRenderResult rendered = RenderMathPreviewImage(latex, style);
     if (!rendered.image.isNull() && rendered.pixmap.isNull()) {
         rendered.pixmap = QPixmap::fromImage(rendered.image);
-        rendered.pixmap.setDevicePixelRatio(
-            rendered.device_pixel_ratio > 0 ? rendered.device_pixel_ratio
-                                            : 1.0);
+        rendered.pixmap.setDevicePixelRatio(rendered.device_pixel_ratio > 0 ? rendered.device_pixel_ratio : 1.0);
     }
     return rendered;
 }
 
-}  // namespace pf::gui
+} // namespace pf::gui

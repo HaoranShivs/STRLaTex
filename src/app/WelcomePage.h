@@ -13,18 +13,18 @@ namespace pf::gui {
 class WelcomePage : public QWidget {
     Q_OBJECT
 
-public:
+  public:
     explicit WelcomePage(QWidget* parent = nullptr);
 
     void AddRecent(const QString& name, const QString& path);
 
-signals:
+  signals:
     void NewProjectRequested();
     void OpenProjectRequested();
     void RecentActivated(const QString& path);
 
-private:
+  private:
     QListWidget* recent_list_;
 };
 
-}  // namespace pf::gui
+} // namespace pf::gui

@@ -54,7 +54,6 @@ struct IoError {
 IoErrorCode IoCodeFromErrorCode(const std::error_code& ec);
 
 // 根据 std::error_code 构造 IoError，并附带一句面向用户的说明。
-IoError MakeIoError(std::error_code ec, IoErrorCode fallback,
-                    std::string user_message, std::filesystem::path path);
+IoError MakeIoError(std::error_code ec, IoErrorCode fallback, std::string user_message, std::filesystem::path path);
 
-}  // namespace pf
+} // namespace pf

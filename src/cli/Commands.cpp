@@ -18,7 +18,7 @@ ProjectSession::Config DefaultConfig() {
     ProjectSession::Config config;
     config.tectonic_path = PF_TECTONIC;
     config.workspace_root = "/tmp/paperforge-builds";
-    config.debounce = std::chrono::milliseconds{0};  // CLI：立即 build
+    config.debounce = std::chrono::milliseconds{0}; // CLI：立即 build
     return config;
 }
 
@@ -28,7 +28,7 @@ void PrintDiagnostics(const std::vector<Diagnostic>& diagnostics) {
     }
 }
 
-}  // namespace
+} // namespace
 
 int CmdNew(const std::vector<std::string>& args) {
     if (args.empty()) {
@@ -57,8 +57,7 @@ int CmdNew(const std::vector<std::string>& args) {
     session.Execute(make_cmd(title));
 
     SetAbstractPayload abstract_payload;
-    abstract_payload.abstract_text = InlineFromText(
-        "This paper presents a study conducted with PaperForge.");
+    abstract_payload.abstract_text = InlineFromText("This paper presents a study conducted with PaperForge.");
     session.Execute(make_cmd(abstract_payload));
 
     InsertSectionPayload section;
@@ -74,8 +73,7 @@ int CmdNew(const std::vector<std::string>& args) {
     if (intro_result.status == EditStatus::Applied) {
         InsertParagraphPayload para;
         para.parent = intro_result.created_node;
-        para.content = InlineFromText(
-            "This is the first paragraph of the introduction.");
+        para.content = InlineFromText("This is the first paragraph of the introduction.");
         session.Execute(make_cmd(para));
     }
 
@@ -106,8 +104,7 @@ int CmdBuild(const std::vector<std::string>& args) {
     std::atomic<bool> done{false};
     session.SetBuildResultHandler([&](const BuildResult& result) {
         if (result.outcome == BuildResult::Outcome::Success) {
-            std::cout << "build OK (rev " << result.revision.value << ") -> "
-                      << result.pdf_path << "\n";
+            std::cout << "build OK (rev " << result.revision.value << ") -> " << result.pdf_path << "\n";
         } else if (result.outcome == BuildResult::Outcome::Failure) {
             std::cout << "build FAILED (rev " << result.revision.value << ")\n";
         } else {
@@ -162,7 +159,8 @@ int CmdDemo(const std::vector<std::string>& args) {
     // 端到端 demo：创建项目、编辑、build PDF。
     std::string dir = args.empty() ? "/tmp/paperforge-demo" : args[0];
     std::filesystem::remove_all(dir);
-    if (CmdNew({dir}) != 0) return 1;
+    if (CmdNew({dir}) != 0)
+        return 1;
 
     ProjectSession session(DefaultConfig());
     std::string error;
@@ -235,4 +233,4 @@ int CmdDemo(const std::vector<std::string>& args) {
     return done.load() ? 0 : 1;
 }
 
-}  // namespace pf::cli
+} // namespace pf::cli

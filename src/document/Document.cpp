@@ -6,13 +6,20 @@ namespace pf {
 
 const char* ToString(NodeKind kind) {
     switch (kind) {
-        case NodeKind::Section: return "Section";
-        case NodeKind::Subsection: return "Subsection";
-        case NodeKind::Subsubsection: return "Subsubsection";
-        case NodeKind::Paragraph: return "Paragraph";
-        case NodeKind::Figure: return "Figure";
-        case NodeKind::Table: return "Table";
-        case NodeKind::Equation: return "Equation";
+    case NodeKind::Section:
+        return "Section";
+    case NodeKind::Subsection:
+        return "Subsection";
+    case NodeKind::Subsubsection:
+        return "Subsubsection";
+    case NodeKind::Paragraph:
+        return "Paragraph";
+    case NodeKind::Figure:
+        return "Figure";
+    case NodeKind::Table:
+        return "Table";
+    case NodeKind::Equation:
+        return "Equation";
     }
     return "Unknown";
 }
@@ -23,7 +30,8 @@ bool Document::ContainsNode(const NodeId& id) const {
 
 std::optional<NodeKind> Document::GetNodeKind(const NodeId& id) const {
     auto address = LocateNode(*this, id);
-    if (!address) return std::nullopt;
+    if (!address)
+        return std::nullopt;
     return address->kind;
 }
 
@@ -31,4 +39,4 @@ std::vector<NodeId> Document::CollectNodeIds() const {
     return CollectAllNodeIds(*this);
 }
 
-}  // namespace pf
+} // namespace pf

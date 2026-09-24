@@ -14,8 +14,8 @@
 //
 // 此外还有纯 preview-gate 规则与带类型的 PreviewUpdate 标识。
 
-#include "TestMain.hpp"
 #include "ScopedTempDir.hpp"
+#include "TestMain.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -46,9 +46,8 @@ namespace {
 // 同时在应用线程上继续编辑。还会轮询协调器的 cancel 标志，
 // 使被取消或被取代的 build 永远不会卡住析构过程。
 class GateCompiler final : public ICompiler {
-public:
-    CompileResult Compile(const CompileRequest&,
-                          const std::atomic<bool>* cancel_requested) override {
+  public:
+    CompileResult Compile(const CompileRequest&, const std::atomic<bool>* cancel_requested) override {
         std::unique_lock<std::mutex> lock(mutex_);
         entered_ = true;
         entered_condition_.notify_all();
@@ -71,8 +70,7 @@ public:
             std::lock_guard<std::mutex> build_lock(builds_mutex_);
             attempt = ++builds_;
         }
-        result.pdf_path = std::filesystem::temp_directory_path() /
-                          ("pf-async-" + std::to_string(attempt) + ".pdf");
+        result.pdf_path = std::filesystem::temp_directory_path() / ("pf-async-" + std::to_string(attempt) + ".pdf");
         return result;
     }
 
@@ -97,16 +95,14 @@ public:
     }
     bool WaitUntilEntered(int timeout_ms = 5000) {
         std::unique_lock<std::mutex> lock(mutex_);
-        return entered_condition_.wait_for(
-            lock, std::chrono::milliseconds{timeout_ms},
-            [this] { return entered_; });
+        return entered_condition_.wait_for(lock, std::chrono::milliseconds{timeout_ms}, [this] { return entered_; });
     }
     int builds() const {
         std::lock_guard<std::mutex> lock(builds_mutex_);
         return builds_;
     }
 
-private:
+  private:
     std::mutex mutex_;
     std::condition_variable condition_;
     std::condition_variable entered_condition_;
@@ -118,15 +114,13 @@ private:
 
 // session 拥有自己的 compiler，因此测试装置保留所有权并将其借出。
 class BorrowedCompiler final : public ICompiler {
-public:
+  public:
     explicit BorrowedCompiler(ICompiler* inner) : inner_(inner) {}
-    CompileResult Compile(
-        const CompileRequest& request,
-        const std::atomic<bool>* cancel_requested) override {
+    CompileResult Compile(const CompileRequest& request, const std::atomic<bool>* cancel_requested) override {
         return inner_->Compile(request, cancel_requested);
     }
 
-private:
+  private:
     ICompiler* inner_;
 };
 
@@ -159,10 +153,8 @@ std::filesystem::path TempDir(const std::string& name) {
 }
 
 // 应用线程：泵送事件队列，直到 `done` 成立。
-bool PumpUntil(ProjectSession& session, const std::function<bool()>& done,
-               int timeout_ms = 10000) {
-    auto deadline = std::chrono::steady_clock::now() +
-                    std::chrono::milliseconds(timeout_ms);
+bool PumpUntil(ProjectSession& session, const std::function<bool()>& done, int timeout_ms = 10000) {
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     while (!done() && std::chrono::steady_clock::now() < deadline) {
         session.WaitForApplicationEvent(std::chrono::milliseconds{20});
     }
@@ -170,8 +162,7 @@ bool PumpUntil(ProjectSession& session, const std::function<bool()>& done,
 }
 
 void PumpFor(ProjectSession& session, int ms) {
-    auto deadline = std::chrono::steady_clock::now() +
-                    std::chrono::milliseconds(ms);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
     while (std::chrono::steady_clock::now() < deadline) {
         session.WaitForApplicationEvent(std::chrono::milliseconds{5});
     }
@@ -179,12 +170,10 @@ void PumpFor(ProjectSession& session, int ms) {
 
 // 持续排空，直到协调器空闲且没有排队事项。
 void Settle(ProjectSession& session, int timeout_ms = 5000) {
-    auto deadline = std::chrono::steady_clock::now() +
-                    std::chrono::milliseconds(timeout_ms);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     while (std::chrono::steady_clock::now() < deadline) {
         session.WaitForApplicationEvent(std::chrono::milliseconds{20});
-        if (session.build_phase() == BuildPhase::Idle &&
-            !session.HasPendingApplicationEvents() &&
+        if (session.build_phase() == BuildPhase::Idle && !session.HasPendingApplicationEvents() &&
             session.pending_saves() == 0) {
             break;
         }
@@ -247,21 +236,20 @@ std::string TitleOf(const SerializedProject& project) {
 
 // 写入一个 1x1 PNG，让 asset manager 能够暂存真实的图。
 std::filesystem::path WriteTinyPng() {
-    static const unsigned char png[] = {
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,  // 签名
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,  // IHDR 长度+类型
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,  // 1x1
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89,
-        0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63,
-        0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4,
-        0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
+    static const unsigned char png[] = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // 签名
+                                        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR 长度+类型
+                                        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1
+                                        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00,
+                                        0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01,
+                                        0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00,
+                                        0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
     auto path = std::filesystem::temp_directory_path() / "pf-async-figure.png";
     std::ofstream out(path, std::ios::binary);
     out.write(reinterpret_cast<const char*>(png), sizeof(png));
     return path;
 }
 
-}  // namespace
+} // namespace
 
 // ================= Preview gate（纯规则） =================
 
@@ -278,35 +266,29 @@ PF_TEST(PreviewGateAcceptsOnlyTheCurrentBuild) {
     current.revision = ProjectRevision{10};
     current.snapshot_id = "snap1";
     current.build_id = BuildId("b1");
-    PF_CHECK(EvaluatePreviewGate(current, result) ==
-             PreviewGateDecision::Accept);
+    PF_CHECK(EvaluatePreviewGate(current, result) == PreviewGateDecision::Accept);
 
     PreviewGateInput closed = current;
     closed.has_project = false;
-    PF_CHECK(EvaluatePreviewGate(closed, result) ==
-             PreviewGateDecision::NoProject);
+    PF_CHECK(EvaluatePreviewGate(closed, result) == PreviewGateDecision::NoProject);
 
     // 项目标识先于 revision 检查：切换项目时绝不能让旧项目的 PDF 通过，
     // 即使 revision 相同也不行。
     PreviewGateInput other_project = current;
     other_project.project_id = ProjectId("p2");
-    PF_CHECK(EvaluatePreviewGate(other_project, result) ==
-             PreviewGateDecision::ForeignProject);
+    PF_CHECK(EvaluatePreviewGate(other_project, result) == PreviewGateDecision::ForeignProject);
 
     PreviewGateInput newer = current;
     newer.revision = ProjectRevision{11};
-    PF_CHECK(EvaluatePreviewGate(newer, result) ==
-             PreviewGateDecision::StaleRevision);
+    PF_CHECK(EvaluatePreviewGate(newer, result) == PreviewGateDecision::StaleRevision);
 
     PreviewGateInput newer_snapshot = current;
     newer_snapshot.snapshot_id = "snap2";
-    PF_CHECK(EvaluatePreviewGate(newer_snapshot, result) ==
-             PreviewGateDecision::StaleSnapshot);
+    PF_CHECK(EvaluatePreviewGate(newer_snapshot, result) == PreviewGateDecision::StaleSnapshot);
 
     PreviewGateInput newer_build = current;
     newer_build.build_id = BuildId("b2");
-    PF_CHECK(EvaluatePreviewGate(newer_build, result) ==
-             PreviewGateDecision::StaleBuild);
+    PF_CHECK(EvaluatePreviewGate(newer_build, result) == PreviewGateDecision::StaleBuild);
 }
 
 // ================= 带类型的预览标识 =================
@@ -320,8 +302,7 @@ PF_TEST(PreviewUpdateCarriesArtifactIdentity) {
     Settle(rig.session);
 
     std::optional<PreviewUpdate> update;
-    rig.session.SetPreviewUpdateHandler(
-        [&](const PreviewUpdate& u) { update = u; });
+    rig.session.SetPreviewUpdateHandler([&](const PreviewUpdate& u) { update = u; });
     rig.session.SetBuildResultHandler([&](const BuildResult&) {
         // handler 只在属主线程上运行。
         PF_CHECK(rig.session.IsOwnerThread());
@@ -375,12 +356,10 @@ PF_TEST(ScenarioEditDuringBuildDropsStalePreview) {
 
     // 旧 build 现在返回。它绝不能成为预览。
     rig.compiler.Release();
-    PF_CHECK(PumpUntil(rig.session, [&] {
-        return rig.session.preview_state() == PreviewState::Fresh;
-    }));
+    PF_CHECK(PumpUntil(rig.session, [&] { return rig.session.preview_state() == PreviewState::Fresh; }));
 
     for (const auto& r : accepted) {
-        PF_CHECK(r.revision != building_rev);  // 陈旧的 build 被丢弃
+        PF_CHECK(r.revision != building_rev); // 陈旧的 build 被丢弃
     }
     rig.session.ProcessApplicationEvents();
     PF_CHECK(rig.session.owner_thread_violations() == 0);
@@ -430,12 +409,10 @@ PF_TEST(ScenarioUndoDuringBuildDiscardsResult) {
     PF_CHECK(after_undo > after_edit);
 
     rig.compiler.Release();
-    PF_CHECK(PumpUntil(rig.session, [&] {
-        return rig.session.preview_state() == PreviewState::Fresh;
-    }));
+    PF_CHECK(PumpUntil(rig.session, [&] { return rig.session.preview_state() == PreviewState::Fresh; }));
 
     for (const auto& r : accepted) {
-        PF_CHECK(r.revision != after_edit);  // 被 undo 的 revision
+        PF_CHECK(r.revision != after_edit); // 被 undo 的 revision
         PF_CHECK(r.revision != pre_edit);
     }
     PF_CHECK(rig.session.preview_state() == PreviewState::Fresh);
@@ -473,12 +450,10 @@ PF_TEST(ScenarioTemplateSwitchWhileBuildingDropsOldPdf) {
     PF_CHECK(generic_rev > ieee_rev);
 
     rig.compiler.Release();
-    PF_CHECK(PumpUntil(rig.session, [&] {
-        return rig.session.preview_state() == PreviewState::Fresh;
-    }));
+    PF_CHECK(PumpUntil(rig.session, [&] { return rig.session.preview_state() == PreviewState::Fresh; }));
 
     for (const auto& r : accepted) {
-        PF_CHECK(r.revision != ieee_rev);  // 旧模板的 PDF 从未显示
+        PF_CHECK(r.revision != ieee_rev); // 旧模板的 PDF 从未显示
     }
     // 真正落地的预览属于 generic 模板的 revision。
     PF_CHECK(rig.session.preview_state() == PreviewState::Fresh);
@@ -590,18 +565,15 @@ PF_TEST(ScenarioAutosaveWritesCompleteSnapshotWhileEditing) {
     // document 经历的每个状态，以 revision 为键。autosave 文件必须与
     // 其中某一对完全一致——绝不能是混合体。
     std::map<std::uint64_t, std::string> revision_title;
-    revision_title[rig.session.current_revision().value] =
-        CurrentTitle(rig.session);
+    revision_title[rig.session.current_revision().value] = CurrentTitle(rig.session);
 
     int autosaves = 0;
-    rig.session.SetSaveResultHandler(
-        [&](const SaveResult& result, SaveKind kind) {
-            PF_CHECK(rig.session.IsOwnerThread());
-            if (kind == SaveKind::Autosave &&
-                result.status == SaveResult::Status::Ok) {
-                ++autosaves;
-            }
-        });
+    rig.session.SetSaveResultHandler([&](const SaveResult& result, SaveKind kind) {
+        PF_CHECK(rig.session.IsOwnerThread());
+        if (kind == SaveKind::Autosave && result.status == SaveResult::Status::Ok) {
+            ++autosaves;
+        }
+    });
 
     rig.session.StartAutosaveTimer(std::chrono::milliseconds{40});
     for (int i = 0; i < 20; ++i) {
@@ -704,7 +676,8 @@ PF_TEST(ScenarioDeleteReferencedFigureEmitsDanglingDiagnostic) {
     auto validation = Validator().Validate(input);
     bool found = false;
     for (const auto& d : validation.diagnostics) {
-        if (d.code == "E-MISSING-XREF-TARGET") found = true;
+        if (d.code == "E-MISSING-XREF-TARGET")
+            found = true;
     }
     PF_CHECK(found);
     PF_CHECK(validation.can_render);

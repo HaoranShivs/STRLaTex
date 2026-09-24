@@ -34,21 +34,21 @@ const char* ToString(DiagnosticSeverity severity);
 // V1 中保持简单）。
 enum class DiagnosticLocationKind : std::uint8_t {
     None,
-    Node,           // 指向某个文档节点
-    Table,          // 节点 + 行 + 列
-    CitationKey,    // 参考文献引用键
-    Project,        // 项目级（无具体节点）
-    GeneratedFile,  // 生成的 LaTeX 文件 + 行号，没有可解析的 block
-                    // （Build Diagnostics 方案 §17/§47：template/package/class
-                    // 错误保留 file + line，但没有 blockId）
+    Node,          // 指向某个文档节点
+    Table,         // 节点 + 行 + 列
+    CitationKey,   // 参考文献引用键
+    Project,       // 项目级（无具体节点）
+    GeneratedFile, // 生成的 LaTeX 文件 + 行号，没有可解析的 block
+                   // （Build Diagnostics 方案 §17/§47：template/package/class
+                   // 错误保留 file + line，但没有 blockId）
 };
 
 struct DiagnosticLocation {
     DiagnosticLocationKind kind = DiagnosticLocationKind::None;
-    NodeId node;                       // kind == Node / Table
-    std::optional<int> row;            // kind == Table
-    std::optional<int> column;         // kind == Table
-    std::string citation_key;          // kind == CitationKey
+    NodeId node;               // kind == Node / Table
+    std::optional<int> row;    // kind == Table
+    std::optional<int> column; // kind == Table
+    std::string citation_key;  // kind == CitationKey
     // 生成源码位置（方案 §12/§17）：当编译器错误能够映射回某个 block 时，与
     // Node 一同携带；对于属于 template 或 package 的错误则单独使用。
     std::string file;                  // 例如 "main.tex"
@@ -61,12 +61,12 @@ struct DiagnosticLocation {
         return !file.empty() && line.has_value();
     }
     bool has_block_location() const {
-        return (kind == DiagnosticLocationKind::Node ||
-                kind == DiagnosticLocationKind::Table) &&
-               !node.empty();
+        return (kind == DiagnosticLocationKind::Node || kind == DiagnosticLocationKind::Table) && !node.empty();
     }
 
-    static DiagnosticLocation None() { return {}; }
+    static DiagnosticLocation None() {
+        return {};
+    }
     static DiagnosticLocation ForNode(NodeId id) {
         DiagnosticLocation loc;
         loc.kind = DiagnosticLocationKind::Node;
@@ -92,8 +92,7 @@ struct DiagnosticLocation {
         loc.kind = DiagnosticLocationKind::Project;
         return loc;
     }
-    static DiagnosticLocation ForGeneratedFile(std::string file_path,
-                                               std::uint32_t line_number) {
+    static DiagnosticLocation ForGeneratedFile(std::string file_path, std::uint32_t line_number) {
         DiagnosticLocation loc;
         loc.kind = DiagnosticLocationKind::GeneratedFile;
         loc.file = std::move(file_path);
@@ -103,7 +102,7 @@ struct DiagnosticLocation {
 };
 
 struct Diagnostic {
-    std::string id;  // DiagnosticId
+    std::string id; // DiagnosticId
     // 产生该诊断的 build 尝试（方案 §12）：诊断只会作为其所属 build 结果的一部分
     // 展示，这正是防止旧 build 污染新 build 的关键。
     BuildId build_id;
@@ -122,4 +121,4 @@ struct Diagnostic {
 
 std::string MakeDiagnosticId(const std::string& prefix, std::uint64_t counter);
 
-}  // namespace pf
+} // namespace pf

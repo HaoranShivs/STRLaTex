@@ -6,8 +6,7 @@ std::string GenerateInlineMath(const MathExpression& expression) {
     return "\\(" + expression.latex + "\\)";
 }
 
-std::string GenerateDisplayMath(const MathExpression& expression, bool numbered,
-                                const std::string& label) {
+std::string GenerateDisplayMath(const MathExpression& expression, bool numbered, const std::string& label) {
     if (!numbered) {
         return "\\[\n" + expression.latex + "\n\\]\n";
     }
@@ -19,4 +18,4 @@ std::string GenerateDisplayMath(const MathExpression& expression, bool numbered,
     return out;
 }
 
-}  // namespace pf
+} // namespace pf

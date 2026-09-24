@@ -23,7 +23,7 @@ namespace citation_format {
 inline constexpr int kObjectType = QTextFormat::UserObject + 2;
 // 要绘制的 pill 文本，例如 "[1, 3]"。在插入/加载时解析。
 inline constexpr int kDisplayTextProperty = QTextFormat::UserProperty + 7;
-}  // namespace citation_format
+} // namespace citation_format
 
 // 所有语义化行内对象共用的格式属性。InlineEditor 写入它们，
 // ContentInRange() 读取它们，pill 渲染器用 kind 决定色调。在此声明以便
@@ -31,22 +31,18 @@ inline constexpr int kDisplayTextProperty = QTextFormat::UserProperty + 7;
 namespace inline_object_format {
 inline constexpr int kKindProperty = QTextFormat::UserProperty + 1;
 inline constexpr int kPayloadProperty = QTextFormat::UserProperty + 2;
-}  // namespace inline_object_format
+} // namespace inline_object_format
 
-class CitationObjectRenderer final : public QObject,
-                                     public QTextObjectInterface {
+class CitationObjectRenderer final : public QObject, public QTextObjectInterface {
     Q_OBJECT
     Q_INTERFACES(QTextObjectInterface)
 
-public:
-    explicit CitationObjectRenderer(QObject* parent = nullptr)
-        : QObject(parent) {}
+  public:
+    explicit CitationObjectRenderer(QObject* parent = nullptr) : QObject(parent) {}
 
-    QSizeF intrinsicSize(QTextDocument* document, int positionInDocument,
-                         const QTextFormat& format) override;
-    void drawObject(QPainter* painter, const QRectF& rect,
-                    QTextDocument* document, int positionInDocument,
+    QSizeF intrinsicSize(QTextDocument* document, int positionInDocument, const QTextFormat& format) override;
+    void drawObject(QPainter* painter, const QRectF& rect, QTextDocument* document, int positionInDocument,
                     const QTextFormat& format) override;
 };
 
-}  // namespace pf::gui
+} // namespace pf::gui

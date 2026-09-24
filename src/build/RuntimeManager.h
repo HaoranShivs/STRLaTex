@@ -33,11 +33,11 @@ struct RuntimeInfo {
     std::string texlive_version;
     std::filesystem::path texlive_root;
     RuntimeStatus status = RuntimeStatus::Missing;
-    std::vector<std::string> problems;   // 人类可读的诊断信息
+    std::vector<std::string> problems; // 人类可读的诊断信息
 };
 
 class RuntimeManager {
-public:
+  public:
     // runtime 在应用内的目录布局（方案 §3）：
     //   runtime/texlive/bin/<platform>/{latexmk,pdflatex,...}
     // `install_root` 是包含 `runtime/` 的目录（源码构建时为仓库根目录，
@@ -47,25 +47,29 @@ public:
     // 定位 runtime，并校验其结构与版本文件。
     RuntimeInfo Initialize();
 
-    std::filesystem::path TexLiveRoot() const { return texlive_root_; }
+    std::filesystem::path TexLiveRoot() const {
+        return texlive_root_;
+    }
 
     // 校验关键可执行文件是否存在且可运行（方案 §18）。
     // `problems` 会为每项发现累积一条人类可读的说明。
-    bool VerifyExecutables(const std::filesystem::path& bin_dir,
-                           std::vector<std::string>* problems) const;
+    bool VerifyExecutables(const std::filesystem::path& bin_dir, std::vector<std::string>* problems) const;
 
     // 真正的最小编译测试（方案 §18、§19）：用模板所用的引擎
     // 构建一个小文档，以验证粗体/斜体。
-    bool VerifyCompile(const std::filesystem::path& texlive_root,
-                       std::vector<std::string>* problems) const;
+    bool VerifyCompile(const std::filesystem::path& texlive_root, std::vector<std::string>* problems) const;
 
-    RuntimeStatus status() const { return info_.status; }
-    const RuntimeInfo& info() const { return info_; }
+    RuntimeStatus status() const {
+        return info_.status;
+    }
+    const RuntimeInfo& info() const {
+        return info_;
+    }
 
-private:
+  private:
     std::filesystem::path install_root_;
     std::filesystem::path texlive_root_;
     mutable RuntimeInfo info_;
 };
 
-}  // namespace pf
+} // namespace pf

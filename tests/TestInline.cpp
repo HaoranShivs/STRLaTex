@@ -6,8 +6,8 @@
 #include "TestMain.hpp"
 
 #include "core/IdGenerator.h"
-#include "document/DocumentEditor.h"
 #include "document/Document.h"
+#include "document/DocumentEditor.h"
 #include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
 #include "editing/EditingSystem.h"
@@ -25,7 +25,9 @@ ProjectState MakeState() {
     return state;
 }
 
-Body& BodyOf(Document& doc) { return DocumentMutableAccess::body(doc); }
+Body& BodyOf(Document& doc) {
+    return DocumentMutableAccess::body(doc);
+}
 
 EditingSystem MakeEditing(ProjectState& state) {
     EditingSystem::Host host;
@@ -51,23 +53,19 @@ Paragraph MakeMixedParagraph() {
     Paragraph para;
     para.content.push_back(TextRun{"plain ", 0});
     para.content.push_back(TextRun{"bold ", static_cast<uint8_t>(TextMark::Strong)});
-    para.content.push_back(TextRun{"italic ",
-                                   static_cast<uint8_t>(TextMark::Emphasis)});
-    para.content.push_back(
-        TextRun{"both", static_cast<uint8_t>(TextMark::Strong | TextMark::Emphasis)});
+    para.content.push_back(TextRun{"italic ", static_cast<uint8_t>(TextMark::Emphasis)});
+    para.content.push_back(TextRun{"both", static_cast<uint8_t>(TextMark::Strong | TextMark::Emphasis)});
     return para;
 }
 
-}  // namespace
+} // namespace
 
 PF_TEST(RichTextSerializationRoundTripsMarks) {
     InlineContent content;
     content.push_back(TextRun{"The method ", 0});
-    content.push_back(TextRun{"significantly improves",
-                              static_cast<uint8_t>(TextMark::Strong)});
+    content.push_back(TextRun{"significantly improves", static_cast<uint8_t>(TextMark::Strong)});
     content.push_back(TextRun{" detection ", 0});
-    content.push_back(TextRun{"accuracy",
-                              static_cast<uint8_t>(TextMark::Emphasis)});
+    content.push_back(TextRun{"accuracy", static_cast<uint8_t>(TextMark::Emphasis)});
     content.push_back(TextRun{".", 0});
 
     const std::string text = InlineToRichText(content);
@@ -83,8 +81,7 @@ PF_TEST(RichTextSerializationRoundTripsMarks) {
 
 PF_TEST(RichTextSerializationHandlesBoldItalicCombination) {
     InlineContent content;
-    content.push_back(
-        TextRun{"both", static_cast<uint8_t>(TextMark::Strong | TextMark::Emphasis)});
+    content.push_back(TextRun{"both", static_cast<uint8_t>(TextMark::Strong | TextMark::Emphasis)});
     content.push_back(TextRun{" plain", 0});
 
     const std::string text = InlineToRichText(content);
@@ -101,7 +98,8 @@ PF_TEST(RichTextSerializationHandlesBoldItalicCombination) {
     // 末尾的普通文本不得继承这些标记。
     const auto* second = std::get_if<TextRun>(&back[1]);
     PF_CHECK(second != nullptr);
-    if (second) PF_CHECK(second->marks == 0);
+    if (second)
+        PF_CHECK(second->marks == 0);
 }
 
 PF_TEST(RichTextSerializationKeepsSemanticTokens) {
@@ -144,7 +142,8 @@ PF_TEST(RichTextParseNeverDropsUnknownMarkup) {
     const InlineContent parsed = InlineFromRichText("a * b ** c");
     std::string joined;
     for (const auto& node : parsed) {
-        if (const auto* run = std::get_if<TextRun>(&node)) joined += run->text;
+        if (const auto* run = std::get_if<TextRun>(&node))
+            joined += run->text;
     }
     PF_CHECK(joined.find("a * b ** c") != std::string::npos);
 }
@@ -158,8 +157,7 @@ PF_TEST(RendererNestsStrongAndEmphasis) {
     content.push_back(TextRun{" ", 0});
     content.push_back(TextRun{"i", static_cast<uint8_t>(TextMark::Emphasis)});
     content.push_back(TextRun{" ", 0});
-    content.push_back(
-        TextRun{"bi", static_cast<uint8_t>(TextMark::Strong | TextMark::Emphasis)});
+    content.push_back(TextRun{"bi", static_cast<uint8_t>(TextMark::Strong | TextMark::Emphasis)});
 
     Document doc;
     DocumentEditor editor(doc);
@@ -176,8 +174,7 @@ PF_TEST(RendererNestsStrongAndEmphasis) {
     auto rendered = LatexRenderer().Render(request);
     PF_CHECK(rendered.status == RenderResult::Status::Ok);
     const std::string& tex = rendered.package.files[0].content;
-    PF_CHECK(tex.find("plain \\textbf{b} \\emph{i} \\textbf{\\emph{bi}}") !=
-             std::string::npos);
+    PF_CHECK(tex.find("plain \\textbf{b} \\emph{i} \\textbf{\\emph{bi}}") != std::string::npos);
 }
 
 PF_TEST(RendererKeepsMarksThroughDocumentRender) {
@@ -224,18 +221,15 @@ PF_TEST(ParagraphContentRoundTripsThroughEditingProtocol) {
     PF_CHECK(editing.Apply(MakeCmd(state, edit)).status == EditStatus::Applied);
 
     // 文档原样存储提交的内容——不做扁平化。
-    const auto& stored = std::get<Paragraph>(
-        BodyOf(state.mutable_document()).sections[0].blocks[0]);
+    const auto& stored = std::get<Paragraph>(BodyOf(state.mutable_document()).sections[0].blocks[0]);
     PF_CHECK(stored.content == rich);
 
     // Undo 恢复占位内容；redo 把富文本内容重新带回。
     PF_CHECK(editing.Undo().status == EditStatus::Applied);
-    const auto& undone = std::get<Paragraph>(
-        BodyOf(state.mutable_document()).sections[0].blocks[0]);
+    const auto& undone = std::get<Paragraph>(BodyOf(state.mutable_document()).sections[0].blocks[0]);
     PF_CHECK(InlineToPlainText(undone.content) == "placeholder");
     PF_CHECK(editing.Redo().status == EditStatus::Applied);
-    const auto& redone = std::get<Paragraph>(
-        BodyOf(state.mutable_document()).sections[0].blocks[0]);
+    const auto& redone = std::get<Paragraph>(BodyOf(state.mutable_document()).sections[0].blocks[0]);
     PF_CHECK(redone.content == rich);
 }
 
@@ -272,15 +266,13 @@ PF_TEST(InlineCitationAndReferenceSurviveProtocolRoundTrip) {
 
     // 此时段落按顺序持有 [text][cite][xref]，且 search/outline 使用的
     // 纯文本形式仍会显示这些 token。
-    const auto& stored = std::get<Paragraph>(
-        BodyOf(state.mutable_document()).sections[0].blocks[0]);
+    const auto& stored = std::get<Paragraph>(BodyOf(state.mutable_document()).sections[0].blocks[0]);
     PF_CHECK(stored.content.size() == 3);
     PF_CHECK(std::holds_alternative<Citation>(stored.content[1]));
     PF_CHECK(std::holds_alternative<CrossReference>(stored.content[2]));
     const std::string plain = InlineToPlainText(stored.content);
     PF_CHECK(plain.find("[cite:smith2024]") != std::string::npos);
-    PF_CHECK(plain.find("[ref:" + fig_result.created_node.value() + "]") !=
-             std::string::npos);
+    PF_CHECK(plain.find("[ref:" + fig_result.created_node.value() + "]") != std::string::npos);
 
     // Validator 仍然接受它（该引用可以解析）。
     ValidationInput input;
@@ -342,21 +334,19 @@ PF_TEST(PasteRulesAreExpressedInTheEditorRepresentation) {
     // 富文本粘贴会保留标记；硬换行重排逻辑保持不变（方案 §14）。
     // 这些行足够长，使重排启发式判定为硬换行段落，
     // 而不是有意的分行结构。
-    const std::string wrapped =
-        "the first line of a paragraph pasted out of a PDF file\n"
-        "the second line of that same paragraph, equally long as the first\n"
-        "and a third line to make it a genuine hard-wrapped three-line block";
+    const std::string wrapped = "the first line of a paragraph pasted out of a PDF file\n"
+                                "the second line of that same paragraph, equally long as the first\n"
+                                "and a third line to make it a genuine hard-wrapped three-line block";
     const std::string reflowed = ReflowHardWrappedText(wrapped);
-    PF_CHECK(reflowed.find(
-                  "PDF file the second line of that same paragraph") !=
-              std::string::npos);
+    PF_CHECK(reflowed.find("PDF file the second line of that same paragraph") != std::string::npos);
 
     // 标记在重排后依然保留（重排作用于文本，而不是标记）。
     const InlineContent content = InlineFromRichText("**bold** and *italic*");
     PF_CHECK(content.size() == 3);
     const auto* bold = std::get_if<TextRun>(&content[0]);
     PF_CHECK(bold != nullptr && bold->text == "bold");
-    if (bold) PF_CHECK(HasMark(bold->marks, TextMark::Strong));
+    if (bold)
+        PF_CHECK(HasMark(bold->marks, TextMark::Strong));
 }
 
 PF_TEST(SessionPersistsRichParagraph) {
@@ -394,8 +384,7 @@ PF_TEST(SessionPersistsRichParagraph) {
     PF_CHECK(session.OpenProject(dir, &error));
 
     Document& reopened = session.mutable_document();
-    const auto& stored =
-        std::get<Paragraph>(BodyOf(reopened).sections[0].blocks[0]);
+    const auto& stored = std::get<Paragraph>(BodyOf(reopened).sections[0].blocks[0]);
     PF_CHECK(stored.content == MakeMixedParagraph().content);
     std::filesystem::remove_all(dir);
 }

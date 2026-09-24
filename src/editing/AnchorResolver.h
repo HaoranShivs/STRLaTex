@@ -13,24 +13,23 @@ namespace pf {
 
 struct ResolvedInsertionPoint {
     NodeId parent;
-    std::optional<size_t> index;  // nullopt = 追加
+    std::optional<size_t> index; // nullopt = 追加
 };
 
 enum class AnchorResolveError {
-    ReferenceNodeMissing,  // 参考节点已不存在
+    ReferenceNodeMissing, // 参考节点已不存在
 };
 
 const char* ToString(AnchorResolveError error);
 
 class AnchorResolver {
-public:
-    Result<ResolvedInsertionPoint, AnchorResolveError> Resolve(
-        const Document& document, const StableNodeAnchor& anchor) const;
+  public:
+    Result<ResolvedInsertionPoint, AnchorResolveError> Resolve(const Document& document,
+                                                               const StableNodeAnchor& anchor) const;
 };
 
-}  // namespace pf
+} // namespace pf
 
 namespace pf {
-template <>
-AnchorResolveError pf::ToStringError<AnchorResolveError>(const std::string& value);
-}  // namespace pf
+template <> AnchorResolveError pf::ToStringError<AnchorResolveError>(const std::string& value);
+} // namespace pf

@@ -19,30 +19,32 @@ const char* const kRequiredExecutables[] = {
 
 // 一个最小文档，用于验证模板所依赖的确切特性：
 // 粗体、斜体与粗斜体必须能在一次真实编译中保留下来（方案 §19）。
-const char* const kFontTestTex =
-    "\\documentclass{article}\n"
-    "\\usepackage{amsmath}\n"
-    "\\begin{document}\n"
-    "Normal\n\n"
-    "\\textbf{Bold}\n\n"
-    "\\textit{Italic}\n\n"
-    "\\textbf{\\textit{Bold Italic}}\n"
-    "\\end{document}\n";
+const char* const kFontTestTex = "\\documentclass{article}\n"
+                                 "\\usepackage{amsmath}\n"
+                                 "\\begin{document}\n"
+                                 "Normal\n\n"
+                                 "\\textbf{Bold}\n\n"
+                                 "\\textit{Italic}\n\n"
+                                 "\\textbf{\\textit{Bold Italic}}\n"
+                                 "\\end{document}\n";
 
-}  // namespace
+} // namespace
 
 const char* ToString(RuntimeStatus status) {
     switch (status) {
-        case RuntimeStatus::Healthy: return "Healthy";
-        case RuntimeStatus::Missing: return "Missing";
-        case RuntimeStatus::Corrupted: return "Corrupted";
-        case RuntimeStatus::UnsupportedVersion: return "UnsupportedVersion";
+    case RuntimeStatus::Healthy:
+        return "Healthy";
+    case RuntimeStatus::Missing:
+        return "Missing";
+    case RuntimeStatus::Corrupted:
+        return "Corrupted";
+    case RuntimeStatus::UnsupportedVersion:
+        return "UnsupportedVersion";
     }
     return "?";
 }
 
-RuntimeManager::RuntimeManager(std::filesystem::path install_root)
-    : install_root_(std::move(install_root)) {}
+RuntimeManager::RuntimeManager(std::filesystem::path install_root) : install_root_(std::move(install_root)) {}
 
 RuntimeInfo RuntimeManager::Initialize() {
     info_ = RuntimeInfo{};
@@ -51,8 +53,7 @@ RuntimeInfo RuntimeManager::Initialize() {
     texlive_root_ = install_root_ / "runtime" / "texlive";
     if (!std::filesystem::exists(texlive_root_, ec)) {
         info_.status = RuntimeStatus::Missing;
-        info_.problems.push_back("runtime directory not found: " +
-                                 texlive_root_.string());
+        info_.problems.push_back("runtime directory not found: " + texlive_root_.string());
         return info_;
     }
     info_.texlive_root = texlive_root_;
@@ -87,8 +88,7 @@ RuntimeInfo RuntimeManager::Initialize() {
     return info_;
 }
 
-bool RuntimeManager::VerifyExecutables(const std::filesystem::path& bin_dir,
-                                       std::vector<std::string>* problems) const {
+bool RuntimeManager::VerifyExecutables(const std::filesystem::path& bin_dir, std::vector<std::string>* problems) const {
     bool ok = true;
     std::error_code ec;
     for (const char* name : kRequiredExecutables) {
@@ -100,13 +100,11 @@ bool RuntimeManager::VerifyExecutables(const std::filesystem::path& bin_dir,
     return ok;
 }
 
-bool RuntimeManager::VerifyCompile(
-    const std::filesystem::path& texlive_root,
-    std::vector<std::string>* problems) const {
+bool RuntimeManager::VerifyCompile(const std::filesystem::path& texlive_root,
+                                   std::vector<std::string>* problems) const {
     std::error_code ec;
     std::filesystem::path bin_dir;
-    for (const auto& entry :
-         std::filesystem::directory_iterator(texlive_root / "bin", ec)) {
+    for (const auto& entry : std::filesystem::directory_iterator(texlive_root / "bin", ec)) {
         if (entry.is_directory()) {
             bin_dir = entry.path();
             break;
@@ -149,4 +147,4 @@ bool RuntimeManager::VerifyCompile(
     return true;
 }
 
-}  // namespace pf
+} // namespace pf

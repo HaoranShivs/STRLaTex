@@ -40,9 +40,12 @@ enum class MathState : std::uint8_t {
 
 inline const char* ToString(MathState state) {
     switch (state) {
-        case MathState::Valid: return "Valid";
-        case MathState::Pending: return "Pending";
-        case MathState::Invalid: return "Invalid";
+    case MathState::Valid:
+        return "Valid";
+    case MathState::Pending:
+        return "Pending";
+    case MathState::Invalid:
+        return "Invalid";
     }
     return "Invalid";
 }
@@ -54,9 +57,15 @@ struct MathValidation {
     std::string code;
     std::string error;
 
-    bool valid() const noexcept { return state == MathState::Valid; }
-    bool pending() const noexcept { return state == MathState::Pending; }
-    bool invalid() const noexcept { return state == MathState::Invalid; }
+    bool valid() const noexcept {
+        return state == MathState::Valid;
+    }
+    bool pending() const noexcept {
+        return state == MathState::Pending;
+    }
+    bool invalid() const noexcept {
+        return state == MathState::Invalid;
+    }
 };
 
-}  // namespace pf
+} // namespace pf

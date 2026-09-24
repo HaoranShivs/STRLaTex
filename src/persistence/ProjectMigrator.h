@@ -18,7 +18,7 @@
 namespace pf {
 
 class ProjectMigrator {
-public:
+  public:
     // 本 build 写入并理解的 schema 版本。
     static const char* CurrentVersion();
 
@@ -30,4 +30,4 @@ public:
     static MigrationResult MigrateToCurrent(SerializedProject* project);
 };
 
-}  // namespace pf
+} // namespace pf

@@ -11,8 +11,8 @@
 #include <QDialog>
 #include <QImage>
 
-#include <cstdint>
 #include <QString>
+#include <cstdint>
 
 class QLabel;
 class QPlainTextEdit;
@@ -23,25 +23,25 @@ namespace pf::gui {
 class MathEditorDialog : public QDialog {
     Q_OBJECT
 
-public:
+  public:
     explicit MathEditorDialog(const QString& latex, QWidget* parent = nullptr);
 
     // 编辑后的数学 body。
     QString latex() const;
 
     // 测试/嵌入钩子。
-    QPlainTextEdit* SourceEdit() const { return source_; }
+    QPlainTextEdit* SourceEdit() const {
+        return source_;
+    }
     void SetSourceForTest(const QString& latex);
     void RefreshPreviewNow();
     QString StateText() const;
 
-private:
+  private:
     void RefreshPreview();
     // P0-07：应用异步渲染出的预览（GUI 线程）。
-    void ApplyRenderedPreview(const QString& latex, const QImage& image,
-                              int width, int height, int baseline,
-                              qreal device_pixel_ratio, const QString& note,
-                              bool exact);
+    void ApplyRenderedPreview(const QString& latex, const QImage& image, int width, int height, int baseline,
+                              qreal device_pixel_ratio, const QString& note, bool exact);
 
     QPlainTextEdit* source_ = nullptr;
     QLabel* preview_ = nullptr;
@@ -52,4 +52,4 @@ private:
     std::uint64_t preview_generation_ = 0;
 };
 
-}  // namespace pf::gui
+} // namespace pf::gui

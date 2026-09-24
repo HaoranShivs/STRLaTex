@@ -49,4 +49,4 @@ std::int64_t BuildEventNowMs();
 // 将单个事件的时间戳按本地时间格式化为 [HH:mm:ss.zzz]。
 std::string FormatBuildTimestamp(std::int64_t timestamp_ms);
 
-}  // namespace pf
+} // namespace pf

@@ -29,7 +29,9 @@ using namespace pf::gui;
 
 namespace {
 
-QApplication* EnsureApp() { return qApp; }
+QApplication* EnsureApp() {
+    return qApp;
+}
 
 void Spin(int ms) {
     QElapsedTimer timer;
@@ -42,9 +44,11 @@ void Spin(int ms) {
 
 // 记录服务交付内容的客户端。
 class RecordingClient : public QObject {
-public:
+  public:
     explicit RecordingClient(const QString& id) : id_(id) {}
-    QString id() const { return id_; }
+    QString id() const {
+        return id_;
+    }
 
     void Record(const MathRenderResponse& response) {
         last_generation = response.generation;
@@ -74,8 +78,7 @@ PF_TEST(MathRenderRequestIsNonBlocking) {
     QElapsedTimer timer;
     timer.start();
     for (int i = 0; i < 20; ++i) {
-        service.Request(QStringLiteral("editor-a"), QStringLiteral("f1"),
-                        QStringLiteral("x_%1 + y").arg(i), style);
+        service.Request(QStringLiteral("editor-a"), QStringLiteral("f1"), QStringLiteral("x_%1 + y").arg(i), style);
     }
     const qint64 elapsed = timer.elapsed();
     // 旧的同步路径为每个公式启动一个 TeX 进程；入队 20 个请求的耗时
@@ -93,8 +96,7 @@ PF_TEST(MathRenderRunsOnTheWorkerThread) {
     style.backend = MathRenderBackend::ApproximateOnly;
     style.font_px = 16;
 
-    service.Request(QStringLiteral("editor-b"), QStringLiteral("f1"),
-                    QStringLiteral("\\frac{a}{b}"), style);
+    service.Request(QStringLiteral("editor-b"), QStringLiteral("f1"), QStringLiteral("\\frac{a}{b}"), style);
     QElapsedTimer timer;
     timer.start();
     while (service.renders_completed() == 0 && timer.elapsed() < 5000)
@@ -117,8 +119,8 @@ PF_TEST(MathRenderReplyReachesLiveClient) {
     MathRenderStyle style;
     style.backend = MathRenderBackend::ApproximateOnly;
     style.font_px = 16;
-    const std::uint64_t generation = service.Request(
-        client.id(), QStringLiteral("f1"), QStringLiteral("a^2+b^2"), style);
+    const std::uint64_t generation =
+        service.Request(client.id(), QStringLiteral("f1"), QStringLiteral("a^2+b^2"), style);
     QElapsedTimer timer;
     timer.start();
     while (client.received.load() == 0 && timer.elapsed() < 5000)
@@ -144,10 +146,8 @@ PF_TEST(MathRenderDropsSupersededGeneration) {
     style.backend = MathRenderBackend::ApproximateOnly;
     style.font_px = 16;
 
-    service.Request(client.id(), QStringLiteral("same"), QStringLiteral("old"),
-                    style);
-    const std::uint64_t newest = service.Request(
-        client.id(), QStringLiteral("same"), QStringLiteral("new"), style);
+    service.Request(client.id(), QStringLiteral("same"), QStringLiteral("old"), style);
+    const std::uint64_t newest = service.Request(client.id(), QStringLiteral("same"), QStringLiteral("new"), style);
 
     QElapsedTimer timer;
     timer.start();
@@ -165,17 +165,14 @@ PF_TEST(MathRenderNeverTouchesDestroyedClient) {
     MathRenderService service;
     auto* client = new RecordingClient(QStringLiteral("editor-e"));
     service.RegisterClient(client->id(), client);
-    QObject::connect(
-        &service, &MathRenderService::mathRendered, client,
-        [client](const MathRenderResponse& response) {
-            if (response.editor_id == client->id())
-                client->Record(response);
-        });
+    QObject::connect(&service, &MathRenderService::mathRendered, client, [client](const MathRenderResponse& response) {
+        if (response.editor_id == client->id())
+            client->Record(response);
+    });
     MathRenderStyle style;
     style.backend = MathRenderBackend::ApproximateOnly;
     style.font_px = 16;
-    service.Request(client->id(), QStringLiteral("f1"),
-                    QStringLiteral("x+y"), style);
+    service.Request(client->id(), QStringLiteral("f1"), QStringLiteral("x+y"), style);
     // 立即销毁客户端：此时渲染仍在排队或运行中。
     delete client;
     // 持续泵送事件，留足回复到达的时间。
@@ -246,8 +243,7 @@ PF_TEST(MathRenderLateReplyAfterCreatingScopeExited) {
         MathRenderStyle style;
         style.backend = MathRenderBackend::ApproximateOnly;
         style.font_px = 16;
-        *generation = service.Request(client.id(), QStringLiteral("card"),
-                                      QStringLiteral("x^2"), style);
+        *generation = service.Request(client.id(), QStringLiteral("card"), QStringLiteral("x^2"), style);
     }
     // 创建作用域已消失；回复仍必须被安全地应用。
     QElapsedTimer timer;

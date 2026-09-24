@@ -29,8 +29,12 @@ struct NodeAddress {
     std::optional<size_t> block;
 
     // 标题的深度为 1..3，block 为 0。
-    int depth() const noexcept { return HeadingDepth(kind); }
-    bool is_heading() const noexcept { return IsHeadingKind(kind); }
+    int depth() const noexcept {
+        return HeadingDepth(kind);
+    }
+    bool is_heading() const noexcept {
+        return IsHeadingKind(kind);
+    }
 };
 
 // 按 id 在 body 中任意位置查找节点。不存在时返回 nullopt。
@@ -38,8 +42,7 @@ std::optional<NodeAddress> LocateNode(const Document& document, const NodeId& no
 
 // 节点所在的 blocks vector。标题返回 nullptr。
 std::vector<Block>* FindBlockList(Document& document, const NodeAddress& address);
-const std::vector<Block>* FindBlockList(const Document& document,
-                                        const NodeAddress& address);
+const std::vector<Block>* FindBlockList(const Document& document, const NodeAddress& address);
 
 // 指向特定节点的指针。类型不匹配时返回 nullptr。
 Section* FindSection(Document& document, const NodeId& id);
@@ -51,26 +54,21 @@ Block* FindBlock(Document& document, const NodeId& id);
 
 // 按文档顺序遍历所有结构节点：各 section 及其 block，各 subsection 及其
 // block，各 subsubsection 及其 block。
-void VisitNodes(const Document& document,
-                const std::function<void(const NodeAddress&)>& visit);
+void VisitNodes(const Document& document, const std::function<void(const NodeAddress&)>& visit);
 
 // 仅遍历 block，按文档顺序。
-void VisitBlocks(const Document& document,
-                 const std::function<void(const Block&, const NodeAddress&)>& visit);
+void VisitBlocks(const Document& document, const std::function<void(const Block&, const NodeAddress&)>& visit);
 
 // 仅遍历标题（Section/Subsection/Subsubsection），按文档顺序。
-void VisitHeadings(const Document& document,
-                   const std::function<void(const NodeAddress&)>& visit);
+void VisitHeadings(const Document& document, const std::function<void(const NodeAddress&)>& visit);
 
 // 便捷接口：按顺序遍历每个 Section。
-void VisitSections(const Document& document,
-                   const std::function<void(const Section&, size_t index)>& visit);
+void VisitSections(const Document& document, const std::function<void(const Section&, size_t index)>& visit);
 
 // document 中的所有内联内容（front matter 的标题/摘要/图表标题以及段落
 // 正文），按文档顺序。供交叉引用/引文搜索使用。
-void VisitInlineContent(
-    const Document& document,
-    const std::function<void(const InlineContent&, const NodeAddress&)>& visit);
+void VisitInlineContent(const Document& document,
+                        const std::function<void(const InlineContent&, const NodeAddress&)>& visit);
 
 // 按文档顺序收集所有节点的 id。
 std::vector<NodeId> CollectAllNodeIds(const Document& document);
@@ -78,14 +76,16 @@ std::vector<NodeId> CollectAllNodeIds(const Document& document);
 // 上述容器访问的逃生通道。集中放在一处，以便「谁可以深入访问 Document」
 // 这一规则保持可审计。
 class DocumentMutableAccess {
-public:
+  public:
     static FrontMatter& front_matter(Document& document) {
         return document.front_matter();
     }
-    static Body& body(Document& document) { return document.body(); }
+    static Body& body(Document& document) {
+        return document.body();
+    }
     static BackMatter& back_matter(Document& document) {
         return document.back_matter();
     }
 };
 
-}  // namespace pf
+} // namespace pf

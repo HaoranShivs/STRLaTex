@@ -22,35 +22,40 @@ std::filesystem::path RepoRoot() {
     return std::filesystem::path(__FILE__).parent_path().parent_path();
 }
 
-std::filesystem::path RuntimeRoot() { return RepoRoot() / "runtime" / "texlive"; }
+std::filesystem::path RuntimeRoot() {
+    return RepoRoot() / "runtime" / "texlive";
+}
 
 // 单行文档正文：渲染器如何生成一段带标记的文本。
 std::string MarkedLine(const char* text, std::uint8_t marks) {
     std::string latex;
     const bool strong = HasMark(marks, TextMark::Strong);
     const bool emphasis = HasMark(marks, TextMark::Emphasis);
-    if (strong && emphasis) latex += "\\textbf{\\emph{" + std::string(text) + "}}";
-    else if (strong) latex += "\\textbf{" + std::string(text) + "}";
-    else if (emphasis) latex += "\\emph{" + std::string(text) + "}";
-    else latex += text;
+    if (strong && emphasis)
+        latex += "\\textbf{\\emph{" + std::string(text) + "}}";
+    else if (strong)
+        latex += "\\textbf{" + std::string(text) + "}";
+    else if (emphasis)
+        latex += "\\emph{" + std::string(text) + "}";
+    else
+        latex += text;
     return latex;
 }
 
-constexpr const char* kIeeeTemplate =
-    "\\documentclass[conference]{IEEEtran}\n"
-    "\\usepackage{amsmath}\n"
-    "\\begin{document}\n"
-    "\\title{Marks Test}\n"
-    "\\author{\\IEEEauthorblockN{Alice}\\IEEEauthorblockA{University}}\n"
-    "\\maketitle\n"
-    "\\section{Introduction}\n"
-    "%BODY%\n"
-    "\\begin{equation}\n"
-    "E = mc^{2}\n"
-    "\\end{equation}\n"
-    "\\end{document}\n";
+constexpr const char* kIeeeTemplate = "\\documentclass[conference]{IEEEtran}\n"
+                                      "\\usepackage{amsmath}\n"
+                                      "\\begin{document}\n"
+                                      "\\title{Marks Test}\n"
+                                      "\\author{\\IEEEauthorblockN{Alice}\\IEEEauthorblockA{University}}\n"
+                                      "\\maketitle\n"
+                                      "\\section{Introduction}\n"
+                                      "%BODY%\n"
+                                      "\\begin{equation}\n"
+                                      "E = mc^{2}\n"
+                                      "\\end{equation}\n"
+                                      "\\end{document}\n";
 
-}  // namespace
+} // namespace
 
 PF_TEST(RuntimeIsHealthy) {
     RuntimeManager manager(RepoRoot());
@@ -61,7 +66,8 @@ PF_TEST(RuntimeIsHealthy) {
     }
     std::cout << "\n";
     PF_CHECK(info.status == RuntimeStatus::Healthy);
-    if (info.status != RuntimeStatus::Healthy) return;
+    if (info.status != RuntimeStatus::Healthy)
+        return;
 
     // 运行时错误必须能与文档错误区分开（方案 §21）。
     TexLiveCompiler missing{CompilerConfig{}};
@@ -84,23 +90,21 @@ PF_TEST(FontTestBuildsWithoutSubstitution) {
         std::cout << "    (runtime not healthy; skipping)\n";
         return;
     }
-    const auto workspace =
-        std::filesystem::temp_directory_path() / "pf-font-test";
+    const auto workspace = std::filesystem::temp_directory_path() / "pf-font-test";
     std::filesystem::remove_all(workspace);
     std::filesystem::create_directories(workspace);
     // package 就是编译器所暂存的内容；它是文档的唯一来源
     //（与真实 build 走的路径相同）。
     BuildPackageFile file;
     file.path = "main.tex";
-    file.content =
-        "\\documentclass{article}\n"
-        "\\usepackage{amsmath}\n"
-        "\\begin{document}\n"
-        "Normal\n\n"
-        "\\textbf{Bold}\n\n"
-        "\\textit{Italic}\n\n"
-        "\\textbf{\\textit{Bold Italic}}\n"
-        "\\end{document}\n";
+    file.content = "\\documentclass{article}\n"
+                   "\\usepackage{amsmath}\n"
+                   "\\begin{document}\n"
+                   "Normal\n\n"
+                   "\\textbf{Bold}\n\n"
+                   "\\textit{Italic}\n\n"
+                   "\\textbf{\\textit{Bold Italic}}\n"
+                   "\\end{document}\n";
 
     CompilerConfig config;
     config.texlive_root = RuntimeRoot();
@@ -114,9 +118,7 @@ PF_TEST(FontTestBuildsWithoutSubstitution) {
     auto result = compiler.Compile(request, nullptr);
     PF_CHECK(result.status == CompileStatus::Success);
     if (result.status != CompileStatus::Success) {
-        std::cout << "    log tail: " << result.log.substr(result.log.size() > 400
-                                                               ? result.log.size() - 400
-                                                               : 0)
+        std::cout << "    log tail: " << result.log.substr(result.log.size() > 400 ? result.log.size() - 400 : 0)
                   << "\n";
         return;
     }
@@ -125,9 +127,8 @@ PF_TEST(FontTestBuildsWithoutSubstitution) {
     // available」行是正常的（IEEEtran 会把 bx 映射为 b）；
     // 替换警告则不正常。
     for (const auto& message : result.messages) {
-        const bool substitution =
-            message.text.find("Font Warning") != std::string::npos ||
-            message.text.find("substituted") != std::string::npos;
+        const bool substitution = message.text.find("Font Warning") != std::string::npos ||
+                                  message.text.find("substituted") != std::string::npos;
         PF_CHECK(!substitution);
     }
 }
@@ -141,17 +142,13 @@ PF_TEST(IeeeMarksReachPdfLatex) {
         return;
     }
     std::string body =
-        MarkedLine("Plain", 0) + "\n\n" +
-        MarkedLine("Strong", static_cast<std::uint8_t>(TextMark::Strong)) + "\n\n" +
+        MarkedLine("Plain", 0) + "\n\n" + MarkedLine("Strong", static_cast<std::uint8_t>(TextMark::Strong)) + "\n\n" +
         MarkedLine("Emphasis", static_cast<std::uint8_t>(TextMark::Emphasis)) + "\n\n" +
-        MarkedLine("BoldItalic",
-                   static_cast<std::uint8_t>(TextMark::Strong | TextMark::Emphasis)) +
-        "\n\n";
+        MarkedLine("BoldItalic", static_cast<std::uint8_t>(TextMark::Strong | TextMark::Emphasis)) + "\n\n";
     std::string tex = kIeeeTemplate;
     tex.replace(tex.find("%BODY%"), 6, body);
 
-    const auto workspace =
-        std::filesystem::temp_directory_path() / "pf-ieee-marks";
+    const auto workspace = std::filesystem::temp_directory_path() / "pf-ieee-marks";
     std::filesystem::remove_all(workspace);
     std::filesystem::create_directories(workspace);
 
@@ -170,16 +167,14 @@ PF_TEST(IeeeMarksReachPdfLatex) {
     auto result = compiler.Compile(request, nullptr);
     PF_CHECK(result.status == CompileStatus::Success);
     if (result.status != CompileStatus::Success) {
-        std::cout << "    log tail: " << result.log.substr(result.log.size() > 600
-                                                               ? result.log.size() - 600
-                                                               : 0)
+        std::cout << "    log tail: " << result.log.substr(result.log.size() > 600 ? result.log.size() - 600 : 0)
                   << "\n";
         return;
     }
     PF_CHECK(std::filesystem::exists(result.pdf_path));
 
     // LaTeX 必须包含全部四种组合……
-    const std::string& built = result.log;  // 未使用的占位符
+    const std::string& built = result.log; // 未使用的占位符
     (void)built;
     std::ifstream generated(workspace / "main.tex", std::ios::binary);
     std::ostringstream source;
@@ -193,9 +188,8 @@ PF_TEST(IeeeMarksReachPdfLatex) {
     //「Font shape ... not available」行是预期内的：它们把 bx 映射为 b，
     // 且 PDF 仍带有四种不同的字体。
     for (const auto& message : result.messages) {
-        const bool substitution =
-            message.text.find("Font Warning") != std::string::npos ||
-            message.text.find("substituted") != std::string::npos;
+        const bool substitution = message.text.find("Font Warning") != std::string::npos ||
+                                  message.text.find("substituted") != std::string::npos;
         PF_CHECK(!substitution);
     }
 }
@@ -221,8 +215,7 @@ PF_TEST(CompileStreamsOutputLiveToSink) {
         std::cout << "    (runtime not healthy; skipping)\n";
         return;
     }
-    const auto workspace =
-        std::filesystem::temp_directory_path() / "pf-stream-test";
+    const auto workspace = std::filesystem::temp_directory_path() / "pf-stream-test";
     std::filesystem::remove_all(workspace);
     std::filesystem::create_directories(workspace);
 
@@ -233,11 +226,10 @@ PF_TEST(CompileStreamsOutputLiveToSink) {
     request.workspace = workspace;
     BuildPackageFile file;
     file.path = "main.tex";
-    file.content =
-        "\\documentclass{article}\n"
-        "\\begin{document}\n"
-        "Stream me\n"
-        "\\end{document}\n";
+    file.content = "\\documentclass{article}\n"
+                   "\\begin{document}\n"
+                   "Stream me\n"
+                   "\\end{document}\n";
     request.package.files.push_back(file);
     request.package.entry_file = "main.tex";
     request.toolchain.engine = LatexEngine::PdfLatex;
@@ -253,8 +245,8 @@ PF_TEST(CompileStreamsOutputLiveToSink) {
     auto result = compiler.Compile(request, nullptr);
     PF_CHECK(result.status == CompileStatus::Success);
     PF_CHECK(result.exit_code == 0);
-    PF_CHECK(chunks > 0);                 // sink 确实被触发了
-    PF_CHECK(!streamed_stdout.empty());   // latexmk 把日志写到这里
+    PF_CHECK(chunks > 0);               // sink 确实被触发了
+    PF_CHECK(!streamed_stdout.empty()); // latexmk 把日志写到这里
     PF_CHECK(result.log == streamed_stdout + streamed_stderr);
     // 磁盘上的产物仍然保留以便检查（方案 §15/§45）。
     PF_CHECK(std::filesystem::exists(workspace / "latexmk.log"));
@@ -268,8 +260,7 @@ PF_TEST(CompileFailureCarriesExitCodeAndMessages) {
         std::cout << "    (runtime not healthy; skipping)\n";
         return;
     }
-    const auto workspace =
-        std::filesystem::temp_directory_path() / "pf-fail-test";
+    const auto workspace = std::filesystem::temp_directory_path() / "pf-fail-test";
     std::filesystem::remove_all(workspace);
     std::filesystem::create_directories(workspace);
 
@@ -280,11 +271,10 @@ PF_TEST(CompileFailureCarriesExitCodeAndMessages) {
     request.workspace = workspace;
     BuildPackageFile file;
     file.path = "main.tex";
-    file.content =
-        "\\documentclass{article}\n"
-        "\\begin{document}\n"
-        "\\unknownmacrothatdoesnotexist{}\n"
-        "\\end{document}\n";
+    file.content = "\\documentclass{article}\n"
+                   "\\begin{document}\n"
+                   "\\unknownmacrothatdoesnotexist{}\n"
+                   "\\end{document}\n";
     request.package.files.push_back(file);
     request.package.entry_file = "main.tex";
     request.toolchain.engine = LatexEngine::PdfLatex;
@@ -295,7 +285,8 @@ PF_TEST(CompileFailureCarriesExitCodeAndMessages) {
     PF_CHECK(!result.messages.empty());
     bool saw_error = false;
     for (const auto& message : result.messages) {
-        if (message.is_error) saw_error = true;
+        if (message.is_error)
+            saw_error = true;
     }
     PF_CHECK(saw_error);
 }

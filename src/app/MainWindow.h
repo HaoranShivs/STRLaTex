@@ -26,15 +26,16 @@ class WelcomePage;
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
-public:
+  public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
-    ProjectController* controller() { return controller_; }
+    ProjectController* controller() {
+        return controller_;
+    }
     // 程序化打开（供测试/工具使用）：切换到工作区。
     bool OpenProjectDir(const QString& dir);
     // 程序化预览缩放/滚动（供 UI 验证工具使用）。
-    void ZoomPreviewForTest(double zoom, double scroll_x = 0.0,
-                            double scroll_y = 0.0);
+    void ZoomPreviewForTest(double zoom, double scroll_x = 0.0, double scroll_y = 0.0);
 
     // P0-01：唯一的未保存更改守卫。所有破坏性导航
     //（关闭、新建、打开、最近项目、切换项目）都必须经过它，
@@ -53,12 +54,12 @@ public:
     // 以应用其完成结果。超时返回 false。
     bool WaitForUserSaveCompletion(int timeout_ms = 10000);
 
-protected:
+  protected:
     // P0-01：关闭窗口同样是破坏性导航，必须经过同一个守卫，
     // 而不能依赖析构时的尽力而为 CommitFocused()。
     void closeEvent(QCloseEvent* event) override;
 
-private slots:
+  private slots:
     void OnNewProject();
     void OnOpenProject();
     // P0-01：关闭当前项目（返回欢迎页）属于破坏性导航，
@@ -90,7 +91,7 @@ private slots:
     void OnBuildEvent(const pf::BuildEvent& event);
     void OnBuildStatusChanged(const QString& status);
 
-private:
+  private:
     void BuildUi();
     void BuildMenus();
     QWidget* BuildHeader();
@@ -152,4 +153,4 @@ private:
     QStringList recent_projects_;
 };
 
-}  // namespace pf::gui
+} // namespace pf::gui

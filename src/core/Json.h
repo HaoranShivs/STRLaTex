@@ -14,7 +14,7 @@ using JsonObject = std::map<std::string, JsonValue, std::less<>>;
 using JsonArray = std::vector<JsonValue>;
 
 class JsonValue {
-public:
+  public:
     enum class Type { Null, Bool, Number, String, Array, Object };
 
     JsonValue() : type_(Type::Null) {}
@@ -28,13 +28,27 @@ public:
     JsonValue(JsonArray a) : type_(Type::Array), data_(std::move(a)) {}
     JsonValue(JsonObject o) : type_(Type::Object), data_(std::move(o)) {}
 
-    Type type() const noexcept { return type_; }
-    bool is_null() const noexcept { return type_ == Type::Null; }
-    bool is_bool() const noexcept { return type_ == Type::Bool; }
-    bool is_number() const noexcept { return type_ == Type::Number; }
-    bool is_string() const noexcept { return type_ == Type::String; }
-    bool is_array() const noexcept { return type_ == Type::Array; }
-    bool is_object() const noexcept { return type_ == Type::Object; }
+    Type type() const noexcept {
+        return type_;
+    }
+    bool is_null() const noexcept {
+        return type_ == Type::Null;
+    }
+    bool is_bool() const noexcept {
+        return type_ == Type::Bool;
+    }
+    bool is_number() const noexcept {
+        return type_ == Type::Number;
+    }
+    bool is_string() const noexcept {
+        return type_ == Type::String;
+    }
+    bool is_array() const noexcept {
+        return type_ == Type::Array;
+    }
+    bool is_object() const noexcept {
+        return type_ == Type::Object;
+    }
 
     bool as_bool(bool def = false) const {
         return is_bool() ? std::get<bool>(data_) : def;
@@ -60,7 +74,8 @@ public:
 
     // Object 便捷访问（缺失或不是 object 时返回 null JsonValue）
     const JsonValue* find(const std::string& key) const {
-        if (!is_object()) return nullptr;
+        if (!is_object())
+            return nullptr;
         auto it = std::get<JsonObject>(data_).find(key);
         return it == std::get<JsonObject>(data_).end() ? nullptr : &it->second;
     }
@@ -76,7 +91,7 @@ public:
 
     std::string Dump(int indent = 2) const;
 
-private:
+  private:
     void EnsureObject() {
         if (type_ != Type::Object) {
             type_ = Type::Object;
@@ -111,8 +126,7 @@ struct JsonParseLimits {
 };
 
 std::unique_ptr<JsonValue> JsonParse(const std::string& text, std::string* error = nullptr);
-std::unique_ptr<JsonValue> JsonParse(const std::string& text, std::string* error,
-                                     const JsonParseLimits& limits);
+std::unique_ptr<JsonValue> JsonParse(const std::string& text, std::string* error, const JsonParseLimits& limits);
 std::string JsonEscape(const std::string& s);
 
-}  // namespace pf
+} // namespace pf

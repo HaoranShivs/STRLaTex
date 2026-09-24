@@ -15,11 +15,10 @@
 namespace pf {
 
 class CompilerFactory {
-public:
+  public:
     // texlive_root 是随附的便携版运行时；为空表示运行时不可用，生产后端会
     // 以运行时错误拒绝 build（绝不会是文档错误）。
-    explicit CompilerFactory(std::filesystem::path texlive_root)
-        : texlive_root_(std::move(texlive_root)) {}
+    explicit CompilerFactory(std::filesystem::path texlive_root) : texlive_root_(std::move(texlive_root)) {}
 
     // 构建模板所请求的编译器（方案 §31）：通过随附的 TeX Live 运行时执行
     // pdfLaTeX。XeLaTeX/LuaLaTeX 属于协议的一部分，但尚无随附模板选用；
@@ -30,8 +29,8 @@ public:
     // build 请求应当携带的 toolchain（方案 §14）。
     BuildToolchain ToolchainFor(const TemplateDefinition& tpl) const;
 
-private:
+  private:
     std::filesystem::path texlive_root_;
 };
 
-}  // namespace pf
+} // namespace pf

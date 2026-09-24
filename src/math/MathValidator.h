@@ -27,4 +27,4 @@ bool IsForbiddenMathCommand(const std::string& command);
 // 环境时返回 true。数学内部环境（"aligned"、"cases"、"matrix"）则允许使用。
 bool IsForbiddenMathEnvironment(const std::string& environment);
 
-}  // namespace pf
+} // namespace pf

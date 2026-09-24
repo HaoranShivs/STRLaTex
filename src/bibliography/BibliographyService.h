@@ -12,11 +12,11 @@ namespace pf {
 
 struct BibEntry {
     std::string key;
-    std::string entry_type;  // article、inproceedings 等
+    std::string entry_type; // article、inproceedings 等
     std::string title;
-    std::vector<std::string> authors;  // 由 "author" 字段解析而来
+    std::vector<std::string> authors; // 由 "author" 字段解析而来
     std::string year;
-    std::string venue;  // journal / booktitle
+    std::string venue; // journal / booktitle
     std::map<std::string, std::string> fields;
 };
 
@@ -40,20 +40,22 @@ struct BibliographyImportResult {
 };
 
 class BibliographyDatabase {
-public:
+  public:
     void Clear();
     void AddEntry(BibEntry entry);
     const BibEntry* Find(const std::string& key) const;
-    const std::vector<BibEntry>& Entries() const noexcept { return entries_; }
+    const std::vector<BibEntry>& Entries() const noexcept {
+        return entries_;
+    }
     std::vector<std::string> Keys() const;
 
-private:
+  private:
     std::vector<BibEntry> entries_;
     std::map<std::string, size_t> key_index_;
 };
 
 class BibliographyService {
-public:
+  public:
     explicit BibliographyService(BibliographyDatabase& db) : db_(db) {}
 
     // 把 .bib 文件解析进数据库。
@@ -62,9 +64,11 @@ public:
 
     CitationSearchResult Search(const CitationSearchRequest& request) const;
 
-    BibliographyDatabase& db() noexcept { return db_; }
+    BibliographyDatabase& db() noexcept {
+        return db_;
+    }
 
-private:
+  private:
     BibliographyDatabase& db_;
     std::uint64_t revision_ = 0;
 };
@@ -72,4 +76,4 @@ private:
 // 把 BibTeX 的 author 字段拆分为各个作者名。
 std::vector<std::string> SplitBibAuthors(const std::string& authors);
 
-}  // namespace pf
+} // namespace pf

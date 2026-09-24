@@ -14,17 +14,21 @@
 namespace pf::gui {
 
 namespace {
-QString ToQ(const std::string& s) { return QString::fromStdString(s); }
+QString ToQ(const std::string& s) {
+    return QString::fromStdString(s);
+}
 
 // 返回节点 key 匹配的树项，没有则返回空。key 存储在 UserRole 中。
 QTreeWidgetItem* FindOutlineItem(QTreeWidget* tree, const QString& key) {
-    if (key.isEmpty()) return nullptr;
+    if (key.isEmpty())
+        return nullptr;
     for (QTreeWidgetItemIterator it(tree); *it; ++it) {
-        if ((*it)->data(0, Qt::UserRole).toString() == key) return *it;
+        if ((*it)->data(0, Qt::UserRole).toString() == key)
+            return *it;
     }
     return nullptr;
 }
-}  // namespace
+} // namespace
 
 OutlinePanel::OutlinePanel(QWidget* parent) : QWidget(parent) {
     setStyleSheet(QString("background: %1;").arg(theme::kSidePanel));
@@ -36,11 +40,10 @@ OutlinePanel::OutlinePanel(QWidget* parent) : QWidget(parent) {
     tabs_->setShape(QTabBar::TriangularNorth);
     tabs_->addTab("Document");
     tabs_->addTab("References");
-    tabs_->setStyleSheet(QString(
-        "QTabBar::tab { background: transparent; color: %1; padding: 8px 16px;"
-        "               border: none; border-bottom: 2px solid transparent; }"
-        "QTabBar::tab:selected { color: %2; border-bottom: 2px solid %3; }")
-        .arg(theme::kSecondaryText, theme::kPrimaryText, theme::kAccent));
+    tabs_->setStyleSheet(QString("QTabBar::tab { background: transparent; color: %1; padding: 8px 16px;"
+                                 "               border: none; border-bottom: 2px solid transparent; }"
+                                 "QTabBar::tab:selected { color: %2; border-bottom: 2px solid %3; }")
+                             .arg(theme::kSecondaryText, theme::kPrimaryText, theme::kAccent));
     layout->addWidget(tabs_);
 
     stack_ = new QStackedWidget(this);
@@ -48,8 +51,7 @@ OutlinePanel::OutlinePanel(QWidget* parent) : QWidget(parent) {
     stack_->addWidget(BuildReferencesTab());
     layout->addWidget(stack_, 1);
 
-    connect(tabs_, &QTabBar::currentChanged, this,
-            &OutlinePanel::OnTabChanged);
+    connect(tabs_, &QTabBar::currentChanged, this, &OutlinePanel::OnTabChanged);
 }
 
 QWidget* OutlinePanel::BuildDocumentTab() {
@@ -65,15 +67,15 @@ QWidget* OutlinePanel::BuildDocumentTab() {
     outline_->setHeaderHidden(true);
     outline_->setRootIsDecorated(false);
     outline_->setIndentation(16);
-    outline_->setStyleSheet(QString(
-        "QTreeWidget { background: transparent; border: none; }"
-        "QTreeWidget::item { padding: 3px 4px; border-radius: 4px; }"
-        "QTreeWidget::item:hover { background: %1; }"
-        "QTreeWidget::item:selected { background: %1; color: %2; }")
-        .arg(theme::kAccentSoft, theme::kPrimaryText));
+    outline_->setStyleSheet(QString("QTreeWidget { background: transparent; border: none; }"
+                                    "QTreeWidget::item { padding: 3px 4px; border-radius: 4px; }"
+                                    "QTreeWidget::item:hover { background: %1; }"
+                                    "QTreeWidget::item:selected { background: %1; color: %2; }")
+                                .arg(theme::kAccentSoft, theme::kPrimaryText));
     connect(outline_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem* item) {
         QString node = item->data(0, Qt::UserRole).toString();
-        if (!node.isEmpty()) emit NodeActivated(node);
+        if (!node.isEmpty())
+            emit NodeActivated(node);
     });
     layout->addWidget(outline_, 1);
     return page;
@@ -90,41 +92,37 @@ QWidget* OutlinePanel::BuildReferencesTab() {
     layout->addWidget(ref_search_);
 
     ref_count_ = new QLabel("0 references", page);
-    ref_count_->setStyleSheet(QString("color: %1; font-size: 8pt;")
-                                  .arg(theme::kSecondaryText));
+    ref_count_->setStyleSheet(QString("color: %1; font-size: 8pt;").arg(theme::kSecondaryText));
     layout->addWidget(ref_count_);
 
     ref_list_ = new QListWidget(page);
-    ref_list_->setStyleSheet(QString(
-        "QListWidget { background: transparent; border: none; }"
-        "QListWidget::item { padding: 6px; border-radius: 4px; }"
-        "QListWidget::item:hover { background: %1; }"
-        "QListWidget::item:selected { background: %1; }")
-        .arg(theme::kAccentSoft));
-    connect(ref_list_, &QListWidget::itemDoubleClicked,
-            this, [this](QListWidgetItem* item) {
+    ref_list_->setStyleSheet(QString("QListWidget { background: transparent; border: none; }"
+                                     "QListWidget::item { padding: 6px; border-radius: 4px; }"
+                                     "QListWidget::item:hover { background: %1; }"
+                                     "QListWidget::item:selected { background: %1; }")
+                                 .arg(theme::kAccentSoft));
+    connect(ref_list_, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem* item) {
         QString key = item->data(Qt::UserRole).toString();
-        if (!key.isEmpty()) emit CitationChosen(key);
+        if (!key.isEmpty())
+            emit CitationChosen(key);
     });
     layout->addWidget(ref_list_, 1);
 
-    connect(ref_search_, &QLineEdit::textChanged, this,
-            [this](const QString&) { ApplyReferenceFilter(); });
+    connect(ref_search_, &QLineEdit::textChanged, this, [this](const QString&) { ApplyReferenceFilter(); });
     return page;
 }
 
 void OutlinePanel::ApplyReferenceFilter() {
-    if (!ref_search_ || !ref_list_) return;
+    if (!ref_search_ || !ref_list_)
+        return;
     const QString needle = ref_search_->text().toLower();
     for (int i = 0; i < ref_list_->count(); ++i) {
         auto* item = ref_list_->item(i);
-        item->setHidden(!needle.isEmpty() &&
-                        !item->text().toLower().contains(needle));
+        item->setHidden(!needle.isEmpty() && !item->text().toLower().contains(needle));
     }
 }
 
-void OutlinePanel::RebuildFromDocument(
-    const Document& doc, const std::vector<BibEntry>& references) {
+void OutlinePanel::RebuildFromDocument(const Document& doc, const std::vector<BibEntry>& references) {
     // 大纲：先是读者可导航到的 front matter，然后是正文结构（设计 #17）。
     outline_->clear();
     const auto& front = doc.front_matter();
@@ -142,7 +140,8 @@ void OutlinePanel::RebuildFromDocument(
     }
     for (const auto& section : doc.body().sections) {
         QString title = ToQ(pf::InlineToPlainText(section.title));
-        if (title.isEmpty()) title = QStringLiteral("Untitled Section");
+        if (title.isEmpty())
+            title = QStringLiteral("Untitled Section");
         auto* item = new QTreeWidgetItem(outline_);
         item->setText(0, title);
         item->setData(0, Qt::UserRole, ToQ(section.id.value()));
@@ -151,13 +150,15 @@ void OutlinePanel::RebuildFromDocument(
         item->setFont(0, font);
         for (const auto& sub : section.subsections) {
             QString sub_title = ToQ(pf::InlineToPlainText(sub.title));
-            if (sub_title.isEmpty()) sub_title = QStringLiteral("Untitled");
+            if (sub_title.isEmpty())
+                sub_title = QStringLiteral("Untitled");
             auto* sub_item = new QTreeWidgetItem(item);
             sub_item->setText(0, sub_title);
             sub_item->setData(0, Qt::UserRole, ToQ(sub.id.value()));
             for (const auto& subsub : sub.subsubsections) {
                 QString subsub_title = ToQ(pf::InlineToPlainText(subsub.title));
-                if (subsub_title.isEmpty()) subsub_title = QStringLiteral("Untitled");
+                if (subsub_title.isEmpty())
+                    subsub_title = QStringLiteral("Untitled");
                 auto* subsub_item = new QTreeWidgetItem(sub_item);
                 subsub_item->setText(0, subsub_title);
                 subsub_item->setData(0, Qt::UserRole, ToQ(subsub.id.value()));
@@ -172,15 +173,11 @@ void OutlinePanel::RebuildFromDocument(
     references_ = references;
     ref_list_->clear();
     for (const auto& entry : references) {
-        QString authors = entry.authors.empty()
-                              ? QString()
-                              : ToQ(entry.authors.front()) +
-                                    (entry.authors.size() > 1
-                                         ? QStringLiteral(" et al.")
-                                         : QString());
-        QString line = authors.isEmpty()
-                           ? ToQ(entry.title)
-                           : authors + QStringLiteral(" · ") + ToQ(entry.year);
+        QString authors =
+            entry.authors.empty()
+                ? QString()
+                : ToQ(entry.authors.front()) + (entry.authors.size() > 1 ? QStringLiteral(" et al.") : QString());
+        QString line = authors.isEmpty() ? ToQ(entry.title) : authors + QStringLiteral(" · ") + ToQ(entry.year);
         auto* item = new QListWidgetItem(ref_list_);
         item->setText(line);
         item->setData(Qt::UserRole, ToQ(entry.key));
@@ -200,11 +197,14 @@ void OutlinePanel::RebuildFromDocument(
     }
 }
 
-void OutlinePanel::OnTabChanged(int index) { stack_->setCurrentIndex(index); }
+void OutlinePanel::OnTabChanged(int index) {
+    stack_->setCurrentIndex(index);
+}
 
 void OutlinePanel::SelectNode(const QString& outline_key) {
     selected_key_ = outline_key;
-    if (!outline_) return;
+    if (!outline_)
+        return;
     if (outline_key.isEmpty()) {
         outline_->setCurrentItem(nullptr);
         return;
@@ -218,4 +218,4 @@ void OutlinePanel::SelectNode(const QString& outline_key) {
     }
 }
 
-}  // namespace pf::gui
+} // namespace pf::gui

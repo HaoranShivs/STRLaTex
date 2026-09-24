@@ -17,23 +17,22 @@ struct SaveSnapshot {
     ProjectId project_id;
     ProjectRevision revision;
     std::string schema_version = kSchemaVersion;
-    SerializedProject serialized;  // 可供持久化使用
+    SerializedProject serialized; // 可供持久化使用
 };
 
 class SnapshotFactory {
-public:
+  public:
     explicit SnapshotFactory(AssetManager* assets) : assets_(assets) {}
 
     // 捕获不可变 build snapshot（document 深拷贝；build id 在此生成，
     // 以便应用线程知道该请求的身份）。
-    BuildSnapshot CreateBuildSnapshot(const ProjectState& state,
-                                      const std::string& bibliography_bibtex) const;
+    BuildSnapshot CreateBuildSnapshot(const ProjectState& state, const std::string& bibliography_bibtex) const;
 
     // 为 save／autosave／恢复捕获项目 snapshot。
     SaveSnapshot CreateSaveSnapshot(const ProjectState& state) const;
 
-private:
+  private:
     AssetManager* assets_;
 };
 
-}  // namespace pf
+} // namespace pf

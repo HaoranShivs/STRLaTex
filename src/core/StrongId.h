@@ -7,20 +7,25 @@
 
 namespace pf {
 
-template <typename Tag>
-class StrongId {
-public:
+template <typename Tag> class StrongId {
+  public:
     StrongId() = default;
     explicit StrongId(std::string value) : value_(std::move(value)) {}
 
-    const std::string& value() const noexcept { return value_; }
-    bool empty() const noexcept { return value_.empty(); }
-    void clear() { value_.clear(); }
+    const std::string& value() const noexcept {
+        return value_;
+    }
+    bool empty() const noexcept {
+        return value_.empty();
+    }
+    void clear() {
+        value_.clear();
+    }
 
     auto operator<=>(const StrongId&) const = default;
     bool operator==(const StrongId&) const = default;
 
-private:
+  private:
     std::string value_;
 };
 
@@ -59,13 +64,12 @@ struct BibliographyRevision {
     auto operator<=>(const BibliographyRevision&) const = default;
 };
 
-}  // namespace pf
+} // namespace pf
 
 namespace std {
-template <typename Tag>
-struct hash<pf::StrongId<Tag>> {
+template <typename Tag> struct hash<pf::StrongId<Tag>> {
     size_t operator()(const pf::StrongId<Tag>& id) const noexcept {
         return hash<string>()(id.value());
     }
 };
-}  // namespace std
+} // namespace std

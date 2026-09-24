@@ -23,4 +23,4 @@ const char* ToString(const ApplicationEvent& event) {
         event);
 }
 
-}  // namespace pf
+} // namespace pf

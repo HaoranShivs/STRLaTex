@@ -40,11 +40,10 @@ struct SaveCompletedEvent {
 // 实时的 Document）发生在应用线程上。
 struct AutosaveTickEvent {};
 
-using ApplicationEvent =
-    std::variant<BuildPhaseChangedEvent, BuildResultReadyEvent,
-                 BuildEventReadyEvent, SaveCompletedEvent, AutosaveTickEvent>;
+using ApplicationEvent = std::variant<BuildPhaseChangedEvent, BuildResultReadyEvent, BuildEventReadyEvent,
+                                      SaveCompletedEvent, AutosaveTickEvent>;
 
 // 供 tracing/日志使用的简短标签。
 const char* ToString(const ApplicationEvent& event);
 
-}  // namespace pf
+} // namespace pf

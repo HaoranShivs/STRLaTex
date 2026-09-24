@@ -13,14 +13,17 @@ namespace {
 
 std::string Trim(const std::string& s) {
     size_t begin = 0;
-    while (begin < s.size() && std::isspace(static_cast<unsigned char>(s[begin]))) ++begin;
+    while (begin < s.size() && std::isspace(static_cast<unsigned char>(s[begin])))
+        ++begin;
     size_t end = s.size();
-    while (end > begin && std::isspace(static_cast<unsigned char>(s[end - 1]))) --end;
+    while (end > begin && std::isspace(static_cast<unsigned char>(s[end - 1])))
+        --end;
     return s.substr(begin, end - begin);
 }
 
 std::string ToLower(std::string s) {
-    for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (auto& c : s)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return s;
 }
 
@@ -28,8 +31,7 @@ std::string ToLower(std::string s) {
 std::string StripBraces(std::string value) {
     value = Trim(std::move(value));
     while (value.size() >= 2 &&
-           ((value.front() == '{' && value.back() == '}') ||
-            (value.front() == '"' && value.back() == '"'))) {
+           ((value.front() == '{' && value.back() == '}') || (value.front() == '"' && value.back() == '"'))) {
         value = value.substr(1, value.size() - 2);
         value = Trim(std::move(value));
     }
@@ -40,7 +42,8 @@ std::string StripBraces(std::string value) {
         if (std::isspace(static_cast<unsigned char>(c))) {
             in_space = true;
         } else {
-            if (in_space && !out.empty()) out += ' ';
+            if (in_space && !out.empty())
+                out += ' ';
             in_space = false;
             out += c;
         }
@@ -49,7 +52,7 @@ std::string StripBraces(std::string value) {
 }
 
 class BibParser {
-public:
+  public:
     explicit BibParser(const std::string& text) : text_(text) {}
 
     std::vector<BibEntry> Parse(bool* ok) {
@@ -59,7 +62,8 @@ public:
         while (pos < text_.size()) {
             // 查找下一个 '@'
             size_t at = text_.find('@', pos);
-            if (at == std::string::npos) break;
+            if (at == std::string::npos)
+                break;
             size_t open = text_.find_first_of("{(", at);
             if (open == std::string::npos || open > at + 64) {
                 pos = at + 1;
@@ -80,9 +84,12 @@ public:
             char closer = (text_[open] == '{') ? '}' : ')';
             while (i < text_.size() && depth > 0) {
                 char c = text_[i];
-                if (c == '{') ++depth;
-                else if (c == '}') --depth;
-                else if (c == closer && depth == 1) --depth;
+                if (c == '{')
+                    ++depth;
+                else if (c == '}')
+                    --depth;
+                else if (c == closer && depth == 1)
+                    --depth;
                 ++i;
             }
             std::string body = text_.substr(key_end + 1, i - key_end - 2);
@@ -92,19 +99,23 @@ public:
             }
             pos = i;
         }
-        if (ok) *ok = !any_error;
+        if (ok)
+            *ok = !any_error;
         return entries;
     }
 
-private:
+  private:
     void ParseFields(const std::string& body, BibEntry* entry) {
         size_t i = 0;
         while (i < body.size()) {
             // 跳过分隔符
-            while (i < body.size() && (body[i] == ',' || std::isspace(static_cast<unsigned char>(body[i])))) ++i;
-            if (i >= body.size()) break;
+            while (i < body.size() && (body[i] == ',' || std::isspace(static_cast<unsigned char>(body[i]))))
+                ++i;
+            if (i >= body.size())
+                break;
             size_t eq = body.find('=', i);
-            if (eq == std::string::npos) break;
+            if (eq == std::string::npos)
+                break;
             std::string name = ToLower(Trim(body.substr(i, eq - i)));
             i = eq + 1;
             // 值：{..}、"..." 或裸值
@@ -113,23 +124,28 @@ private:
                 int depth = 1;
                 size_t start = ++i;
                 while (i < body.size() && depth > 0) {
-                    if (body[i] == '{') ++depth;
-                    else if (body[i] == '}') --depth;
-                    if (depth > 0) ++i;
+                    if (body[i] == '{')
+                        ++depth;
+                    else if (body[i] == '}')
+                        --depth;
+                    if (depth > 0)
+                        ++i;
                 }
                 value = body.substr(start, i - start);
                 ++i;
             } else if (i < body.size() && body[i] == '"') {
                 size_t start = ++i;
                 while (i < body.size() && body[i] != '"') {
-                    if (body[i] == '\\' && i + 1 < body.size()) ++i;
+                    if (body[i] == '\\' && i + 1 < body.size())
+                        ++i;
                     ++i;
                 }
                 value = body.substr(start, i - start);
                 ++i;
             } else {
                 size_t start = i;
-                while (i < body.size() && body[i] != ',') ++i;
+                while (i < body.size() && body[i] != ',')
+                    ++i;
                 value = Trim(body.substr(start, i - start));
             }
             if (!name.empty()) {
@@ -144,22 +160,25 @@ private:
         entry->title = f("title");
         entry->year = f("year");
         entry->venue = f("journal");
-        if (entry->venue.empty()) entry->venue = f("booktitle");
+        if (entry->venue.empty())
+            entry->venue = f("booktitle");
         entry->authors = SplitBibAuthors(f("author"));
     }
 
     const std::string& text_;
 };
 
-}  // namespace
+} // namespace
 
 std::vector<std::string> SplitBibAuthors(const std::string& authors) {
     std::vector<std::string> out;
     std::string current;
     int brace = 0;
     for (char c : authors) {
-        if (c == '{') ++brace;
-        else if (c == '}') --brace;
+        if (c == '{')
+            ++brace;
+        else if (c == '}')
+            --brace;
         if (c == ',' && brace == 0) {
             // 同一作者内的 "Last, First" 分隔符：保留，不拆分
             current += c;
@@ -175,7 +194,8 @@ std::vector<std::string> SplitBibAuthors(const std::string& authors) {
             current += c;
         }
     }
-    if (!Trim(current).empty()) out.push_back(Trim(current));
+    if (!Trim(current).empty())
+        out.push_back(Trim(current));
     // 后处理结尾的 "and"
     for (auto& a : out) {
         a = Trim(a);
@@ -184,9 +204,7 @@ std::vector<std::string> SplitBibAuthors(const std::string& authors) {
         }
     }
     out.erase(std::remove_if(out.begin(), out.end(),
-                             [](const std::string& s) {
-                                 return s.empty() || ToLower(s) == "others";
-                             }),
+                             [](const std::string& s) { return s.empty() || ToLower(s) == "others"; }),
               out.end());
     return out;
 }
@@ -216,7 +234,8 @@ const BibEntry* BibliographyDatabase::Find(const std::string& key) const {
 std::vector<std::string> BibliographyDatabase::Keys() const {
     std::vector<std::string> keys;
     keys.reserve(entries_.size());
-    for (const auto& e : entries_) keys.push_back(e.key);
+    for (const auto& e : entries_)
+        keys.push_back(e.key);
     return keys;
 }
 
@@ -251,9 +270,8 @@ BibliographyImportResult BibliographyService::ImportText(const std::string& bibt
             seen.push_back(e.key);
             continue;
         }
-        if (std::find(result.duplicate_keys.begin(),
-                      result.duplicate_keys.end(),
-                      e.key) == result.duplicate_keys.end()) {
+        if (std::find(result.duplicate_keys.begin(), result.duplicate_keys.end(), e.key) ==
+            result.duplicate_keys.end()) {
             result.duplicate_keys.push_back(e.key);
         }
     }
@@ -276,7 +294,8 @@ CitationSearchResult BibliographyService::Search(const CitationSearchRequest& re
             continue;
         }
         std::string hay = ToLower(e.key + " " + e.title + " " + e.year + " " + e.venue);
-        for (const auto& a : e.authors) hay += " " + ToLower(a);
+        for (const auto& a : e.authors)
+            hay += " " + ToLower(a);
         if (hay.find(q) != std::string::npos) {
             result.entries.push_back(e);
         }
@@ -284,4 +303,4 @@ CitationSearchResult BibliographyService::Search(const CitationSearchRequest& re
     return result;
 }
 
-}  // namespace pf
+} // namespace pf

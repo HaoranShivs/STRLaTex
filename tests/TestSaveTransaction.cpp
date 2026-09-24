@@ -5,8 +5,8 @@
 //   * 旧保存被更新的保存取代不属于 I/O 错误，且不得将项目推入 SaveFailed；
 //   * 参考文献写入失败时，内存数据库、磁盘文件、revision 与 dirty 状态均保持不变；
 //   * SaveResult 携带足够的结构信息，使 UI 能够区分这些情况。
-#include "TestMain.hpp"
 #include "ScopedTempDir.hpp"
+#include "TestMain.hpp"
 
 #include <atomic>
 #include <fstream>
@@ -28,9 +28,8 @@ namespace {
 
 // 一个从不运行的编译器：这些测试关注的是持久化，而非 build。
 class NullCompiler final : public ICompiler {
-public:
-    CompileResult Compile(const CompileRequest&,
-                          const std::atomic<bool>*) override {
+  public:
+    CompileResult Compile(const CompileRequest&, const std::atomic<bool>*) override {
         CompileResult result;
         result.status = CompileStatus::Success;
         return result;
@@ -45,9 +44,7 @@ std::filesystem::path TempDir(const std::string& name) {
 
 ProjectSession::Config MakeConfig(ICompiler* compiler) {
     ProjectSession::Config config;
-    config.compiler_factory = [compiler]() -> std::unique_ptr<ICompiler> {
-        return std::make_unique<NullCompiler>();
-    };
+    config.compiler_factory = [compiler]() -> std::unique_ptr<ICompiler> { return std::make_unique<NullCompiler>(); };
     config.debounce = std::chrono::milliseconds{0};
     static pf::test::ScopedTempDir workspace("pf-save-tx-workspaces");
     config.workspace_root = workspace.path();
@@ -55,12 +52,10 @@ ProjectSession::Config MakeConfig(ICompiler* compiler) {
 }
 
 void Settle(ProjectSession& session, int timeout_ms = 5000) {
-    auto deadline = std::chrono::steady_clock::now() +
-                    std::chrono::milliseconds(timeout_ms);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     while (std::chrono::steady_clock::now() < deadline) {
         session.WaitForApplicationEvent(std::chrono::milliseconds{20});
-        if (!session.HasPendingApplicationEvents() &&
-            session.pending_saves() == 0) {
+        if (!session.HasPendingApplicationEvents() && session.pending_saves() == 0) {
             break;
         }
     }
@@ -98,8 +93,7 @@ PF_TEST(EnqueueRejectsWorkOnceShutdownStarted) {
     // 而不是为一次永远不会发生的写入返回一个 id。
     SerializedProject project;
     project.project_id = "p1";
-    auto id = coordinator.Enqueue(std::move(project), "/tmp/pf-never.paper",
-                                  SaveKind::User);
+    auto id = coordinator.Enqueue(std::move(project), "/tmp/pf-never.paper", SaveKind::User);
     PF_CHECK(!id.has_value());
 }
 
@@ -107,8 +101,7 @@ PF_TEST(EnqueueAcceptsWorkBeforeShutdown) {
     SaveCoordinator coordinator(nullptr);
     SerializedProject project;
     project.project_id = "p1";
-    auto id = coordinator.Enqueue(std::move(project), "/tmp/pf-never.paper",
-                                  SaveKind::User);
+    auto id = coordinator.Enqueue(std::move(project), "/tmp/pf-never.paper", SaveKind::User);
     PF_CHECK(id.has_value());
     coordinator.Shutdown();
 }
@@ -144,7 +137,8 @@ PF_TEST(SupersededUserSaveIsNotAnIoError) {
 
     std::lock_guard lock(observed_mutex);
     PF_CHECK_EQ(observed.size(), std::size_t{2});
-    if (observed.size() != 2) return;
+    if (observed.size() != 2)
+        return;
     PF_CHECK(observed[0].outcome == SaveOutcome::Saved);
     PF_CHECK(observed[1].outcome == SaveOutcome::Superseded);
     PF_CHECK(observed[1].result.status != SaveResult::Status::IoError);
@@ -181,21 +175,17 @@ PF_TEST(FailedBibliographyWriteLeavesStateUntouched) {
     // 第一次导入成功并写入 references.bib。
     auto first = session.ImportBibliography(kSampleBib);
     PF_CHECK(first.status == BibliographyImportResult::Status::Ok);
-    const std::uint64_t revision_after_first =
-        session.current_revision().value;
+    const std::uint64_t revision_after_first = session.current_revision().value;
     PF_CHECK(std::filesystem::exists(dir / "references.bib"));
 
     // 将项目目录设为只读，使原子写入无法创建其临时文件。
     //（POSIX 语义；在其他平台上跳过。）
     std::error_code ec;
-    std::filesystem::permissions(dir, std::filesystem::perms::owner_read |
-                                          std::filesystem::perms::owner_exec,
-                                  std::filesystem::perm_options::replace, ec);
+    std::filesystem::permissions(dir, std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+                                 std::filesystem::perm_options::replace, ec);
     if (ec) {
         // 环境不支持该设置；不要伪造通过。
-        std::filesystem::permissions(dir, std::filesystem::perms::all,
-                                     std::filesystem::perm_options::replace,
-                                     ec);
+        std::filesystem::permissions(dir, std::filesystem::perms::all, std::filesystem::perm_options::replace, ec);
         std::cout << "  [SKIP] cannot restrict directory permissions\n";
         std::filesystem::remove_all(dir);
         return;
@@ -203,8 +193,7 @@ PF_TEST(FailedBibliographyWriteLeavesStateUntouched) {
 
     auto second = session.ImportBibliography(kSampleBib);
     // 在任何清理断言之前恢复权限。
-    std::filesystem::permissions(dir, std::filesystem::perms::all,
-                                 std::filesystem::perm_options::replace, ec);
+    std::filesystem::permissions(dir, std::filesystem::perms::all, std::filesystem::perm_options::replace, ec);
 
     // 环境是否真的拒绝了写入决定了走哪个分支：
     // 若确实拒绝，则导入必须已失败，且任何状态都不得改变。

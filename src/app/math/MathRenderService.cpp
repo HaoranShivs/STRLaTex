@@ -15,8 +15,7 @@ namespace pf::gui {
 
 // ---------------- 有界LRU缓存 ----------------
 
-MathRenderCache::MathRenderCache(std::size_t capacity)
-    : capacity_(capacity == 0 ? 1 : capacity) {}
+MathRenderCache::MathRenderCache(std::size_t capacity) : capacity_(capacity == 0 ? 1 : capacity) {}
 
 bool MathRenderCache::Find(const QString& key, MathRenderResult* out) {
     auto it = entries_.find(key);
@@ -40,8 +39,7 @@ void MathRenderCache::Insert(const QString& key, MathRenderResult value) {
         // 精确淘汰最近最少使用的那一个条目。此前的实现在溢出时会清空全部
         // 256个条目，仅因一次未命中就丢弃所有已预热的预览。
         auto victim = entries_.begin();
-        for (auto candidate = entries_.begin(); candidate != entries_.end();
-             ++candidate) {
+        for (auto candidate = entries_.begin(); candidate != entries_.end(); ++candidate) {
             if (candidate->second.stamp < victim->second.stamp)
                 victim = candidate;
         }
@@ -53,7 +51,9 @@ void MathRenderCache::Insert(const QString& key, MathRenderResult value) {
     entries_.emplace(key, entry);
 }
 
-void MathRenderCache::ClearForTest() { entries_.clear(); }
+void MathRenderCache::ClearForTest() {
+    entries_.clear();
+}
 
 QPixmap PixmapFromMathResult(const MathRenderResult& result) {
     // 仅限GUI线程：QPixmap的构造不是线程安全的。
@@ -62,8 +62,7 @@ QPixmap PixmapFromMathResult(const MathRenderResult& result) {
     if (result.image.isNull())
         return {};
     QPixmap pixmap = QPixmap::fromImage(result.image);
-    const qreal dpr =
-        result.device_pixel_ratio > 0 ? result.device_pixel_ratio : 1.0;
+    const qreal dpr = result.device_pixel_ratio > 0 ? result.device_pixel_ratio : 1.0;
     pixmap.setDevicePixelRatio(dpr);
     return pixmap;
 }
@@ -73,19 +72,17 @@ QPixmap PixmapFromMathResult(const MathRenderResult& result) {
 namespace {
 
 QString CacheKeyFor(const QString& latex, const MathRenderStyle& style) {
-    return latex + QChar(0x1f) + QString::number(style.font_px) + QChar(0x1f) +
-           style.color.name(QColor::HexArgb) + QChar(0x1f) +
-           QString::number(style.device_pixel_ratio, 'f', 2) + QChar(0x1f) +
-           style.font_family + QChar(0x1f) + style.template_id + QChar(0x1f) +
-           QString::number(static_cast<int>(style.backend)) + QChar(0x1f) +
-           QStringLiteral("v1");  // 渲染器后端版本
+    return latex + QChar(0x1f) + QString::number(style.font_px) + QChar(0x1f) + style.color.name(QColor::HexArgb) +
+           QChar(0x1f) + QString::number(style.device_pixel_ratio, 'f', 2) + QChar(0x1f) + style.font_family +
+           QChar(0x1f) + style.template_id + QChar(0x1f) + QString::number(static_cast<int>(style.backend)) +
+           QChar(0x1f) + QStringLiteral("v1"); // 渲染器后端版本
 }
 
 QString FormulaKey(const QString& editor, const QString& formula) {
     return editor + QChar(0x1f) + formula;
 }
 
-}  // namespace
+} // namespace
 
 struct MathRenderService::Impl {
     struct Job {
@@ -107,8 +104,7 @@ struct MathRenderService::Impl {
 };
 
 MathRenderService::MathRenderService(QObject* parent) : QObject(parent) {
-    qRegisterMetaType<pf::gui::MathRenderResponse>(
-        "pf::gui::MathRenderResponse");
+    qRegisterMetaType<pf::gui::MathRenderResponse>("pf::gui::MathRenderResponse");
     impl_ = std::make_unique<Impl>();
     impl_->worker = std::thread([this]() {
         impl_->worker_id = std::this_thread::get_id();
@@ -116,9 +112,7 @@ MathRenderService::MathRenderService(QObject* parent) : QObject(parent) {
             Impl::Job job;
             {
                 std::unique_lock<std::mutex> lock(impl_->mutex);
-                impl_->condition.wait(lock, [this] {
-                    return impl_->stopping || !impl_->queue.empty();
-                });
+                impl_->condition.wait(lock, [this] { return impl_->stopping || !impl_->queue.empty(); });
                 if (impl_->stopping && impl_->queue.empty())
                     return;
                 job = std::move(impl_->queue.front());
@@ -143,8 +137,7 @@ bool MathRenderService::IsWorkerThread() const {
     return std::this_thread::get_id() == impl_->worker_id;
 }
 
-void MathRenderService::RegisterClient(const QString& editor_id,
-                                       QObject* client) {
+void MathRenderService::RegisterClient(const QString& editor_id, QObject* client) {
     impl_->clients[editor_id] = client;
 }
 
@@ -152,9 +145,7 @@ void MathRenderService::UnregisterClient(const QString& editor_id) {
     impl_->clients.erase(editor_id);
 }
 
-std::uint64_t MathRenderService::Request(const QString& editor_id,
-                                         const QString& formula_id,
-                                         const QString& latex,
+std::uint64_t MathRenderService::Request(const QString& editor_id, const QString& formula_id, const QString& latex,
                                          const MathRenderStyle& style) {
     // GUI线程：先递增generation，这样一旦出现更新的请求，已在途的回复
     // 立即失效。
@@ -175,8 +166,7 @@ std::uint64_t MathRenderService::Request(const QString& editor_id,
     return generation;
 }
 
-std::uint64_t MathRenderService::Generation(const QString& editor_id,
-                                            const QString& formula_id) const {
+std::uint64_t MathRenderService::Generation(const QString& editor_id, const QString& formula_id) const {
     auto it = impl_->issued_generation.find(FormulaKey(editor_id, formula_id));
     return it == impl_->issued_generation.end() ? 0 : it->second;
 }
@@ -208,8 +198,7 @@ void MathRenderService::RenderJob(const MathRenderRequest& job) {
     // 回复通过对象自身的事件循环进入GUI线程。worker绝不直接调用widget
     // 方法。
     QMetaObject::invokeMethod(
-        this, [this, response]() { ApplyReply(response); },
-        Qt::QueuedConnection);
+        this, [this, response]() { ApplyReply(response); }, Qt::QueuedConnection);
 }
 
 void MathRenderService::ApplyReply(const MathRenderResponse& response) {
@@ -220,11 +209,9 @@ void MathRenderService::ApplyReply(const MathRenderResponse& response) {
         stale_replies_dropped_.fetch_add(1);
         return;
     }
-    const QString key =
-        FormulaKey(response.editor_id, response.formula_id);
+    const QString key = FormulaKey(response.editor_id, response.formula_id);
     auto issued = impl_->issued_generation.find(key);
-    if (issued == impl_->issued_generation.end() ||
-        response.generation != issued->second) {
+    if (issued == impl_->issued_generation.end() || response.generation != issued->second) {
         // 针对同一formula的更新请求已经替换了该结果。
         stale_replies_dropped_.fetch_add(1);
         return;
@@ -237,4 +224,4 @@ MathRenderService* MathRenderService::Shared() {
     return service;
 }
 
-}  // namespace pf::gui
+} // namespace pf::gui

@@ -14,8 +14,8 @@
 #include <QApplication>
 #include <QFrame>
 #include <QPlainTextEdit>
-#include <QTextEdit>
 #include <QTableWidget>
+#include <QTextEdit>
 
 #include <filesystem>
 #include <fstream>
@@ -37,19 +37,17 @@ int failures = 0;
 
 void Check(bool ok, const std::string& what) {
     std::cout << (ok ? "[ OK  ] " : "[FAIL] ") << what << "\n";
-    if (!ok) ++failures;
+    if (!ok)
+        ++failures;
 }
 
 // 一个 1x1 的 PNG，使图片路径解析器有真实文件可预览。
 std::filesystem::path WriteTinyPng() {
     static const unsigned char png[] = {
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00,
-        0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
-        0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89,
-        0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63,
-        0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4,
-        0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60,
-        0x82};
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00,
+        0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00,
+        0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01,
+        0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
     auto path = std::filesystem::temp_directory_path() / "pf-projection.png";
     std::ofstream out(path, std::ios::binary);
     out.write(reinterpret_cast<const char*>(png), sizeof(png));
@@ -66,8 +64,7 @@ int main(int argc, char* argv[]) {
 
     MainWindow window;
     auto* controller = window.controller();
-    Check(controller->NewProject(QString::fromStdString(dir.string())),
-          "project created");
+    Check(controller->NewProject(QString::fromStdString(dir.string())), "project created");
 
     auto& session = controller->session();
     DocumentEditor editor(session.mutable_document());
@@ -82,8 +79,7 @@ int main(int argc, char* argv[]) {
     Check(section.ok(), "section inserted");
     auto sub = editor.InsertSubsection(0, 0, InlineFromText("Sub A"));
     Check(sub.ok(), "subsection inserted");
-    auto subsub =
-        editor.InsertSubsubsection(0, 0, 0, InlineFromText("Subsub A"));
+    auto subsub = editor.InsertSubsubsection(0, 0, 0, InlineFromText("Subsub A"));
     Check(subsub.ok(), "subsubsection inserted");
 
     const auto png = WriteTinyPng();
@@ -101,10 +97,7 @@ int main(int argc, char* argv[]) {
         Check(figure.status == EditStatus::Applied, "figure inserted");
         placed.figure = NodeId(figure.created_node);
 
-        Table table = DocumentEditor::MakeTable(
-                          std::vector<TableColumn>{{ColumnAlignment::Left}},
-                          1, true)
-                          .value();
+        Table table = DocumentEditor::MakeTable(std::vector<TableColumn>{{ColumnAlignment::Left}}, 1, true).value();
         auto table_result = editor.InsertBlock(parent, std::nullopt, table);
         Check(table_result.ok(), "table inserted");
         placed.table = table_result.value();
@@ -126,8 +119,7 @@ int main(int argc, char* argv[]) {
     controller->Save();
     controller->FlushSaves();
     controller->CloseProject();
-    Check(window.OpenProjectDir(QString::fromStdString(dir.string())),
-          "project reopened for a clean rebuild");
+    Check(window.OpenProjectDir(QString::fromStdString(dir.string())), "project reopened for a clean rebuild");
     // 重建由 documentChanged 信号驱动，该信号在打开时同步运行；给 Qt 一次
     // 事件循环，以处理上一代 widget 的延迟删除。
     QCoreApplication::processEvents();
@@ -165,8 +157,7 @@ int main(int argc, char* argv[]) {
             caption_editors.insert(node);
     }
 
-    std::cout << "  figure cards=" << figure_nodes.size()
-              << " table cards=" << table_nodes.size()
+    std::cout << "  figure cards=" << figure_nodes.size() << " table cards=" << table_nodes.size()
               << " table widgets=" << table_widgets << "\n";
 
     // 每种三个，每个层级一个。
@@ -174,28 +165,22 @@ int main(int argc, char* argv[]) {
     Check(table_nodes.size() == 3, "three table cards are projected");
     Check(table_widgets >= 3, "three table grid previews exist");
 
-    const std::set<QString> expected_figures = {
-        QString::fromStdString(at_section.figure.value()),
-        QString::fromStdString(at_sub.figure.value()),
-        QString::fromStdString(at_subsub.figure.value())};
-    const std::set<QString> expected_tables = {
-        QString::fromStdString(at_section.table.value()),
-        QString::fromStdString(at_sub.table.value()),
-        QString::fromStdString(at_subsub.table.value())};
+    const std::set<QString> expected_figures = {QString::fromStdString(at_section.figure.value()),
+                                                QString::fromStdString(at_sub.figure.value()),
+                                                QString::fromStdString(at_subsub.figure.value())};
+    const std::set<QString> expected_tables = {QString::fromStdString(at_section.table.value()),
+                                               QString::fromStdString(at_sub.table.value()),
+                                               QString::fromStdString(at_subsub.table.value())};
 
-    Check(figure_nodes == expected_figures,
-          "every figure node id has a card at its own level");
-    Check(table_nodes == expected_tables,
-          "every table node id has a card at its own level");
+    Check(figure_nodes == expected_figures, "every figure node id has a card at its own level");
+    Check(table_nodes == expected_tables, "every table node id has a card at its own level");
 
     // 题注可编辑：每个 figure/table 节点都拥有一个启用了 commands 的题注
     // 编辑器，正是它让 Move/Delete 可达。
     for (const auto& expected : expected_figures)
-        Check(caption_editors.count(expected) == 1,
-              "figure caption editor operable for " + expected.toStdString());
+        Check(caption_editors.count(expected) == 1, "figure caption editor operable for " + expected.toStdString());
     for (const auto& expected : expected_tables)
-        Check(caption_editors.count(expected) == 1,
-              "table caption editor operable for " + expected.toStdString());
+        Check(caption_editors.count(expected) == 1, "table caption editor operable for " + expected.toStdString());
 
     // 每个层级的段落也都有投影（这部分此前已正常，添加断言是为了防止共享
     // 路径使其回归）。Text 行是 InlineEditor 实例（QTextEdit），而不是
@@ -203,21 +188,18 @@ int main(int argc, char* argv[]) {
     std::set<QString> paragraph_nodes;
     for (QTextEdit* edit : window.findChildren<QTextEdit*>()) {
         if (qobject_cast<QPlainTextEdit*>(edit) != nullptr)
-            continue;  // 题注编辑器已在上方统计
+            continue; // 题注编辑器已在上方统计
         const QString node = edit->property("row_node").toString();
         if (!node.isEmpty())
             paragraph_nodes.insert(node);
     }
-    Check(paragraph_nodes.count(
-              QString::fromStdString(at_subsub.paragraph.value())) == 1,
+    Check(paragraph_nodes.count(QString::fromStdString(at_subsub.paragraph.value())) == 1,
           "the subsubsection paragraph is projected");
-    Check(paragraph_nodes.count(
-              QString::fromStdString(at_sub.paragraph.value())) == 1,
+    Check(paragraph_nodes.count(QString::fromStdString(at_sub.paragraph.value())) == 1,
           "the subsection paragraph is projected");
 
     std::filesystem::remove(png);
     std::filesystem::remove_all(dir);
-    std::cout << (failures == 0 ? "[ DONE ] all checks passed\n"
-                                : "[ DONE ] failures detected\n");
+    std::cout << (failures == 0 ? "[ DONE ] all checks passed\n" : "[ DONE ] failures detected\n");
     return failures == 0 ? 0 : 1;
 }

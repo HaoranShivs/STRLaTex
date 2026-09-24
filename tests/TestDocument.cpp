@@ -29,7 +29,7 @@ Document MakeSampleDoc() {
     return doc;
 }
 
-}  // namespace
+} // namespace
 
 PF_TEST(DocumentVersionBumpsOnEdit) {
     Document doc;
@@ -40,9 +40,8 @@ PF_TEST(DocumentVersionBumpsOnEdit) {
 }
 
 PF_TEST(EditorTextPreservesCitationsAndCrossReferences) {
-    auto content = InlineFromEditorText(
-        "Prior work [cite:smith2024,doe2025] supports "
-        "[ref:figure-results].");
+    auto content = InlineFromEditorText("Prior work [cite:smith2024,doe2025] supports "
+                                        "[ref:figure-results].");
     PF_CHECK(content.size() == 5);
     PF_CHECK(std::holds_alternative<TextRun>(content[0]));
     const auto* citation = std::get_if<Citation>(&content[1]);
@@ -52,9 +51,8 @@ PF_TEST(EditorTextPreservesCitationsAndCrossReferences) {
     const auto* reference = std::get_if<CrossReference>(&content[3]);
     PF_CHECK(reference != nullptr);
     PF_CHECK(reference->target == NodeId("figure-results"));
-    PF_CHECK(InlineToPlainText(content) ==
-             "Prior work [cite:smith2024,doe2025] supports "
-             "[ref:figure-results].");
+    PF_CHECK(InlineToPlainText(content) == "Prior work [cite:smith2024,doe2025] supports "
+                                           "[ref:figure-results].");
 }
 
 PF_TEST(DocumentEditorInsertAndFindBlocks) {
@@ -66,8 +64,7 @@ PF_TEST(DocumentEditorInsertAndFindBlocks) {
 }
 
 PF_TEST(DocumentEditorTableRectangularity) {
-    auto columns = std::vector<TableColumn>{{ColumnAlignment::Left},
-                                            {ColumnAlignment::Right}};
+    auto columns = std::vector<TableColumn>{{ColumnAlignment::Left}, {ColumnAlignment::Right}};
     auto table = DocumentEditor::MakeTable(columns, 3, true);
     PF_CHECK(table.ok());
     PF_CHECK(table.value().IsRectangular());
@@ -82,8 +79,7 @@ PF_TEST(DocumentEditorTableRectangularity) {
 PF_TEST(DocumentEditorTableMutationsKeepRectangle) {
     Document doc = MakeSampleDoc();
     DocumentEditor editor(doc);
-    auto columns = std::vector<TableColumn>{{ColumnAlignment::Left},
-                                            {ColumnAlignment::Center}};
+    auto columns = std::vector<TableColumn>{{ColumnAlignment::Left}, {ColumnAlignment::Center}};
     Table table = DocumentEditor::MakeTable(columns, 2, false).value();
     NodeId s1;
     {
@@ -130,8 +126,8 @@ PF_TEST(DocumentEditorMoveBlock) {
     PF_CHECK(editor.MoveBlock(pa.value(), s2, 0).ok());
     {
         const Document& cd = doc;
-        PF_CHECK(cd.body().sections[0].blocks.size() == 3);  // B + 段落 + eq
-        PF_CHECK(cd.body().sections[1].blocks.size() == 2);  // C + A
+        PF_CHECK(cd.body().sections[0].blocks.size() == 3); // B + 段落 + eq
+        PF_CHECK(cd.body().sections[1].blocks.size() == 2); // C + A
     }
 
     Block* moved = editor.FindBlock(pa.value());
@@ -143,9 +139,8 @@ PF_TEST(DocumentEditorMoveBlock) {
 PF_TEST(InsertSubsectionAfterAnchor) {
     Document doc;
     DocumentEditor editor(doc);
-    const Document& cd = doc;  // 只读视图：body() 在外部仅提供 const 版本
-    auto sec = editor.InsertSection(cd.body().sections.size(),
-                                    InlineFromText("S"));
+    const Document& cd = doc; // 只读视图：body() 在外部仅提供 const 版本
+    auto sec = editor.InsertSection(cd.body().sections.size(), InlineFromText("S"));
     PF_CHECK(sec.ok());
     const NodeId section = sec.value();
 
@@ -171,18 +166,14 @@ PF_TEST(InsertSubsectionAfterAnchor) {
         PF_CHECK(InlineToPlainText(s.subsections[0].title) == "Sub");
         PF_CHECK(s.subsections[0].blocks.size() == 2);
         const auto* first = std::get_if<Paragraph>(&s.subsections[0].blocks[0]);
-        const auto* second =
-            std::get_if<Paragraph>(&s.subsections[0].blocks[1]);
+        const auto* second = std::get_if<Paragraph>(&s.subsections[0].blocks[1]);
         PF_CHECK(first && InlineToPlainText(first->content) == "two");
         PF_CHECK(second && InlineToPlainText(second->content) == "three");
     }
 
     // 子节内部某个 block 之后的标题会跟随该子节。
-    const NodeId inner = std::visit([](const auto& v) { return v.id; },
-                                    cd.body()
-                                        .sections.front()
-                                        .subsections[0]
-                                        .blocks[0]);
+    const NodeId inner =
+        std::visit([](const auto& v) { return v.id; }, cd.body().sections.front().subsections[0].blocks[0]);
     PF_CHECK(editor.InsertSubsectionAfter(inner, InlineFromText("Deeper")).ok());
     {
         const Section& s = cd.body().sections.front();
@@ -192,32 +183,23 @@ PF_TEST(InsertSubsectionAfterAnchor) {
     }
 
     // 子节标题之后不会发生任何移动。
-    PF_CHECK(editor
-                 .InsertSubsectionAfter(cd.body().sections.front()
-                                            .subsections[0]
-                                            .id,
-                                        InlineFromText("Sibling"))
-                 .ok());
+    PF_CHECK(
+        editor.InsertSubsectionAfter(cd.body().sections.front().subsections[0].id, InlineFromText("Sibling")).ok());
     PF_CHECK(cd.body().sections.front().subsections.size() == 3);
-    PF_CHECK(InlineToPlainText(
-                 cd.body().sections.front().subsections[1].title) ==
-             "Sibling");
+    PF_CHECK(InlineToPlainText(cd.body().sections.front().subsections[1].title) == "Sibling");
 
     // 在 section 标题之后，该 section 的全部正文会成为子节的内容。
     Document second;
     DocumentEditor editor2(second);
     const Document& cd2 = second;
-    auto sec2 = editor2.InsertSection(cd2.body().sections.size(),
-                                      InlineFromText("T"));
+    auto sec2 = editor2.InsertSection(cd2.body().sections.size(), InlineFromText("T"));
     Paragraph p1;
     p1.content = InlineFromText("alpha");
     Paragraph p2;
     p2.content = InlineFromText("beta");
     editor2.InsertBlock(sec2.value(), std::nullopt, p1);
     editor2.InsertBlock(sec2.value(), std::nullopt, p2);
-    PF_CHECK(editor2
-                 .InsertSubsectionAfter(sec2.value(), InlineFromText("First"))
-                 .ok());
+    PF_CHECK(editor2.InsertSubsectionAfter(sec2.value(), InlineFromText("First")).ok());
     {
         const Section& s = cd2.body().sections.front();
         PF_CHECK(s.blocks.empty());
@@ -226,8 +208,7 @@ PF_TEST(InsertSubsectionAfterAnchor) {
     }
 
     // 未知锚点会被拒绝，而不是静默追加。
-    PF_CHECK(!editor2.InsertSubsectionAfter(NodeId("nope"), InlineFromText("x"))
-                  .ok());
+    PF_CHECK(!editor2.InsertSubsectionAfter(NodeId("nope"), InlineFromText("x")).ok());
 }
 
 PF_TEST(DocumentEditorSubsectionStructure) {
@@ -257,7 +238,7 @@ PF_TEST(DocumentIndexRebuild) {
     const Document doc = MakeSampleDoc();
     DocumentIndex index;
     index.Rebuild(doc);
-    PF_CHECK(index.Size() == 4);  // section 0 中的 2 个 section + 2 个 block
+    PF_CHECK(index.Size() == 4); // section 0 中的 2 个 section + 2 个 block
     size_t expected = doc.CollectNodeIds().size();
     PF_CHECK(index.Size() == expected);
 
@@ -292,48 +273,41 @@ PF_TEST(InlineTextHelpers) {
 PF_TEST(ReflowHardWrappedText) {
     // 从 PDF 复制出的段落会按固定列宽预先换行；
     // 必须把这里的单个换行变成空格，它才能重新排版。
-    const std::string pasted =
-        "The success of deep learning in infrared small\n"
-        "target detection relies on large-scale annotations, yet\n"
-        "their acquisition cost impedes further progress.";
+    const std::string pasted = "The success of deep learning in infrared small\n"
+                               "target detection relies on large-scale annotations, yet\n"
+                               "their acquisition cost impedes further progress.";
     const std::string reflowed = ReflowHardWrappedText(pasted);
     PF_CHECK(reflowed.find('\n') == std::string::npos);
-    PF_CHECK(reflowed.find("infrared small target detection") !=
-             std::string::npos);
+    PF_CHECK(reflowed.find("infrared small target detection") != std::string::npos);
     PF_CHECK(reflowed.find("  ") == std::string::npos);
 
     // 空行是真正的段落分隔，必须保留。
-    const std::string two_paragraphs =
-        "First paragraph that is long enough to look wrapped.\n"
-        "It continues here on a second line of the same paragraph.\n"
-        "\n"
-        "Second paragraph that is also long enough to look wrapped.\n"
-        "And it has a continuation line as well, right here.";
+    const std::string two_paragraphs = "First paragraph that is long enough to look wrapped.\n"
+                                       "It continues here on a second line of the same paragraph.\n"
+                                       "\n"
+                                       "Second paragraph that is also long enough to look wrapped.\n"
+                                       "And it has a continuation line as well, right here.";
     const std::string joined = ReflowHardWrappedText(two_paragraphs);
     PF_CHECK(joined.find("\n\n") != std::string::npos);
     PF_CHECK(joined.find("First paragraph that is long enough to look "
                          "wrapped. It continues here") != std::string::npos);
-    PF_CHECK(joined.find("Second paragraph that is also long enough") !=
-             std::string::npos);
+    PF_CHECK(joined.find("Second paragraph that is also long enough") != std::string::npos);
 
     // 有意设置的结构永远不会被重写。
-    const std::string bullets =
-        "- first item of a list that is long enough to wrap somewhere\n"
-        "- second item of the same list, also long enough to wrap\n"
-        "- third item, likewise long enough to look like a hard wrap";
+    const std::string bullets = "- first item of a list that is long enough to wrap somewhere\n"
+                                "- second item of the same list, also long enough to wrap\n"
+                                "- third item, likewise long enough to look like a hard wrap";
     PF_CHECK(ReflowHardWrappedText(bullets) == bullets);
 
-    const std::string enumerated =
-        "1. first numbered item that is long enough to look wrapped\n"
-        "2. second numbered item, also long enough to look wrapped\n"
-        "3. third numbered item, likewise long enough to be wrapped";
+    const std::string enumerated = "1. first numbered item that is long enough to look wrapped\n"
+                                   "2. second numbered item, also long enough to look wrapped\n"
+                                   "3. third numbered item, likewise long enough to be wrapped";
     PF_CHECK(ReflowHardWrappedText(enumerated) == enumerated);
 
     // 显式的 LaTeX 换行属于内容，而不是自动换行。
-    const std::string explicit_break =
-        "first line that ends with an explicit break\\\\\n"
-        "second line that is long enough to look like a hard wrap\n"
-        "third line that is also long enough to be considered wrapped";
+    const std::string explicit_break = "first line that ends with an explicit break\\\\\n"
+                                       "second line that is long enough to look like a hard wrap\n"
+                                       "third line that is also long enough to be considered wrapped";
     PF_CHECK(ReflowHardWrappedText(explicit_break) == explicit_break);
 
     // 太短，不足以判定为预先换行的文本块：完全按输入原样保留。

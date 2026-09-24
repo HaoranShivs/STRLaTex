@@ -29,14 +29,14 @@ constexpr const char* kDivider = "#E4E7EC";
 constexpr const char* kPrimaryText = "#202124";
 constexpr const char* kSecondaryText = "#667085";
 constexpr const char* kDisabledText = "#98A2B3";
-constexpr const char* kAccent = "#2A5DB0";         // 焦点线／链接
-constexpr const char* kAccentSoft = "#EAF1FB";     // 悬停背景
+constexpr const char* kAccent = "#2A5DB0";     // 焦点线／链接
+constexpr const char* kAccentSoft = "#EAF1FB"; // 悬停背景
 constexpr const char* kError = "#D64545";
 constexpr const char* kErrorSoft = "#FDF0F0";
 constexpr const char* kWarning = "#B7791F";
 constexpr const char* kWarningSoft = "#FBF5E9";
 constexpr const char* kOk = "#2F855A";
-constexpr const char* kBlockHover = "#FAFBFC";     // 块悬停背景
+constexpr const char* kBlockHover = "#FAFBFC"; // 块悬停背景
 
 // 编辑器内容宽度（设计 #62）：居中栏，阅读舒适。
 constexpr int kContentWidth = 820;
@@ -52,7 +52,7 @@ constexpr int kBlockHeaderHeight = 15; // 悬停时的标题条
 constexpr int kFocusLine = 2;          // 左侧状态线（聚焦／缺失）
 constexpr int kCardRadius = 6;         // 卡片圆角半径
 constexpr int kEditorDocMargin = 4;    // 编辑器内部 QTextDocument 的外边距
-}  // namespace spacing
+} // namespace spacing
 
 // ---------------- 排版 token（UI 方案 §3、§5、§12） ----------------
 // 稿件界面统一的 GUI 层级。层级来自字号 + 字重 + 间距，
@@ -70,11 +70,11 @@ constexpr double kSubsubsectionPt = 12.5;
 constexpr double kBodyPt = 12.0;
 constexpr double kCaptionPt = 10.5;
 constexpr double kEquationSourcePt = 10.5;
-constexpr double kUiPt = 10.0;         // 应用外框基准字号
+constexpr double kUiPt = 10.0; // 应用外框基准字号
 
 constexpr int kBodyLineHeight = 150;     // % 比例行距，正文
 constexpr int kAbstractLineHeight = 155; // % 比例行距，摘要
-}  // namespace typography
+} // namespace typography
 
 // 块编辑器的视觉角色；与排版表一一对应。
 enum class BlockVisualRole {
@@ -95,14 +95,13 @@ enum class BlockVisualRole {
 // 不要硬编码单一字族——在 Windows 上会落到原生 UI 字体，在 Linux
 // 上当存在 Noto Sans CJK 时由 fontconfig 解析中日韩文字。GUI 字体
 // 与 PDF 的字体毫无关系。
-inline QFont UiFont(qreal point_size = typography::kUiPt,
-                    int weight = QFont::Normal) {
+inline QFont UiFont(qreal point_size = typography::kUiPt, int weight = QFont::Normal) {
     QFont font = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
     QStringList families = font.families();
     for (const QString& extra :
-         {QStringLiteral("Noto Sans CJK SC"), QStringLiteral("Noto Sans"),
-          QStringLiteral("DejaVu Sans")}) {
-        if (!families.contains(extra)) families << extra;
+         {QStringLiteral("Noto Sans CJK SC"), QStringLiteral("Noto Sans"), QStringLiteral("DejaVu Sans")}) {
+        if (!families.contains(extra))
+            families << extra;
     }
     font.setFamilies(families);
     font.setPointSizeF(point_size);
@@ -113,43 +112,43 @@ inline QFont UiFont(qreal point_size = typography::kUiPt,
 inline QFont MonoFont(qreal point_size = typography::kUiPt) {
     QFont font(QStringLiteral("Monospace"));
     font.setStyleHint(QFont::TypeWriter);
-    font.setFamilies({QStringLiteral("Ubuntu Mono"),
-                      QStringLiteral("DejaVu Sans Mono"),
-                      QStringLiteral("Monospace")});
+    font.setFamilies({QStringLiteral("Ubuntu Mono"), QStringLiteral("DejaVu Sans Mono"), QStringLiteral("Monospace")});
     font.setPointSizeF(point_size);
     return font;
 }
 
 // 应用级外框字体；设置在 QApplication 上，因此样式表无需固定
 // font-size（样式表字体会覆盖每一次 setFont()）。
-inline QFont AppFont() { return UiFont(typography::kUiPt); }
+inline QFont AppFont() {
+    return UiFont(typography::kUiPt);
+}
 
 // 稿件界面某个视觉角色所用的字体（UI 方案 §3）。
 inline QFont EditorFont(BlockVisualRole role) {
     using R = BlockVisualRole;
     switch (role) {
-        case R::Title:
-            return UiFont(typography::kTitlePt, QFont::Bold);
-        case R::Authors:
-            return UiFont(typography::kAuthorsPt, QFont::Medium);
-        case R::Affiliations:
-            return UiFont(typography::kAffiliationsPt, QFont::Normal);
-        case R::Abstract:
-            return UiFont(typography::kAbstractPt, QFont::Normal);
-        case R::Keywords:
-            return UiFont(typography::kKeywordsPt, QFont::Medium);
-        case R::SectionTitle:
-            return UiFont(typography::kSectionPt, QFont::DemiBold);
-        case R::SubsectionTitle:
-            return UiFont(typography::kSubsectionPt, QFont::DemiBold);
-        case R::SubsubsectionTitle:
-            return UiFont(typography::kSubsubsectionPt, QFont::DemiBold);
-        case R::Caption:
-            return UiFont(typography::kCaptionPt, QFont::Normal);
-        case R::Body:
-            return UiFont(typography::kBodyPt, QFont::Normal);
-        case R::EquationSource:
-            return MonoFont(typography::kEquationSourcePt);
+    case R::Title:
+        return UiFont(typography::kTitlePt, QFont::Bold);
+    case R::Authors:
+        return UiFont(typography::kAuthorsPt, QFont::Medium);
+    case R::Affiliations:
+        return UiFont(typography::kAffiliationsPt, QFont::Normal);
+    case R::Abstract:
+        return UiFont(typography::kAbstractPt, QFont::Normal);
+    case R::Keywords:
+        return UiFont(typography::kKeywordsPt, QFont::Medium);
+    case R::SectionTitle:
+        return UiFont(typography::kSectionPt, QFont::DemiBold);
+    case R::SubsectionTitle:
+        return UiFont(typography::kSubsectionPt, QFont::DemiBold);
+    case R::SubsubsectionTitle:
+        return UiFont(typography::kSubsubsectionPt, QFont::DemiBold);
+    case R::Caption:
+        return UiFont(typography::kCaptionPt, QFont::Normal);
+    case R::Body:
+        return UiFont(typography::kBodyPt, QFont::Normal);
+    case R::EquationSource:
+        return MonoFont(typography::kEquationSourcePt);
     }
     return UiFont(typography::kBodyPt);
 }
@@ -157,24 +156,24 @@ inline QFont EditorFont(BlockVisualRole role) {
 // 某个角色阅读时使用的行高（%）；0 表示「保持默认」。
 inline int LineHeightFor(BlockVisualRole role) {
     switch (role) {
-        case BlockVisualRole::Body:
-            return typography::kBodyLineHeight;
-        case BlockVisualRole::Abstract:
-            return typography::kAbstractLineHeight;
-        default:
-            return 0;
+    case BlockVisualRole::Body:
+        return typography::kBodyLineHeight;
+    case BlockVisualRole::Abstract:
+        return typography::kAbstractLineHeight;
+    default:
+        return 0;
     }
 }
 
 // 某个角色是否以次要文字颜色渲染。
 inline bool IsSecondaryRole(BlockVisualRole role) {
     switch (role) {
-        case BlockVisualRole::Affiliations:
-        case BlockVisualRole::Keywords:
-        case BlockVisualRole::Caption:
-            return true;
-        default:
-            return false;
+    case BlockVisualRole::Affiliations:
+    case BlockVisualRole::Keywords:
+    case BlockVisualRole::Caption:
+        return true;
+    default:
+        return false;
     }
 }
 
@@ -182,16 +181,16 @@ inline bool IsSecondaryRole(BlockVisualRole role) {
 // 保护包裹此调用，使该变更绝不会被误认为用户输入。字体环境必须在
 // 行内内容加载*之前*就位（UI 方案 §6）：行内数学对象在插入时
 // 依据 document()->defaultFont() 确定自身大小与对齐。
-inline void ApplyDocumentTypography(QTextDocument* doc, const QFont& font,
-                                    int line_height_percent) {
-    if (!doc) return;
+inline void ApplyDocumentTypography(QTextDocument* doc, const QFont& font, int line_height_percent) {
+    if (!doc)
+        return;
     doc->setDefaultFont(font);
-    if (line_height_percent <= 0) return;
+    if (line_height_percent <= 0)
+        return;
     QTextCursor cursor(doc);
     cursor.select(QTextCursor::Document);
     QTextBlockFormat format;
-    format.setLineHeight(line_height_percent,
-                         QTextBlockFormat::ProportionalHeight);
+    format.setLineHeight(line_height_percent, QTextBlockFormat::ProportionalHeight);
     cursor.mergeBlockFormat(format);
     cursor.clearSelection();
 }
@@ -229,8 +228,7 @@ QTabBar::tab:selected { color: %2; border-bottom: 2px solid %5; }
 QLabel#panelTitle { color: %6; font-size: 8pt; font-weight: 700; letter-spacing: 1px; }
 QComboBox { background: white; border: 1px solid %3; border-radius: 6px; padding: 3px 8px; }
 )")
-        .arg(kMainBackground, kPrimaryText, kDivider, kAccentSoft, kAccent,
-             kSecondaryText);
+        .arg(kMainBackground, kPrimaryText, kDivider, kAccentSoft, kAccent, kSecondaryText);
 }
 
-}  // namespace pf::gui::theme
+} // namespace pf::gui::theme

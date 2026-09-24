@@ -47,7 +47,7 @@ class CitationObjectRenderer;
 class InlineEditor : public QTextEdit {
     Q_OBJECT
 
-public:
+  public:
     explicit InlineEditor(QWidget* parent = nullptr);
     ~InlineEditor() override;
 
@@ -64,19 +64,23 @@ public:
     // 外围 UI 在 tooltip/outline 中显示的纯文本。
     QString PlainText() const;
 
-    bool IsDirty() const { return dirty_; }
-    bool IsMathEditorOpen() const { return math_editor_open_; }
-    void MarkClean() { dirty_ = false; }
+    bool IsDirty() const {
+        return dirty_;
+    }
+    bool IsMathEditorOpen() const {
+        return math_editor_open_;
+    }
+    void MarkClean() {
+        dirty_ = false;
+    }
     // 加载但不触碰 dirty 标志（供程序化 restyle 使用）。
     void SetContentClean(const InlineContent& content);
 
     // P0-07：应用异步渲染完成的公式。由 math render 服务在 GUI 线程调用。通过
     // payload 中的 formula id 定位对象；当对象已不存在（被删除、被 undo、被
     // 重新加载）时，丢弃该回复。
-    void ApplyMathRender(const QString& formula_id, const QString& latex,
-                         const QImage& image, int width, int height,
-                         int baseline, qreal device_pixel_ratio,
-                         int render_font_px);
+    void ApplyMathRender(const QString& formula_id, const QString& latex, const QImage& image, int width, int height,
+                         int baseline, qreal device_pixel_ratio, int render_font_px);
 
     // 让控件重新适配其内容；宽度变化后调用。
     void ResizeToContent();
@@ -121,9 +125,15 @@ public:
     // 某个选择器（citation / reference 弹窗）即将获取焦点并向该行插入对象。
     // 在它打开期间，focusOut 不得被误判为「用户已结束编辑 body」（citation
     // 方案 §4）：弹窗的焦点往返不得提交编辑到一半的状态。
-    void BeginProtectedInsert() { ++protected_inserts_; }
-    void EndProtectedInsert() { protected_inserts_ = qMax(0, protected_inserts_ - 1); }
-    bool IsProtectedInsertOpen() const { return protected_inserts_ > 0; }
+    void BeginProtectedInsert() {
+        ++protected_inserts_;
+    }
+    void EndProtectedInsert() {
+        protected_inserts_ = qMax(0, protected_inserts_ - 1);
+    }
+    bool IsProtectedInsertOpen() const {
+        return protected_inserts_ > 0;
+    }
 
     // 测试接缝，用于暴露私有剪贴板类型：它在 copy/paste 中携带标记、token 与
     // math 对象。
@@ -134,9 +144,9 @@ public:
         insertFromMimeData(data);
     }
 
-    signals:
-        // 用户编辑了内容（在 focus-out / Ctrl+Enter 时提交）。
-        void Committed();
+  signals:
+    // 用户编辑了内容（在 focus-out / Ctrl+Enter 时提交）。
+    void Committed();
     // 用户要求在该行之后插入一个 block（Ctrl+Enter）。
     void NewBlockAfter();
     // 某个 citation token 被激活以重新挑选（payload = keys）。
@@ -144,7 +154,7 @@ public:
     // 某个 cross-reference token 被激活以重新挑选。
     void CrossReferenceTokenActivated(const QString& target);
 
-protected:
+  protected:
     void keyPressEvent(QKeyEvent* event) override;
     // 在宽度变化以及该行首次可见时重新适配。否则固定高度会保留布局赋予控件真实
     // 宽度之前算出的值，表现为一大片空白区域；此后输入（或 Delete）会重新测量并
@@ -159,7 +169,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
 
-private:
+  private:
     // ---- 语义行内对象 ----
     // 在 QTextDocument 中，每个行内对象恰好占一个字符——object replacement
     // character——并通过专用 renderer 绘制（math：InlineMathObjectRenderer；
@@ -169,10 +179,8 @@ private:
     // 通过过期的粘贴进入，会被剥离。
     static constexpr QChar kTokenChar{0xE000};
     static constexpr QChar kObjectChar{0xFFFC};
-    static constexpr int kTokenKindProperty =
-        inline_object_format::kKindProperty;
-    static constexpr int kTokenPayloadProperty =
-        inline_object_format::kPayloadProperty;
+    static constexpr int kTokenKindProperty = inline_object_format::kKindProperty;
+    static constexpr int kTokenPayloadProperty = inline_object_format::kPayloadProperty;
     // P0-07：标识该行内某一个已渲染的公式对象，使异步回复能够找到（或安全地
     // 找不到）其目标。
     static constexpr int kMathFormulaIdProperty = QTextFormat::UserProperty + 20;
@@ -180,8 +188,7 @@ private:
     static const char* InlineMimeType();
 
     // 插入一个为 `payload` 渲染 `display` 的 citation/reference pill。
-    void InsertPillObject(QTextCursor& cursor, TokenKind kind,
-                          const QString& payload, const QString& display);
+    void InsertPillObject(QTextCursor& cursor, TokenKind kind, const QString& payload, const QString& display);
     // 插入一个已渲染的 math 对象，其 payload 为 LaTeX body。
     void InsertMathObject(QTextCursor& cursor, const QString& latex);
     void RequestMathRender(const QString& formula_id, const QString& latex);
@@ -199,7 +206,7 @@ private:
     struct TokenHit {
         TokenKind kind;
         QString payload;
-        int position;  // token 字符的位置
+        int position; // token 字符的位置
     };
     std::optional<TokenHit> TokenAt(int position) const;
     // 把存储的比例行高重新应用到每个 block（在 document 重新加载之后、于
@@ -233,4 +240,4 @@ private:
     std::map<QString, QString> xref_labels_;
 };
 
-}  // namespace pf::gui
+} // namespace pf::gui

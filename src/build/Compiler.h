@@ -8,11 +8,10 @@
 #include <string>
 #include <vector>
 
-#include "render/LatexRenderer.h"
 #include "build/Toolchain.h"
+#include "render/LatexRenderer.h"
 
 namespace pf {
-
 
 // 编译阶段配置（方案 §9）：使用哪个引擎，以及 TeX 环境所在的位置。
 // texlive_root 是随附的运行时；为空表示「不可用」，此时编译器将其报为
@@ -90,26 +89,22 @@ struct CompileResult {
 };
 
 class ICompiler {
-public:
+  public:
     virtual ~ICompiler() = default;
-    virtual CompileResult Compile(
-        const CompileRequest& request,
-        const std::atomic<bool>* cancel_requested = nullptr) = 0;
+    virtual CompileResult Compile(const CompileRequest& request,
+                                  const std::atomic<bool>* cancel_requested = nullptr) = 0;
 };
 
 class TectonicCompiler final : public ICompiler {
-public:
+  public:
     // cache_dir 存在时，会作为 TECTONIC_CACHE_DIR 与 HOME 导出给 tectonic
     // 子进程。这样可以把 build 固定到项目随附的 bundle，而不是环境 $HOME
     // 中的任意缓存，从而保证离线 build 可复现。
-    explicit TectonicCompiler(std::string executable,
-                              std::string cache_dir = {});
+    explicit TectonicCompiler(std::string executable, std::string cache_dir = {});
 
-    CompileResult Compile(
-        const CompileRequest& request,
-        const std::atomic<bool>* cancel_requested = nullptr) override;
+    CompileResult Compile(const CompileRequest& request, const std::atomic<bool>* cancel_requested = nullptr) override;
 
-private:
+  private:
     std::string executable_;
     std::string cache_dir_;
 };
@@ -117,27 +112,23 @@ private:
 // 生产后端（方案 §10、§30）：在隔离环境中，用随附的便携版 TeX Live
 // 运行时驱动 latexmk。
 class TexLiveCompiler final : public ICompiler {
-public:
+  public:
     explicit TexLiveCompiler(CompilerConfig config);
 
-    CompileResult Compile(
-        const CompileRequest& request,
-        const std::atomic<bool>* cancel_requested = nullptr) override;
+    CompileResult Compile(const CompileRequest& request, const std::atomic<bool>* cancel_requested = nullptr) override;
 
-private:
+  private:
     CompilerConfig config_;
 };
 
 class MockCompiler final : public ICompiler {
-public:
+  public:
     explicit MockCompiler(bool succeeds = true) : succeeds_(succeeds) {}
 
-    CompileResult Compile(
-        const CompileRequest& request,
-        const std::atomic<bool>* cancel_requested = nullptr) override;
+    CompileResult Compile(const CompileRequest& request, const std::atomic<bool>* cancel_requested = nullptr) override;
 
-private:
+  private:
     bool succeeds_;
 };
 
-}  // namespace pf
+} // namespace pf

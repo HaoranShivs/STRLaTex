@@ -22,18 +22,20 @@ constexpr KindNames kKinds[] = {
     {EditorItemKind::Figure, "Figure", "figure"},
     {EditorItemKind::Table, "Table", "table"},
 };
-}  // namespace
+} // namespace
 
 QString EditorItemLabel(EditorItemKind kind) {
     for (const auto& entry : kKinds) {
-        if (entry.kind == kind) return QString::fromUtf8(entry.label);
+        if (entry.kind == kind)
+            return QString::fromUtf8(entry.label);
     }
     return QStringLiteral("Unknown");
 }
 
 QString EditorItemKindName(EditorItemKind kind) {
     for (const auto& entry : kKinds) {
-        if (entry.kind == kind) return QString::fromUtf8(entry.name);
+        if (entry.kind == kind)
+            return QString::fromUtf8(entry.name);
     }
     return QStringLiteral("unknown");
 }
@@ -41,7 +43,8 @@ QString EditorItemKindName(EditorItemKind kind) {
 bool EditorItemKindFromName(const QString& name, EditorItemKind* out) {
     for (const auto& entry : kKinds) {
         if (name == QLatin1String(entry.name)) {
-            if (out) *out = entry.kind;
+            if (out)
+                *out = entry.kind;
             return true;
         }
     }
@@ -50,15 +53,22 @@ bool EditorItemKindFromName(const QString& name, EditorItemKind* out) {
 
 EditorItemKind EditorItemKindOfNode(NodeKind kind) {
     switch (kind) {
-        case NodeKind::Section: return EditorItemKind::SectionTitle;
-        case NodeKind::Subsection: return EditorItemKind::SubsectionTitle;
-        case NodeKind::Subsubsection: return EditorItemKind::SubsubsectionTitle;
-        case NodeKind::Paragraph: return EditorItemKind::Text;
-        case NodeKind::Figure: return EditorItemKind::Figure;
-        case NodeKind::Table: return EditorItemKind::Table;
-        case NodeKind::Equation: return EditorItemKind::Equation;
+    case NodeKind::Section:
+        return EditorItemKind::SectionTitle;
+    case NodeKind::Subsection:
+        return EditorItemKind::SubsectionTitle;
+    case NodeKind::Subsubsection:
+        return EditorItemKind::SubsubsectionTitle;
+    case NodeKind::Paragraph:
+        return EditorItemKind::Text;
+    case NodeKind::Figure:
+        return EditorItemKind::Figure;
+    case NodeKind::Table:
+        return EditorItemKind::Table;
+    case NodeKind::Equation:
+        return EditorItemKind::Equation;
     }
     return EditorItemKind::Text;
 }
 
-}  // namespace pf::gui
+} // namespace pf::gui

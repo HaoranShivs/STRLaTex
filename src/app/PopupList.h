@@ -14,30 +14,31 @@ namespace pf::gui {
 class PopupList : public QFrame {
     Q_OBJECT
 
-public:
+  public:
     struct Item {
-        QString label;        // 主文本
-        QString detail;       // 右侧提示（例如 "Equation"、作者·年份）
-        QString group;        // 分组标题（Basic / Academic / References…）
-        QString payload;      // 命令词、引用键或节点 id
-        QString search;       // 小写过滤文本（默认为 label）
+        QString label;   // 主文本
+        QString detail;  // 右侧提示（例如 "Equation"、作者·年份）
+        QString group;   // 分组标题（Basic / Academic / References…）
+        QString payload; // 命令词、引用键或节点 id
+        QString search;  // 小写过滤文本（默认为 label）
     };
 
     explicit PopupList(QWidget* parent = nullptr);
 
     // 在全局坐标处显示弹出层，并限制在屏幕可用区域内。
-    void popup(const QPoint& global_pos, const std::vector<Item>& items,
-               const QString& filter = {});
+    void popup(const QPoint& global_pos, const std::vector<Item>& items, const QString& filter = {});
     void SetFilter(const QString& text);
     bool eventFilter(QObject* watched, QEvent* event) override;
 
-    bool is_active() const { return isVisible(); }
+    bool is_active() const {
+        return isVisible();
+    }
 
-signals:
+  signals:
     void chosen(const QString& payload);
     void dismissed();
 
-private:
+  private:
     void Refilter();
     void ConfirmCurrent();
 
@@ -46,4 +47,4 @@ private:
     std::vector<Item> all_items_;
 };
 
-}  // namespace pf::gui
+} // namespace pf::gui

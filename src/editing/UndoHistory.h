@@ -12,7 +12,7 @@
 namespace pf {
 
 class UndoHistory {
-public:
+  public:
     // 用于合并连续编辑的键（例如段落 id + "typing"）。
     using TransactionKey = std::string;
 
@@ -23,18 +23,26 @@ public:
 
     void BeginTransaction(TransactionKey key);
     void EndTransaction();
-    bool InTransaction() const noexcept { return transaction_active_; }
+    bool InTransaction() const noexcept {
+        return transaction_active_;
+    }
     const TransactionKey* CurrentKey() const {
         return transaction_active_ ? &transaction_key_ : nullptr;
     }
 
-    bool CanUndo() const noexcept { return !undo_.empty(); }
-    bool CanRedo() const noexcept { return !redo_.empty(); }
-    size_t Depth() const noexcept { return undo_.size(); }
+    bool CanUndo() const noexcept {
+        return !undo_.empty();
+    }
+    bool CanRedo() const noexcept {
+        return !redo_.empty();
+    }
+    size_t Depth() const noexcept {
+        return undo_.size();
+    }
 
     void Clear();
 
-private:
+  private:
     // 合并规则：当最后一条 undo 条目与前一条属于同一事务键时，
     // 将其合并进前一条。
     std::deque<HistoryEntry> undo_;
@@ -43,4 +51,4 @@ private:
     TransactionKey transaction_key_;
 };
 
-}  // namespace pf
+} // namespace pf

@@ -19,16 +19,18 @@ using namespace pf;
 
 namespace {
 
-Body& BodyOf(Document& doc) { return DocumentMutableAccess::body(doc); }
+Body& BodyOf(Document& doc) {
+    return DocumentMutableAccess::body(doc);
+}
 
-std::string RenderTex(const Document& doc,
-                      const std::string& template_id = "generic-article") {
+std::string RenderTex(const Document& doc, const std::string& template_id = "generic-article") {
     RenderRequest request;
     request.document = &doc;
     request.template_id = template_id;
     request.revision = ProjectRevision{1};
     auto rendered = LatexRenderer().Render(request);
-    if (rendered.package.files.empty()) return {};
+    if (rendered.package.files.empty())
+        return {};
     return rendered.package.files[0].content;
 }
 
@@ -38,8 +40,7 @@ struct EquationFixture {
     NodeId equation;
 };
 
-EquationFixture MakeEquationDoc(const std::string& body,
-                                const std::string& label, bool numbered) {
+EquationFixture MakeEquationDoc(const std::string& body, const std::string& label, bool numbered) {
     EquationFixture fixture;
     DocumentEditor editor(fixture.doc);
     (void)editor.SetTitle(InlineFromText("t"));
@@ -53,7 +54,7 @@ EquationFixture MakeEquationDoc(const std::string& body,
     return fixture;
 }
 
-}  // namespace
+} // namespace
 
 // ---------------- 生成器 ----------------
 
@@ -107,8 +108,7 @@ PF_TEST(MathValidatorAcceptsMathInternalStructures) {
     for (const char* source : accepted) {
         const MathValidation result = ValidateMath(source, MathFlavor::Inline);
         if (!result.valid()) {
-            std::cout << "    rejected: " << source << " -> " << result.code
-                      << " " << result.error << "\n";
+            std::cout << "    rejected: " << source << " -> " << result.code << " " << result.error << "\n";
         }
         PF_CHECK(result.valid());
     }
@@ -135,17 +135,15 @@ PF_TEST(MathValidatorRejectsDocumentLevelCommands) {
 
 PF_TEST(MathValidatorRejectsOuterFormulaEnvironments) {
     const char* rejected[] = {
-        "\\begin{equation} x \\end{equation}",
-        "\\begin{equation*} x \\end{equation*}",
-        "\\begin{align} x \\end{align}",
-        "\\begin{figure} x \\end{figure}",
-        "\\begin{table} x \\end{table}",
-        "\\begin{displaymath} x \\end{displaymath}",
+        "\\begin{equation} x \\end{equation}", "\\begin{equation*} x \\end{equation*}",
+        "\\begin{align} x \\end{align}",       "\\begin{figure} x \\end{figure}",
+        "\\begin{table} x \\end{table}",       "\\begin{displaymath} x \\end{displaymath}",
     };
     for (const char* source : rejected) {
         const MathValidation result = ValidateMath(source, MathFlavor::Display);
         PF_CHECK(result.invalid());
-        if (result.invalid()) PF_CHECK(result.code == "E-MATH-FORBIDDEN-ENV");
+        if (result.invalid())
+            PF_CHECK(result.code == "E-MATH-FORBIDDEN-ENV");
     }
 }
 
@@ -154,7 +152,8 @@ PF_TEST(MathValidatorRejectsUserSuppliedDelimiters) {
     for (const char* source : rejected) {
         const MathValidation result = ValidateMath(source, MathFlavor::Inline);
         PF_CHECK(result.invalid());
-        if (result.invalid()) PF_CHECK(result.code == "E-MATH-DELIMITER");
+        if (result.invalid())
+            PF_CHECK(result.code == "E-MATH-DELIMITER");
     }
 }
 
@@ -185,8 +184,7 @@ PF_TEST(InvalidMathKeepsTheOriginalSource) {
 PF_TEST(RendererEmitsNumberedEnvironmentWithUserLabel) {
     EquationFixture fixture = MakeEquationDoc("E = mc^2", "eq:energy", true);
     const std::string tex = RenderTex(fixture.doc);
-    PF_CHECK(tex.find("\\begin{equation}\\label{eq:energy}") !=
-             std::string::npos);
+    PF_CHECK(tex.find("\\begin{equation}\\label{eq:energy}") != std::string::npos);
     PF_CHECK(tex.find("E = mc^2") != std::string::npos);
     PF_CHECK(tex.find("\\end{equation}") != std::string::npos);
 }
@@ -213,8 +211,7 @@ PF_TEST(CrossReferenceResolvesToTheEquationLabel) {
 
     const std::string tex = RenderTex(fixture.doc);
     PF_CHECK(tex.find("\\ref{eq:energy}") != std::string::npos);
-    PF_CHECK(tex.find("\\ref{" + fixture.equation.value() + "}") ==
-             std::string::npos);
+    PF_CHECK(tex.find("\\ref{" + fixture.equation.value() + "}") == std::string::npos);
 }
 
 PF_TEST(CrossReferenceFallsBackToTheNodeId) {
@@ -228,17 +225,14 @@ PF_TEST(CrossReferenceFallsBackToTheNodeId) {
     (void)editor.InsertBlock(section.value(), std::nullopt, para);
 
     const std::string tex = RenderTex(fixture.doc);
-    PF_CHECK(tex.find("\\label{" + fixture.equation.value() + "}") !=
-             std::string::npos);
-    PF_CHECK(tex.find("\\ref{" + fixture.equation.value() + "}") !=
-             std::string::npos);
+    PF_CHECK(tex.find("\\label{" + fixture.equation.value() + "}") != std::string::npos);
+    PF_CHECK(tex.find("\\ref{" + fixture.equation.value() + "}") != std::string::npos);
 }
 
 // ---------------- 面向文档的校验器 ----------------
 
 PF_TEST(DocumentValidatorReportsInvalidMathBoundary) {
-    EquationFixture fixture =
-        MakeEquationDoc("\\begin{equation} x \\end{equation}", "", true);
+    EquationFixture fixture = MakeEquationDoc("\\begin{equation} x \\end{equation}", "", true);
     ValidationInput input;
     input.document = &fixture.doc;
     input.template_id = "generic-article";
@@ -246,7 +240,8 @@ PF_TEST(DocumentValidatorReportsInvalidMathBoundary) {
     auto result = Validator().Validate(input);
     bool found = false;
     for (const auto& diagnostic : result.diagnostics) {
-        if (diagnostic.code == "E-MATH-FORBIDDEN-ENV") found = true;
+        if (diagnostic.code == "E-MATH-FORBIDDEN-ENV")
+            found = true;
     }
     PF_CHECK(found);
 }
@@ -289,7 +284,8 @@ PF_TEST(MathPersistenceStoresBareLatexFields) {
 
     auto back = ProjectSerializer::Deserialize(json);
     PF_CHECK(back.ok());
-    if (!back.ok()) return;
+    if (!back.ok())
+        return;
     const auto& blocks = BodyOf(back.value().document).sections[0].blocks;
     PF_CHECK(blocks.size() == 2);
     const auto* stored_para = std::get_if<Paragraph>(&blocks[0]);
@@ -297,7 +293,8 @@ PF_TEST(MathPersistenceStoresBareLatexFields) {
     if (stored_para) {
         const auto* stored_math = std::get_if<InlineMath>(&stored_para->content[1]);
         PF_CHECK(stored_math != nullptr);
-        if (stored_math) PF_CHECK(stored_math->expression.latex == "\\frac{a}{b}");
+        if (stored_math)
+            PF_CHECK(stored_math->expression.latex == "\\frac{a}{b}");
     }
     const auto* stored_eq = std::get_if<EquationBlock>(&blocks[1]);
     PF_CHECK(stored_eq != nullptr);
@@ -330,7 +327,8 @@ PF_TEST(LegacyMathJsonStillLoads) {
     })";
     auto loaded = ProjectSerializer::Deserialize(legacy);
     PF_CHECK(loaded.ok());
-    if (!loaded.ok()) return;
+    if (!loaded.ok())
+        return;
     const auto& blocks = BodyOf(loaded.value().document).sections[0].blocks;
     PF_CHECK(blocks.size() == 2);
     const auto* para = std::get_if<Paragraph>(&blocks[0]);
@@ -338,7 +336,8 @@ PF_TEST(LegacyMathJsonStillLoads) {
     if (para) {
         const auto* math = std::get_if<InlineMath>(&para->content[1]);
         PF_CHECK(math != nullptr);
-        if (math) PF_CHECK(math->expression.latex == "\\alpha");
+        if (math)
+            PF_CHECK(math->expression.latex == "\\alpha");
     }
     const auto* eq = std::get_if<EquationBlock>(&blocks[1]);
     PF_CHECK(eq != nullptr);

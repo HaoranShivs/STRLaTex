@@ -29,7 +29,7 @@ namespace pf::test {
 
 // RAII 临时目录。构造时创建目录，析构时（递归地）删除；删除操作绝不抛异常。
 class ScopedTempDir {
-public:
+  public:
     explicit ScopedTempDir(std::string_view prefix) {
         static std::atomic<std::uint64_t> counter{0};
         static std::mt19937_64 rng([] {
@@ -38,9 +38,8 @@ public:
         }());
         const std::uint64_t unique = rng();
         const std::uint64_t sequence = counter.fetch_add(1);
-        std::string name = std::string(prefix) + "-" + std::to_string(PF_TEST_GETPID()) +
-                           "-" + std::to_string(sequence) + "-" +
-                           std::to_string(unique);
+        std::string name = std::string(prefix) + "-" + std::to_string(PF_TEST_GETPID()) + "-" +
+                           std::to_string(sequence) + "-" + std::to_string(unique);
         path_ = std::filesystem::temp_directory_path() / name;
         std::error_code ec;
         std::filesystem::remove_all(path_, ec);
@@ -55,15 +54,21 @@ public:
     ScopedTempDir(const ScopedTempDir&) = delete;
     ScopedTempDir& operator=(const ScopedTempDir&) = delete;
 
-    const std::filesystem::path& path() const { return path_; }
-    std::string string() const { return path_.string(); }
-    operator std::filesystem::path() const { return path_; }
+    const std::filesystem::path& path() const {
+        return path_;
+    }
+    std::string string() const {
+        return path_.string();
+    }
+    operator std::filesystem::path() const {
+        return path_;
+    }
     std::filesystem::path operator/(std::string_view child) const {
         return path_ / std::string(child);
     }
 
-private:
+  private:
     std::filesystem::path path_;
 };
 
-}  // namespace pf::test
+} // namespace pf::test

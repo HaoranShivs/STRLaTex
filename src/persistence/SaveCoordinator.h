@@ -26,8 +26,8 @@
 namespace pf {
 
 enum class SaveKind : std::uint8_t {
-    User,      // 显式保存到 project.paper
-    Autosave,  // 崩溃恢复 snapshot，绝不清除 Dirty
+    User,     // 显式保存到 project.paper
+    Autosave, // 崩溃恢复 snapshot，绝不清除 Dirty
 };
 
 const char* ToString(SaveKind kind);
@@ -69,11 +69,10 @@ struct SaveCompletion {
 };
 
 class SaveCoordinator {
-public:
+  public:
     // `on_completed` 在 save worker 线程上调用，因此必须线程安全。
     // 允许传入空回调（此时结果会被丢弃）。
-    explicit SaveCoordinator(
-        std::function<void(const SaveCompletion&)> on_completed = {});
+    explicit SaveCoordinator(std::function<void(const SaveCompletion&)> on_completed = {});
     ~SaveCoordinator();
 
     SaveCoordinator(const SaveCoordinator&) = delete;
@@ -83,14 +82,11 @@ public:
     // 当 coordinator 正在 stopping（或已 stopped）时返回 nullopt：
     // 若任务从未进入队列，调用方不得将其报告为已排队
     // （P0-03：关闭期间不得谎报 "Queued"）。
-    std::optional<SaveId> Enqueue(SerializedProject snapshot,
-                                  const std::filesystem::path& destination,
-                                  SaveKind kind);
+    std::optional<SaveId> Enqueue(SerializedProject snapshot, const std::filesystem::path& destination, SaveKind kind);
 
     // 应用线程：阻塞直到所有已入队任务写入完成，或超时到期
     // （P0-03：生产代码绝不无界等待 worker）。超时时返回 false。
-    bool Flush(std::chrono::milliseconds timeout =
-                   std::chrono::milliseconds{10000});
+    bool Flush(std::chrono::milliseconds timeout = std::chrono::milliseconds{10000});
 
     // 应用线程：停止接受新工作、排空队列、join。
     // 幂等；由析构函数调用。
@@ -99,7 +95,7 @@ public:
     // 已入队但尚未写入的任务（诊断/测试用）。
     size_t pending() const;
 
-private:
+  private:
     void WorkerLoop();
     SaveResult RunTask(const SaveTask& task);
 
@@ -115,4 +111,4 @@ private:
     bool stopped_ = false;
 };
 
-}  // namespace pf
+} // namespace pf

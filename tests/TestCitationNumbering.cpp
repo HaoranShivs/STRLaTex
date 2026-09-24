@@ -10,8 +10,8 @@
 //     （\citep{key}，绝不硬编码 [1]）。
 //   * 参考文献：导入时暴露重复 key；references.bib 是
 //     项目资源，随引用 key 一起在保存/重载后保留。
-#include "TestMain.hpp"
 #include "ScopedTempDir.hpp"
+#include "TestMain.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -44,8 +44,7 @@ ProjectSession::Config TestConfig() {
 
 // 构造一个文档，其各段落按顺序引用 `chains`
 // （每条 chain 一个段落，每条 chain 是一个多 key 引用）。
-Document MakeCitingDoc(const std::vector<std::vector<std::string>>& chains,
-                       std::vector<NodeId>* paragraphs = nullptr) {
+Document MakeCitingDoc(const std::vector<std::vector<std::string>>& chains, std::vector<NodeId>* paragraphs = nullptr) {
     Document doc;
     DocumentEditor editor(doc);
     auto s = editor.InsertSection(0, InlineFromText("S"));
@@ -56,7 +55,8 @@ Document MakeCitingDoc(const std::vector<std::vector<std::string>>& chains,
         cit.keys = chain;
         p.content.push_back(std::move(cit));
         editor.InsertBlock(s.value(), std::nullopt, p);
-        if (paragraphs) paragraphs->push_back(p.id);
+        if (paragraphs)
+            paragraphs->push_back(p.id);
     }
     return doc;
 }
@@ -75,12 +75,13 @@ BibliographyDatabase MakeDb(const std::vector<std::string>& keys) {
 int CountDiagnostics(const ValidationResult& r, const char* code) {
     int n = 0;
     for (const auto& d : r.diagnostics) {
-        if (d.code == code) ++n;
+        if (d.code == code)
+            ++n;
     }
     return n;
 }
 
-}  // namespace
+} // namespace
 
 // ---------------------------------------------------------------------------
 // 编号策略
@@ -138,7 +139,7 @@ PF_TEST(CitationUnknownKeyShowsQuestionMarkWithoutConsumingNumber) {
     PF_CHECK(resolver.Find("ghost")->display == "[?]");
     PF_CHECK(!resolver.Find("ghost")->resolved);
     PF_CHECK(resolver.Find("a")->number == 1);
-    PF_CHECK(resolver.Find("b") == std::nullopt);  // 从未被引用，但已知
+    PF_CHECK(resolver.Find("b") == std::nullopt); // 从未被引用，但已知
     PF_CHECK(resolver.FormatPill({"a", "ghost"}) == "[1, ?]");
 }
 
@@ -183,7 +184,7 @@ PF_TEST(ValidatorReportsCitationsWithoutBibliography) {
     ValidationInput input;
     input.document = &doc;
     input.template_id = "generic-article";
-    input.has_bibliography = false;  // 空参考文献
+    input.has_bibliography = false; // 空参考文献
     auto result = validator.Validate(input);
     // 只报一条可读的项目级错误，绝不按 key 逐个报噪声错误。
     PF_CHECK(CountDiagnostics(result, "E-CITATION-NO-BIBLIOGRAPHY") == 1);
@@ -197,10 +198,12 @@ PF_TEST(ValidatorReportsCitationsWithoutBibliography) {
 PF_TEST(GenericArticleUsesCitationOrderBibliographyStyle) {
     const auto* def = TemplateRegistry::Instance().Find("generic-article");
     PF_CHECK(def != nullptr);
-    if (def) PF_CHECK(def->bibliography_style == "unsrtnat");
+    if (def)
+        PF_CHECK(def->bibliography_style == "unsrtnat");
     // IEEE 保留 IEEEtran —— 同样按引用顺序编号。
     const auto* ieee = TemplateRegistry::Instance().Find("ieee-conference");
-    if (ieee) PF_CHECK(ieee->bibliography_style == "IEEEtran");
+    if (ieee)
+        PF_CHECK(ieee->bibliography_style == "IEEEtran");
 }
 
 PF_TEST(RendererEmitsSemanticCitesNeverNumbers) {
@@ -209,12 +212,12 @@ PF_TEST(RendererEmitsSemanticCitesNeverNumbers) {
     RenderRequest req;
     req.document = &doc;
     req.template_id = "generic-article";
-    req.bibliography_bibtex =
-        "@article{a, title={A}}\n@article{b, title={B}}";
+    req.bibliography_bibtex = "@article{a, title={A}}\n@article{b, title={B}}";
     auto result = renderer.Render(req);
     std::string tex;
     for (const auto& f : result.package.files) {
-        if (f.path == "main.tex") tex = f.content;
+        if (f.path == "main.tex")
+            tex = f.content;
     }
     PF_CHECK(tex.find("\\citep{a}") != std::string::npos);
     PF_CHECK(tex.find("\\citep{a,b}") != std::string::npos);
@@ -232,10 +235,9 @@ PF_TEST(RendererEmitsSemanticCitesNeverNumbers) {
 PF_TEST(BibliographyDuplicateKeysSurfacedOnImport) {
     BibliographyDatabase db;
     BibliographyService service(db);
-    auto r = service.ImportText(
-        "@article{x, title={First}}\n"
-        "@article{y, title={Unique}}\n"
-        "@article{x, title={Second}}\n");
+    auto r = service.ImportText("@article{x, title={First}}\n"
+                                "@article{y, title={Unique}}\n"
+                                "@article{x, title={Second}}\n");
     PF_CHECK(r.status == BibliographyImportResult::Status::Ok);
     PF_CHECK(r.duplicate_keys.size() == 1);
     if (!r.duplicate_keys.empty()) {
@@ -256,12 +258,10 @@ PF_TEST(BibliographyImportedAtomicallyAndReloaded) {
 
         // 引用方案 §7：*成功*导入会立即持久化 references.bib
         // —— 而非仅在保存时。
-        auto ok = session.ImportBibliography(
-            "@article{smith2024, author={J. Smith}, title={Seminal}, year={2024}}\n");
+        auto ok = session.ImportBibliography("@article{smith2024, author={J. Smith}, title={Seminal}, year={2024}}\n");
         PF_CHECK(ok.status == BibliographyImportResult::Status::Ok);
         PF_CHECK(std::filesystem::exists(dir / "references.bib"));
-        PF_CHECK(session.state().settings().bibliography_path ==
-                 "references.bib");
+        PF_CHECK(session.state().settings().bibliography_path == "references.bib");
         // 原子重命名不留下 .tmp 残留。
         PF_CHECK(!std::filesystem::exists(dir / "references.bib.tmp"));
 
@@ -291,8 +291,7 @@ PF_TEST(CitationKeysSurviveSaveAndReload) {
     {
         ProjectSession session(TestConfig());
         PF_CHECK(session.NewProject(dir));
-        session.ImportBibliography(
-            "@article{smith2024, title={S}}\n@article{jones2020, title={J}}\n");
+        session.ImportBibliography("@article{smith2024, title={S}}\n@article{jones2020, title={J}}\n");
 
         EditCommand cmd;
         cmd.operation_id = OperationId(IdGenerator::NewOperationId());
@@ -341,14 +340,11 @@ PF_TEST(CitationKeysSurviveSaveAndReload) {
     const Document& doc = reopened.state().document();
     bool found_citation = false;
     VisitNodes(doc, [&](const NodeAddress& address) {
-        if (const auto* block = FindBlock(
-                const_cast<Document&>(doc), address.node)) {
+        if (const auto* block = FindBlock(const_cast<Document&>(doc), address.node)) {
             if (const auto* para = std::get_if<Paragraph>(block)) {
                 for (const auto& node : para->content) {
                     if (const auto* cit = std::get_if<Citation>(&node)) {
-                        found_citation =
-                            cit->keys.size() == 1 &&
-                            cit->keys[0] == "smith2024";
+                        found_citation = cit->keys.size() == 1 && cit->keys[0] == "smith2024";
                     }
                 }
             }
@@ -357,8 +353,7 @@ PF_TEST(CitationKeysSurviveSaveAndReload) {
     PF_CHECK(found_citation);
     // 重新打开后编号以相同方式重算：key 被存储，
     // 编号是派生出来的（引用方案 §10）。
-    auto resolver =
-        CitationNumberResolver::Build(doc, reopened.bibliography());
+    auto resolver = CitationNumberResolver::Build(doc, reopened.bibliography());
     PF_CHECK(resolver.Find("smith2024")->number == 1);
     std::filesystem::remove_all(dir);
 }

@@ -37,11 +37,10 @@ struct CitationDisplayInfo {
 };
 
 class CitationNumberResolver {
-public:
+  public:
     // 按阅读顺序遍历 `document`，为 `bibliography` 中存在的每个 key 编号。
     // 未被任何位置引用的 key 完全不会获得条目。
-    static CitationNumberResolver Build(const Document& document,
-                                        const BibliographyDatabase& bibliography);
+    static CitationNumberResolver Build(const Document& document, const BibliographyDatabase& bibliography);
 
     // 单个 key 的编号。当 bibliography 知道该 key 但文档尚未引用它时返回
     // nullopt；被引用但未知的 key 以未解析状态返回，display 为 "[?]"
@@ -56,13 +55,15 @@ public:
     // key 显示为 "?"。输出示例："[1]"、"[1, 3]"、"[1-3]"、"[2, ?]"。
     std::string FormatPill(const std::vector<std::string>& keys) const;
 
-    bool empty() const noexcept { return numbers_.empty(); }
+    bool empty() const noexcept {
+        return numbers_.empty();
+    }
 
     const std::map<std::string, int>& numbers() const noexcept {
         return numbers_;
     }
 
-private:
+  private:
     // key -> 从 1 开始的编号，按首次出现的引用顺序。它持有完整答案：
     // 不保留指向 bibliography 或 document 的回指，因此 GUI 可以长期持有
     // 该共享实例而不产生任何生命周期耦合。
@@ -70,4 +71,4 @@ private:
     std::set<std::string> known_keys_;
 };
 
-}  // namespace pf
+} // namespace pf

@@ -21,9 +21,8 @@ constexpr qreal kRadius = 4.0;
 QFont PillFont(const QTextCharFormat& format, const QTextDocument* document) {
     // 插入点会把格式的字体设为文档字体；当格式在别处构建时，回退到文档
     // 默认字体。
-    QFont font = format.hasProperty(QTextFormat::FontFamily)
-                     ? format.font()
-                     : (document ? document->defaultFont() : QFont());
+    QFont font =
+        format.hasProperty(QTextFormat::FontFamily) ? format.font() : (document ? document->defaultFont() : QFont());
     font.setWeight(QFont::DemiBold);
     return font;
 }
@@ -31,10 +30,9 @@ QFont PillFont(const QTextCharFormat& format, const QTextDocument* document) {
 QString DisplayOf(const QTextCharFormat& format) {
     return format.property(citation_format::kDisplayTextProperty).toString();
 }
-}  // namespace
+} // namespace
 
-QSizeF CitationObjectRenderer::intrinsicSize(QTextDocument* document, int,
-                                             const QTextFormat& base) {
+QSizeF CitationObjectRenderer::intrinsicSize(QTextDocument* document, int, const QTextFormat& base) {
     const QTextCharFormat format = base.toCharFormat();
     const QFont font = PillFont(format, document);
     const QFontMetricsF metrics(font);
@@ -46,21 +44,21 @@ QSizeF CitationObjectRenderer::intrinsicSize(QTextDocument* document, int,
     return QSizeF(width, metrics.ascent() + kAboveAscent);
 }
 
-void CitationObjectRenderer::drawObject(QPainter* painter, const QRectF& rect,
-                                        QTextDocument* document, int,
+void CitationObjectRenderer::drawObject(QPainter* painter, const QRectF& rect, QTextDocument* document, int,
                                         const QTextFormat& base) {
-    if (!painter) return;
+    if (!painter)
+        return;
     const QTextCharFormat format = base.toCharFormat();
     const QString display = DisplayOf(format);
-    if (display.isEmpty()) return;
+    if (display.isEmpty())
+        return;
 
     const QFont font = PillFont(format, document);
 
     // 对于 AlignNormal，保留框从 (baseline - ascent - pad) 延伸到
     // rect.bottom() == baseline。将其向下扩展基线下方的少量下探，得到完整
     // 的 pill。
-    const QRectF pill(rect.left(), rect.top(), rect.width(),
-                      rect.height() + kBelowBaseline);
+    const QRectF pill(rect.left(), rect.top(), rect.width(), rect.height() + kBelowBaseline);
 
     QColor fill(theme::kAccentSoft);
     QColor border(theme::kAccent);
@@ -76,9 +74,8 @@ void CitationObjectRenderer::drawObject(QPainter* painter, const QRectF& rect,
     painter->setFont(font);
     painter->setPen(text_color);
     // 绘制在该行自身的基线上，使 pill 看起来是文本的一部分。
-    painter->drawText(QPointF(pill.left() + kPadX, rect.bottom() - 0.5),
-                      display);
+    painter->drawText(QPointF(pill.left() + kPadX, rect.bottom() - 0.5), display);
     painter->restore();
 }
 
-}  // namespace pf::gui
+} // namespace pf::gui

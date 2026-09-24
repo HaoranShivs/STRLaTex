@@ -8,12 +8,18 @@ namespace pf {
 
 std::string PathErrorMessage(PathError error) {
     switch (error) {
-        case PathError::Empty: return "path is empty";
-        case PathError::Absolute: return "path must be relative to the project";
-        case PathError::OutsideProjectRoot: return "path escapes the project directory";
-        case PathError::InvalidComponent: return "path contains an invalid component";
-        case PathError::TooLong: return "path is too long";
-        case PathError::NotResolved: return "path cannot be resolved inside the project";
+    case PathError::Empty:
+        return "path is empty";
+    case PathError::Absolute:
+        return "path must be relative to the project";
+    case PathError::OutsideProjectRoot:
+        return "path escapes the project directory";
+    case PathError::InvalidComponent:
+        return "path contains an invalid component";
+    case PathError::TooLong:
+        return "path is too long";
+    case PathError::NotResolved:
+        return "path cannot be resolved inside the project";
     }
     return "unknown path error";
 }
@@ -41,8 +47,7 @@ bool HasRootComponent(const std::filesystem::path& p) {
     if (!native.empty() && (native.front() == '/' || native.front() == '\\'))
         return true;
     if (native.size() >= 2 && native[1] == ':' &&
-        ((native[0] >= 'a' && native[0] <= 'z') ||
-         (native[0] >= 'A' && native[0] <= 'Z'))) {
+        ((native[0] >= 'a' && native[0] <= 'z') || (native[0] >= 'A' && native[0] <= 'Z'))) {
         return true;
     }
     return false;
@@ -70,10 +75,9 @@ RawComponents SplitRaw(std::string_view raw) {
     return out;
 }
 
-}  // namespace
+} // namespace
 
-Result<ProjectRelativePath, PathError> ProjectRelativePath::Parse(
-    std::string_view raw) {
+Result<ProjectRelativePath, PathError> ProjectRelativePath::Parse(std::string_view raw) {
     if (raw.empty())
         return Unexpected2<PathError>(PathError::Empty);
     if (raw.size() > kMaxPathBytes)
@@ -107,21 +111,18 @@ Result<ProjectRelativePath, PathError> ProjectRelativePath::Parse(
     if (normalized.empty())
         return Unexpected2<PathError>(PathError::Empty);
 
-    return ProjectRelativePath(std::move(normalized),
-                               std::filesystem::path(normalized));
+    return ProjectRelativePath(std::move(normalized), std::filesystem::path(normalized));
 }
 
-Result<std::filesystem::path, PathError> ResolveProjectRelativePath(
-    const std::filesystem::path& project_root,
-    const ProjectRelativePath& relative) {
+Result<std::filesystem::path, PathError> ResolveProjectRelativePath(const std::filesystem::path& project_root,
+                                                                    const ProjectRelativePath& relative) {
     std::error_code ec;
     // 弱规范化：解析已存在的部分（含符号链接），但不要求目标已存在。
     const std::filesystem::path root = std::filesystem::weakly_canonical(project_root, ec);
     if (ec)
         return Unexpected2<PathError>(PathError::NotResolved);
 
-    std::filesystem::path target =
-        std::filesystem::weakly_canonical(project_root / relative.path(), ec);
+    std::filesystem::path target = std::filesystem::weakly_canonical(project_root / relative.path(), ec);
     if (ec)
         return Unexpected2<PathError>(PathError::NotResolved);
 
@@ -131,8 +132,7 @@ Result<std::filesystem::path, PathError> ResolveProjectRelativePath(
     auto target_it = target.begin();
     // 在 POSIX 上两者都以 "/" 开头；跳过共同的根分隔符，使比较从第一个真实
     // 组件开始。
-    while (root_it != root_end && target_it != target.end() &&
-           *root_it == *target_it) {
+    while (root_it != root_end && target_it != target.end() && *root_it == *target_it) {
         ++root_it;
         ++target_it;
     }
@@ -143,12 +143,12 @@ Result<std::filesystem::path, PathError> ResolveProjectRelativePath(
     return target;
 }
 
-Result<std::filesystem::path, PathError> ResolveUntrustedProjectPath(
-    const std::filesystem::path& project_root, std::string_view raw) {
+Result<std::filesystem::path, PathError> ResolveUntrustedProjectPath(const std::filesystem::path& project_root,
+                                                                     std::string_view raw) {
     auto parsed = ProjectRelativePath::Parse(raw);
     if (!parsed.ok())
         return Unexpected2<PathError>(parsed.error());
     return ResolveProjectRelativePath(project_root, parsed.value());
 }
 
-}  // namespace pf
+} // namespace pf

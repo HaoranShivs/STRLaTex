@@ -22,12 +22,12 @@ struct SerializedProject {
     std::string template_id;
     Document document;
     std::vector<AssetMetadata> assets;
-    std::string bibliography_path = "references.bib";  // 相对路径
-    ProjectRevision revision;  // 带类型的 revision（唯一事实来源）
+    std::string bibliography_path = "references.bib"; // 相对路径
+    ProjectRevision revision;                         // 带类型的 revision（唯一事实来源）
 };
 
 class ProjectSerializer {
-public:
+  public:
     // 序列化为 JSON 文本。
     static std::string Serialize(const SerializedProject& project);
 
@@ -43,7 +43,7 @@ struct SaveRequest {
     std::string save_id;
     ProjectId project_id;
     ProjectRevision revision;
-    std::filesystem::path destination;  // project.paper 的路径
+    std::filesystem::path destination; // project.paper 的路径
     SerializedProject snapshot;
 };
 
@@ -59,7 +59,7 @@ struct SaveResult {
 };
 
 struct LoadRequest {
-    std::filesystem::path project_file;  // project.paper 路径
+    std::filesystem::path project_file; // project.paper 路径
 };
 
 struct LoadResult {
@@ -74,7 +74,7 @@ struct LoadResult {
 };
 
 class ProjectPersistence {
-public:
+  public:
     // 超过此大小的文件在读取前即被拒绝（P0-02）：损坏或恶意的 .paper
     // 文件无法让应用分配无界内存。
     static constexpr std::uintmax_t kMaxProjectFileBytes = 32 * 1024 * 1024;
@@ -84,4 +84,4 @@ public:
     static LoadResult Load(const LoadRequest& request);
 };
 
-}  // namespace pf
+} // namespace pf

@@ -26,7 +26,9 @@ namespace {
 
 // QApplication 由 GUI 测试驱动为整个二进制只创建一次；
 // 这些测试只构建 widget，因此在它不存在时创建局部实例是安全的。
-QApplication* EnsureApp() { return qApp; }
+QApplication* EnsureApp() {
+    return qApp;
+}
 
 // 向 `editor` 输入 `text` 并施加 `marks`，如同用户按下 Ctrl+B/I 一样。
 void TypeRun(InlineEditor* editor, const QString& text, std::uint8_t marks) {
@@ -35,16 +37,17 @@ void TypeRun(InlineEditor* editor, const QString& text, std::uint8_t marks) {
     QTextCursor cursor(editor->document());
     cursor.movePosition(QTextCursor::End);
     QTextCharFormat format;
-    format.setFontWeight(HasMark(marks, TextMark::Strong) ? QFont::Bold
-                                                          : QFont::Normal);
+    format.setFontWeight(HasMark(marks, TextMark::Strong) ? QFont::Bold : QFont::Normal);
     format.setFontItalic(HasMark(marks, TextMark::Emphasis));
     cursor.setCharFormat(format);
     cursor.insertText(text);
 }
 
-Body& BodyOf(Document& doc) { return DocumentMutableAccess::body(doc); }
+Body& BodyOf(Document& doc) {
+    return DocumentMutableAccess::body(doc);
+}
 
-}  // namespace
+} // namespace
 
 PF_TEST(InlineEditorReturnsExactRuns) {
     EnsureApp();
@@ -58,8 +61,7 @@ PF_TEST(InlineEditorReturnsExactRuns) {
     std::cout << "    runs:";
     for (const auto& node : content) {
         if (const auto* run = std::get_if<TextRun>(&node)) {
-            std::cout << " [" << run->text << "|" << static_cast<int>(run->marks)
-                      << "]";
+            std::cout << " [" << run->text << "|" << static_cast<int>(run->marks) << "]";
         }
     }
     std::cout << "\n";
@@ -119,8 +121,7 @@ PF_TEST(InlineEditorBoldAndItalicTogetherReachTheLatex) {
     EnsureApp();
     InlineEditor editor;
     TypeRun(&editor, QStringLiteral("plain "), 0);
-    TypeRun(&editor, QStringLiteral("both"),
-            TextMark::Strong | TextMark::Emphasis);
+    TypeRun(&editor, QStringLiteral("both"), TextMark::Strong | TextMark::Emphasis);
 
     const InlineContent content = editor.Content();
     PF_CHECK(content.size() == 2);
@@ -164,7 +165,8 @@ PF_TEST(InlineEditorRoundTripsThroughTheModel) {
     PF_CHECK(reloaded == committed);
     const auto* bold = std::get_if<TextRun>(&reloaded[1]);
     PF_CHECK(bold && bold->text == "bold");
-    if (bold) PF_CHECK(HasMark(bold->marks, TextMark::Strong));
+    if (bold)
+        PF_CHECK(HasMark(bold->marks, TextMark::Strong));
 }
 
 PF_TEST(InlineEditorItalicSurvivesAProgrammaticReload) {
@@ -182,7 +184,8 @@ PF_TEST(InlineEditorItalicSurvivesAProgrammaticReload) {
     PF_CHECK(again == committed);
     const auto* run = std::get_if<TextRun>(&again[1]);
     PF_CHECK(run && run->text == "slanted");
-    if (run) PF_CHECK(HasMark(run->marks, TextMark::Emphasis));
+    if (run)
+        PF_CHECK(HasMark(run->marks, TextMark::Emphasis));
 }
 
 PF_TEST(InlineEditorKeepsTokensAcrossAReload) {
@@ -197,8 +200,10 @@ PF_TEST(InlineEditorKeepsTokensAcrossAReload) {
     size_t citations = 0;
     size_t references = 0;
     for (const auto& node : committed) {
-        if (std::holds_alternative<Citation>(node)) ++citations;
-        if (std::holds_alternative<CrossReference>(node)) ++references;
+        if (std::holds_alternative<Citation>(node))
+            ++citations;
+        if (std::holds_alternative<CrossReference>(node))
+            ++references;
     }
     std::cout << "    tokens:";
     for (const auto& node : committed) {
@@ -222,7 +227,8 @@ PF_TEST(InlineEditorKeepsTokensAcrossAReload) {
     PF_CHECK(!as_text.contains(QChar(0xE000)));
     int object_chars = 0;
     for (const QChar ch : as_text) {
-        if (ch == QChar(0xFFFC)) ++object_chars;
+        if (ch == QChar(0xFFFC))
+            ++object_chars;
     }
     PF_CHECK(object_chars == 2);
 
@@ -231,8 +237,7 @@ PF_TEST(InlineEditorKeepsTokensAcrossAReload) {
     reloaded.SetContent(committed);
     const InlineContent again = reloaded.Content();
     const auto* citation = std::get_if<Citation>(&again[1]);
-    PF_CHECK(citation && citation->keys.size() == 1 &&
-             citation->keys.front() == "smith2024");
+    PF_CHECK(citation && citation->keys.size() == 1 && citation->keys.front() == "smith2024");
     const auto* reference = std::get_if<CrossReference>(&again[2]);
     PF_CHECK(reference && reference->target == NodeId("n7"));
 }
@@ -260,7 +265,8 @@ PF_TEST(InlineEditorToolbarToggleMarksTheSelection) {
     }
     const auto* tail = std::get_if<TextRun>(&content[1]);
     PF_CHECK(tail && tail->text == " me");
-    if (tail) PF_CHECK(tail->marks == 0);
+    if (tail)
+        PF_CHECK(tail->marks == 0);
 }
 
 PF_TEST(InlineEditorDirtyFlagGuardsTheRebuild) {
@@ -278,14 +284,12 @@ PF_TEST(InlineEditorDirtyFlagGuardsTheRebuild) {
     PF_CHECK(!editor.IsDirty());
 }
 
-
 PF_TEST(InlineEditorHeightDoesNotBlowUpWhenUnlaid) {
     EnsureApp();
     InlineEditor editor;
     editor.resize(600, 30);
-    editor.SetContent(InlineFromText(
-        "A paragraph long enough to wrap onto a couple of lines when the "
-        "editor is six hundred pixels wide, but not much more."));
+    editor.SetContent(InlineFromText("A paragraph long enough to wrap onto a couple of lines when the "
+                                     "editor is six hundred pixels wide, but not much more."));
     editor.ResizeToContent();
     const int laid_out = editor.height();
 
@@ -298,9 +302,8 @@ PF_TEST(InlineEditorHeightDoesNotBlowUpWhenUnlaid) {
     editor.ResizeToContent();
     const int remeasured = editor.height();
 
-    std::cout << "    height: laid_out=" << laid_out
-              << " remeasured=" << remeasured
-              << " widget_width=" << widget_width << "\n";
+    std::cout << "    height: laid_out=" << laid_out << " remeasured=" << remeasured << " widget_width=" << widget_width
+              << "\n";
     // 在相同 widget 宽度下重新测量不得改变高度。旧代码依据
     // viewport()->width() 测量，而该值在 rebuild 期间会塌缩，
     // 结果每个单词各占一行。
@@ -313,10 +316,9 @@ PF_TEST(InlineEditorHeightDoesNotBlowUpWhenUnlaid) {
 // Delete 又能恢复」的报告。
 PF_TEST(FreshlyBuiltRowIsNotPinnedToAGiantHeight) {
     EnsureApp();
-    const QString text = QStringLiteral(
-        "Infrared small target detection has attracted considerable attention "
-        "in recent years, yet robust detection under complex backgrounds "
-        "remains difficult because targets occupy only a few pixels.");
+    const QString text = QStringLiteral("Infrared small target detection has attracted considerable attention "
+                                        "in recent years, yet robust detection under complex backgrounds "
+                                        "remains difficult because targets occupy only a few pixels.");
 
     InlineEditor fresh;
     fresh.SetContent(InlineFromText(text.toStdString()));
@@ -328,8 +330,7 @@ PF_TEST(FreshlyBuiltRowIsNotPinnedToAGiantHeight) {
     laid_out.ResizeToContent();
     const int target_height = laid_out.height();
 
-    std::cout << "    height: fresh=" << unlaid_height
-              << " laid_out=" << target_height << "\n";
+    std::cout << "    height: fresh=" << unlaid_height << " laid_out=" << target_height << "\n";
     // 尚未完成 layout 的行，其高度不得比已知宽度后同样文本的
     // 高度高出数倍。
     PF_CHECK(unlaid_height <= target_height * 3);
@@ -345,10 +346,9 @@ PF_TEST(FreshlyBuiltRowIsNotPinnedToAGiantHeight) {
 // 用户不应该为了恢复空白区域而按 Delete。
 PF_TEST(WideningARowReflowsWithoutUserInput) {
     EnsureApp();
-    const QString text = QStringLiteral(
-        "A paragraph that needs quite a few lines when the editor is narrow "
-        "and noticeably fewer once the row has been given its real width by "
-        "the surrounding layout.");
+    const QString text = QStringLiteral("A paragraph that needs quite a few lines when the editor is narrow "
+                                        "and noticeably fewer once the row has been given its real width by "
+                                        "the surrounding layout.");
 
     InlineEditor editor;
     // 必须显示顶层 widget，resize 事件才会被投递。

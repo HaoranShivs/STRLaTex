@@ -19,8 +19,12 @@ struct PdfArtifact {
     BuildId build_id;
     ProjectRevision revision;
 
-    bool valid() const noexcept { return !path.empty(); }
-    void clear() { path.clear(); }
+    bool valid() const noexcept {
+        return !path.empty();
+    }
+    void clear() {
+        path.clear();
+    }
 };
 
 struct PreviewUpdate {
@@ -33,4 +37,4 @@ struct PreviewUpdate {
     bool success = false;
 };
 
-}  // namespace pf
+} // namespace pf

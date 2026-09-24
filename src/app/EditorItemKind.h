@@ -45,4 +45,4 @@ bool EditorItemKindFromName(const QString& name, EditorItemKind* out);
 // 自 NodeKind。
 EditorItemKind EditorItemKindOfNode(NodeKind kind);
 
-}  // namespace pf::gui
+} // namespace pf::gui

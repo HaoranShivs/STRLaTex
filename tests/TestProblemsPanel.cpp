@@ -3,8 +3,8 @@
 #include "TestMain.hpp"
 
 #include <QListWidget>
-#include <QRegularExpression>
 #include <QPlainTextEdit>
+#include <QRegularExpression>
 #include <QTabBar>
 
 #include "app/ProblemsPanel.h"
@@ -25,8 +25,7 @@ QTabBar* Tabs(ProblemsPanel& panel) {
     return panel.findChild<QTabBar*>("problemTabs");
 }
 
-Diagnostic MakeDiag(DiagnosticSeverity severity, std::string message,
-                    std::string code = "X") {
+Diagnostic MakeDiag(DiagnosticSeverity severity, std::string message, std::string code = "X") {
     Diagnostic d;
     d.severity = severity;
     d.message = std::move(message);
@@ -34,8 +33,7 @@ Diagnostic MakeDiag(DiagnosticSeverity severity, std::string message,
     return d;
 }
 
-BuildEvent MakeEvent(const BuildId& id, BuildEventType type,
-                     std::string message) {
+BuildEvent MakeEvent(const BuildId& id, BuildEventType type, std::string message) {
     BuildEvent e;
     e.build_id = id;
     e.timestamp_ms = BuildEventNowMs();
@@ -44,7 +42,7 @@ BuildEvent MakeEvent(const BuildId& id, BuildEventType type,
     return e;
 }
 
-}  // namespace
+} // namespace
 
 PF_TEST(ProblemsPanelEmptyStates) {
     ProblemsPanel panel;
@@ -54,8 +52,7 @@ PF_TEST(ProblemsPanelEmptyStates) {
     PF_CHECK_EQ(list->count(), 1);
     PF_CHECK(list->item(0)->text().contains("No build diagnostics available"));
     // build 进行中……
-    panel.AppendEvent(MakeEvent(BuildId("b1"), BuildEventType::BuildStarted,
-                                "Build started (snapshot s1)"));
+    panel.AppendEvent(MakeEvent(BuildId("b1"), BuildEventType::BuildStarted, "Build started (snapshot s1)"));
     PF_CHECK_EQ(list->count(), 1);
     PF_CHECK(list->item(0)->text().contains("Building"));
     // 完成且零问题：ok-empty 状态（方案 §42）。
@@ -96,7 +93,7 @@ PF_TEST(ProblemsPanelStaleMarker) {
     // 文档已变更但未重新 build：仅显示 Outdated 状态文字（§49）。
     panel.SetStale(true, 3);
     PF_CHECK(Tabs(panel)->tabText(0).contains("Outdated"));
-    PF_CHECK_EQ(ProblemList(panel)->count(), 1);  // 各行保持不变
+    PF_CHECK_EQ(ProblemList(panel)->count(), 1); // 各行保持不变
     // 下一次 build 的结果会清除该标记（方案 §49）。
     panel.SetDiagnostics({});
     PF_CHECK(!Tabs(panel)->tabText(0).contains("Outdated"));
@@ -105,19 +102,12 @@ PF_TEST(ProblemsPanelStaleMarker) {
 PF_TEST(ProblemsPanelStreamedBuildLog) {
     ProblemsPanel panel;
     const BuildId build("b1");
-    panel.AppendEvent(MakeEvent(build, BuildEventType::BuildStarted,
-                                "Build started (snapshot s1)"));
-    panel.AppendEvent(
-        MakeEvent(build, BuildEventType::GenerationStarted, "Generating LaTeX"));
-    panel.AppendEvent(MakeEvent(build, BuildEventType::StdOut,
-                                "This is pdfTeX\nOutput written"));
-    panel.AppendEvent(MakeEvent(build, BuildEventType::StdErr,
-                                "kaboom on stderr"));
-    panel.AppendEvent(MakeEvent(build, BuildEventType::ProcessFinished,
-                                "Process exited with code 0"));
-    panel.AppendEvent(
-        MakeEvent(build, BuildEventType::BuildSucceeded,
-                  "Build succeeded (1.662 s)"));
+    panel.AppendEvent(MakeEvent(build, BuildEventType::BuildStarted, "Build started (snapshot s1)"));
+    panel.AppendEvent(MakeEvent(build, BuildEventType::GenerationStarted, "Generating LaTeX"));
+    panel.AppendEvent(MakeEvent(build, BuildEventType::StdOut, "This is pdfTeX\nOutput written"));
+    panel.AppendEvent(MakeEvent(build, BuildEventType::StdErr, "kaboom on stderr"));
+    panel.AppendEvent(MakeEvent(build, BuildEventType::ProcessFinished, "Process exited with code 0"));
+    panel.AppendEvent(MakeEvent(build, BuildEventType::BuildSucceeded, "Build succeeded (1.662 s)"));
     auto* view = LogView(panel);
     const QString text = view->toPlainText();
     // 生命周期事件渲染为 [HH:mm:ss.zzz] message（方案 §7）。
@@ -138,15 +128,12 @@ PF_TEST(ProblemsPanelLogIsolatedPerBuild) {
     ProblemsPanel panel;
     const BuildId first("b1");
     const BuildId second("b2");
-    panel.AppendEvent(
-        MakeEvent(first, BuildEventType::BuildStarted, "Build started"));
+    panel.AppendEvent(MakeEvent(first, BuildEventType::BuildStarted, "Build started"));
     panel.AppendEvent(MakeEvent(first, BuildEventType::StdOut, "old build text"));
     // 新的 build 开始时清除上一次的日志，绝不合并
     // （方案 §8/§30）。
-    panel.AppendEvent(
-        MakeEvent(second, BuildEventType::BuildStarted, "Build started"));
-    panel.AppendEvent(
-        MakeEvent(second, BuildEventType::StdOut, "new build text"));
+    panel.AppendEvent(MakeEvent(second, BuildEventType::BuildStarted, "Build started"));
+    panel.AppendEvent(MakeEvent(second, BuildEventType::StdOut, "new build text"));
     const QString text = LogView(panel)->toPlainText();
     PF_CHECK(!text.contains("old build text"));
     PF_CHECK(text.contains("new build text"));

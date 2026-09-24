@@ -7,9 +7,9 @@
 // 因为这两个症状在领域层都不存在。
 #include <QApplication>
 #include <QElapsedTimer>
-#include <QThread>
 #include <QTextCharFormat>
 #include <QTextCursor>
+#include <QThread>
 #include <QToolButton>
 
 #include <filesystem>
@@ -30,9 +30,13 @@ using namespace pf::gui;
 
 namespace {
 
-QApplication* EnsureQApplication() { return qApp; }
+QApplication* EnsureQApplication() {
+    return qApp;
+}
 
-Body& BodyOf(Document& doc) { return DocumentMutableAccess::body(doc); }
+Body& BodyOf(Document& doc) {
+    return DocumentMutableAccess::body(doc);
+}
 
 void Spin(int ms) {
     QElapsedTimer timer;
@@ -46,8 +50,10 @@ void Spin(int ms) {
 // 某个节点 id 对应的可见富文本编辑器。
 InlineEditor* FindRich(MainWindow& window, const QString& node_id) {
     for (InlineEditor* edit : window.findChildren<InlineEditor*>()) {
-        if (!edit->isVisible()) continue;
-        if (edit->property("row_node").toString() == node_id) return edit;
+        if (!edit->isVisible())
+            continue;
+        if (edit->property("row_node").toString() == node_id)
+            return edit;
     }
     return nullptr;
 }
@@ -56,10 +62,10 @@ InlineEditor* FindRich(MainWindow& window, const QString& node_id) {
 std::vector<QToolButton*> ToolbarButtons(MainWindow& window) {
     std::vector<QToolButton*> out;
     for (QToolButton* button : window.findChildren<QToolButton*>()) {
-        if (!button->isVisible()) continue;  // 来自某次重建的陈旧工具栏
+        if (!button->isVisible())
+            continue; // 来自某次重建的陈旧工具栏
         const QString text = button->text();
-        if (text == "B" || text == "I" || text == "Inline Math" ||
-            text == "Citation" || text == "Reference") {
+        if (text == "B" || text == "I" || text == "Inline Math" || text == "Citation" || text == "Reference") {
             out.push_back(button);
         }
     }
@@ -68,7 +74,8 @@ std::vector<QToolButton*> ToolbarButtons(MainWindow& window) {
 
 QToolButton* FindButton(MainWindow& window, const QString& text) {
     for (QToolButton* button : ToolbarButtons(window)) {
-        if (button->text() == text) return button;
+        if (button->text() == text)
+            return button;
     }
     return nullptr;
 }
@@ -81,8 +88,7 @@ struct Fixture {
     explicit Fixture(const QString& dir_name) {
         window.resize(1400, 900);
         window.show();
-        auto dir = std::filesystem::temp_directory_path() /
-                   dir_name.toStdString();
+        auto dir = std::filesystem::temp_directory_path() / dir_name.toStdString();
         std::filesystem::remove_all(dir);
         // 先创建项目，再保存并重新打开：正是「打开」这一操作把窗口从欢迎页
         // 切换到工作区，与真实会话完全一致。缺少这一步，编辑器行会一直隐藏。
@@ -93,8 +99,7 @@ struct Fixture {
         Spin(250);
 
         auto section = window.controller()->InsertSection(QStringLiteral("S"));
-        auto paragraph = window.controller()->InsertParagraph(
-            section.created_node, QStringLiteral("word"));
+        auto paragraph = window.controller()->InsertParagraph(section.created_node, QStringLiteral("word"));
         node_id = QString::fromStdString(paragraph.created_node.value());
         Spin(300);
     }
@@ -104,22 +109,23 @@ struct Fixture {
 const Paragraph* StoredParagraph(MainWindow& window) {
     Document& doc = window.controller()->session().mutable_document();
     const auto& sections = BodyOf(doc).sections;
-    if (sections.empty() || sections[0].blocks.empty()) return nullptr;
+    if (sections.empty() || sections[0].blocks.empty())
+        return nullptr;
     return std::get_if<Paragraph>(&sections[0].blocks[0]);
 }
 
 std::string RenderedTex(MainWindow& window) {
     RenderRequest request;
     request.document = &window.controller()->session().state().document();
-    request.template_id =
-        window.controller()->session().state().template_selection();
+    request.template_id = window.controller()->session().state().template_selection();
     request.revision = window.controller()->session().current_revision();
     auto rendered = LatexRenderer().Render(request);
-    if (rendered.package.files.empty()) return {};
+    if (rendered.package.files.empty())
+        return {};
     return rendered.package.files[0].content;
 }
 
-}  // namespace
+} // namespace
 
 // ---- 问题 1：点击工具栏会不会把行高撑大？----
 
@@ -128,7 +134,8 @@ PF_TEST(ToolbarClickDoesNotGrowTheTextRow) {
     Fixture fixture("pf-toolbar-height");
     InlineEditor* editor = FindRich(fixture.window, fixture.node_id);
     PF_CHECK(editor != nullptr);
-    if (!editor) return;
+    if (!editor)
+        return;
 
     const int before = editor->height();
 
@@ -140,18 +147,19 @@ PF_TEST(ToolbarClickDoesNotGrowTheTextRow) {
     // 完全按照用户的操作点击斜体按钮。
     QToolButton* italic = FindButton(fixture.window, QStringLiteral("I"));
     PF_CHECK(italic != nullptr);
-    if (!italic) return;
-    std::cout << "    italic button focusPolicy=" << italic->focusPolicy()
-              << " (0 == NoFocus)\n";
+    if (!italic)
+        return;
+    std::cout << "    italic button focusPolicy=" << italic->focusPolicy() << " (0 == NoFocus)\n";
     italic->click();
     Spin(400);
 
     InlineEditor* after_editor = FindRich(fixture.window, fixture.node_id);
     PF_CHECK(after_editor != nullptr);
-    if (!after_editor) return;
+    if (!after_editor)
+        return;
     const int after = after_editor->height();
-    std::cout << "    row height before=" << before << " after=" << after
-              << " widget_width=" << after_editor->width() << "\n";
+    std::cout << "    row height before=" << before << " after=" << after << " widget_width=" << after_editor->width()
+              << "\n";
     // 该行可能被重建，但绝不能变成一大块空白框。
     PF_CHECK(after <= before + 20);
 }
@@ -161,13 +169,15 @@ PF_TEST(ToolbarClickKeepsTheCaretInTheRow) {
     Fixture fixture("pf-toolbar-focus");
     InlineEditor* editor = FindRich(fixture.window, fixture.node_id);
     PF_CHECK(editor != nullptr);
-    if (!editor) return;
+    if (!editor)
+        return;
     editor->setFocus(Qt::MouseFocusReason);
     Spin(120);
 
     QToolButton* italic = FindButton(fixture.window, QStringLiteral("I"));
     PF_CHECK(italic != nullptr);
-    if (!italic) return;
+    if (!italic)
+        return;
     italic->click();
     Spin(300);
 
@@ -193,7 +203,8 @@ struct MarkOutcome {
 MarkOutcome FormatFirstWord(MainWindow& window, const QString& node_id) {
     MarkOutcome outcome;
     InlineEditor* editor = FindRich(window, node_id);
-    if (!editor) return outcome;
+    if (!editor)
+        return outcome;
     // 真实用户在操作工具栏之前会先点进段落。
     editor->setFocus(Qt::MouseFocusReason);
     Spin(120);
@@ -206,9 +217,11 @@ MarkOutcome FormatFirstWord(MainWindow& window, const QString& node_id) {
 
     QToolButton* bold = FindButton(window, QStringLiteral("B"));
     QToolButton* italic = FindButton(window, QStringLiteral("I"));
-    if (italic) italic->click();
+    if (italic)
+        italic->click();
     Spin(150);
-    if (bold) bold->click();
+    if (bold)
+        bold->click();
     Spin(300);
 
     // 按用户的方式提交：离开该行（点击别处）。
@@ -222,8 +235,7 @@ MarkOutcome FormatFirstWord(MainWindow& window, const QString& node_id) {
         std::cout << "      stored:";
         for (const auto& node : paragraph->content) {
             if (const auto* run = std::get_if<TextRun>(&node)) {
-                std::cout << " [" << run->text << "|"
-                          << static_cast<int>(run->marks) << "]";
+                std::cout << " [" << run->text << "|" << static_cast<int>(run->marks) << "]";
             }
         }
         std::cout << "\n";
@@ -240,30 +252,23 @@ MarkOutcome FormatFirstWord(MainWindow& window, const QString& node_id) {
     }
     const std::string tex = RenderedTex(window);
     // 粗体+斜体嵌套为 \textbf{\emph{word}}，因此两种形式都接受。
-    outcome.tex_bold = tex.find("\\textbf{") != std::string::npos &&
-                       tex.find("word") != std::string::npos;
-    outcome.tex_italic = tex.find("\\emph{") != std::string::npos &&
-                         tex.find("word") != std::string::npos;
+    outcome.tex_bold = tex.find("\\textbf{") != std::string::npos && tex.find("word") != std::string::npos;
+    outcome.tex_italic = tex.find("\\emph{") != std::string::npos && tex.find("word") != std::string::npos;
     return outcome;
 }
 
-}  // namespace
+} // namespace
 
 PF_TEST(ToolbarMarksWorkOnEveryTemplate) {
     EnsureQApplication();
     for (const auto& def : TemplateRegistry::Instance().All()) {
         Fixture fixture("pf-template-marks-" + QString::fromStdString(def.id));
-        fixture.window.controller()->ChangeTemplate(
-            QString::fromStdString(def.id));
+        fixture.window.controller()->ChangeTemplate(QString::fromStdString(def.id));
         Spin(350);
 
-        const MarkOutcome outcome =
-            FormatFirstWord(fixture.window, fixture.node_id);
-        std::cout << "    " << def.id
-                  << ": doc(bold=" << outcome.document_bold
-                  << " italic=" << outcome.document_italic
-                  << ") tex(bold=" << outcome.tex_bold
-                  << " italic=" << outcome.tex_italic << ")\n";
+        const MarkOutcome outcome = FormatFirstWord(fixture.window, fixture.node_id);
+        std::cout << "    " << def.id << ": doc(bold=" << outcome.document_bold << " italic=" << outcome.document_italic
+                  << ") tex(bold=" << outcome.tex_bold << " italic=" << outcome.tex_italic << ")\n";
 
         PF_CHECK(outcome.document_bold);
         PF_CHECK(outcome.document_italic);

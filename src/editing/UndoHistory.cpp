@@ -16,7 +16,8 @@ void UndoHistory::Push(HistoryEntry entry) {
 }
 
 std::optional<HistoryEntry> UndoHistory::PopUndo() {
-    if (undo_.empty()) return std::nullopt;
+    if (undo_.empty())
+        return std::nullopt;
     HistoryEntry entry = std::move(undo_.back());
     undo_.pop_back();
     redo_.push_back(entry);
@@ -24,7 +25,8 @@ std::optional<HistoryEntry> UndoHistory::PopUndo() {
 }
 
 std::optional<HistoryEntry> UndoHistory::PopRedo() {
-    if (redo_.empty()) return std::nullopt;
+    if (redo_.empty())
+        return std::nullopt;
     HistoryEntry entry = std::move(redo_.back());
     redo_.pop_back();
     undo_.push_back(entry);
@@ -36,7 +38,9 @@ void UndoHistory::BeginTransaction(TransactionKey key) {
     transaction_active_ = true;
 }
 
-void UndoHistory::EndTransaction() { transaction_active_ = false; }
+void UndoHistory::EndTransaction() {
+    transaction_active_ = false;
+}
 
 void UndoHistory::Clear() {
     undo_.clear();
@@ -44,4 +48,4 @@ void UndoHistory::Clear() {
     transaction_active_ = false;
 }
 
-}  // namespace pf
+} // namespace pf

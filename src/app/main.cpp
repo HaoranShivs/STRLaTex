@@ -1,8 +1,8 @@
 #include <QApplication>
 
 #include <cstdio>
-#include <exception>
 #include <cstdlib>
+#include <exception>
 
 #include "app/MainWindow.h"
 
@@ -22,8 +22,7 @@ int main(int argc, char* argv[]) {
     } catch (const std::exception& e) {
         // 向 stderr 输出致命日志：窗口可能已不存在，这是
         // 唯一保证可用的通道。
-        std::fprintf(stderr,
-                     "fatal: unhandled exception: %s\n", e.what());
+        std::fprintf(stderr, "fatal: unhandled exception: %s\n", e.what());
         std::fflush(stderr);
         return EXIT_FAILURE;
     } catch (...) {

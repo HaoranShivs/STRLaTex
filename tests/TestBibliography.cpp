@@ -28,7 +28,7 @@ const char* kSampleBib = R"(@article{einstein1905,
 }
 )";
 
-}  // namespace
+} // namespace
 
 PF_TEST(BibTeXParseEntries) {
     BibliographyDatabase db;
@@ -96,8 +96,7 @@ PF_TEST(BibliographyReimportUpdates) {
     BibliographyService service(db);
     service.ImportText(kSampleBib);
     // 相同 key、不同 title：应替换，而不是重复添加。
-    std::string updated =
-        "@article{einstein1905, author={Albert Einstein}, title={Updated Title}, year={1905}}";
+    std::string updated = "@article{einstein1905, author={Albert Einstein}, title={Updated Title}, year={1905}}";
     auto r = service.ImportText(updated);
     PF_CHECK(r.status == BibliographyImportResult::Status::Ok);
     PF_CHECK(db.Entries().size() == 3);

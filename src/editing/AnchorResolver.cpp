@@ -6,14 +6,14 @@ namespace pf {
 
 const char* ToString(AnchorResolveError error) {
     switch (error) {
-        case AnchorResolveError::ReferenceNodeMissing:
-            return "ReferenceNodeMissing";
+    case AnchorResolveError::ReferenceNodeMissing:
+        return "ReferenceNodeMissing";
     }
     return "Unknown";
 }
 
-Result<ResolvedInsertionPoint, AnchorResolveError> AnchorResolver::Resolve(
-    const Document& document, const StableNodeAnchor& anchor) const {
+Result<ResolvedInsertionPoint, AnchorResolveError> AnchorResolver::Resolve(const Document& document,
+                                                                           const StableNodeAnchor& anchor) const {
     const NodeId& ref = anchor.reference_node;
 
     // 通过只读遍历定位引用节点的逻辑位置。
@@ -22,23 +22,22 @@ Result<ResolvedInsertionPoint, AnchorResolveError> AnchorResolver::Resolve(
         const auto& section = sections[si];
         if (section.id == ref) {
             switch (anchor.bias) {
-                case AnchorBias::Before:
-                    return ResolvedInsertionPoint{ref, 0};
-                case AnchorBias::After:
-                case AnchorBias::InsideEnd:
-                    return ResolvedInsertionPoint{ref, std::nullopt};
+            case AnchorBias::Before:
+                return ResolvedInsertionPoint{ref, 0};
+            case AnchorBias::After:
+            case AnchorBias::InsideEnd:
+                return ResolvedInsertionPoint{ref, std::nullopt};
             }
         }
         for (size_t bi = 0; bi < section.blocks.size(); ++bi) {
-            NodeId bid = std::visit([](const auto& b) { return b.id; },
-                                    section.blocks[bi]);
+            NodeId bid = std::visit([](const auto& b) { return b.id; }, section.blocks[bi]);
             if (bid == ref) {
                 switch (anchor.bias) {
-                    case AnchorBias::Before:
-                        return ResolvedInsertionPoint{section.id, bi};
-                    case AnchorBias::After:
-                    case AnchorBias::InsideEnd:
-                        return ResolvedInsertionPoint{section.id, bi + 1};
+                case AnchorBias::Before:
+                    return ResolvedInsertionPoint{section.id, bi};
+                case AnchorBias::After:
+                case AnchorBias::InsideEnd:
+                    return ResolvedInsertionPoint{section.id, bi + 1};
                 }
             }
         }
@@ -46,23 +45,22 @@ Result<ResolvedInsertionPoint, AnchorResolveError> AnchorResolver::Resolve(
             const auto& sub = section.subsections[ui];
             if (sub.id == ref) {
                 switch (anchor.bias) {
-                    case AnchorBias::Before:
-                        return ResolvedInsertionPoint{ref, 0};
-                    case AnchorBias::After:
-                    case AnchorBias::InsideEnd:
-                        return ResolvedInsertionPoint{ref, std::nullopt};
+                case AnchorBias::Before:
+                    return ResolvedInsertionPoint{ref, 0};
+                case AnchorBias::After:
+                case AnchorBias::InsideEnd:
+                    return ResolvedInsertionPoint{ref, std::nullopt};
                 }
             }
             for (size_t bi = 0; bi < sub.blocks.size(); ++bi) {
-                NodeId bid = std::visit([](const auto& b) { return b.id; },
-                                        sub.blocks[bi]);
+                NodeId bid = std::visit([](const auto& b) { return b.id; }, sub.blocks[bi]);
                 if (bid == ref) {
                     switch (anchor.bias) {
-                        case AnchorBias::Before:
-                            return ResolvedInsertionPoint{sub.id, bi};
-                        case AnchorBias::After:
-                        case AnchorBias::InsideEnd:
-                            return ResolvedInsertionPoint{sub.id, bi + 1};
+                    case AnchorBias::Before:
+                        return ResolvedInsertionPoint{sub.id, bi};
+                    case AnchorBias::After:
+                    case AnchorBias::InsideEnd:
+                        return ResolvedInsertionPoint{sub.id, bi + 1};
                     }
                 }
             }
@@ -71,12 +69,12 @@ Result<ResolvedInsertionPoint, AnchorResolveError> AnchorResolver::Resolve(
     return Unexpected(ToString(AnchorResolveError::ReferenceNodeMissing));
 }
 
-}  // namespace pf
+} // namespace pf
 
 namespace pf {
-template <>
-AnchorResolveError pf::ToStringError<AnchorResolveError>(const std::string& value) {
-    if (value == "ReferenceNodeMissing") return AnchorResolveError::ReferenceNodeMissing;
+template <> AnchorResolveError pf::ToStringError<AnchorResolveError>(const std::string& value) {
+    if (value == "ReferenceNodeMissing")
+        return AnchorResolveError::ReferenceNodeMissing;
     return AnchorResolveError::ReferenceNodeMissing;
 }
-}  // namespace pf
+} // namespace pf

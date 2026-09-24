@@ -19,25 +19,24 @@ namespace pf::gui {
 class OutlinePanel : public QWidget {
     Q_OBJECT
 
-public:
+  public:
     explicit OutlinePanel(QWidget* parent = nullptr);
 
-    void RebuildFromDocument(const Document& doc,
-                             const std::vector<BibEntry>& references);
+    void RebuildFromDocument(const Document& doc, const std::vector<BibEntry>& references);
 
     // 反向导航（UI 方案 §10）：编辑器告诉大纲光标所在行属于哪个小节，
     // 这样高亮项就能在长稿件中跟随用户移动。空 key 会清除选中
     //（front matter 行没有对应的大纲节点）。
     void SelectNode(const QString& outline_key);
 
-signals:
+  signals:
     void NodeActivated(const QString& node_id);
-    void CitationChosen(const QString& key);  // 双击会插入 @cite
+    void CitationChosen(const QString& key); // 双击会插入 @cite
 
-private slots:
+  private slots:
     void OnTabChanged(int index);
 
-private:
+  private:
     QWidget* BuildDocumentTab();
     QWidget* BuildReferencesTab();
 
@@ -58,4 +57,4 @@ private:
     std::vector<BibEntry> references_;
 };
 
-}  // namespace pf::gui
+} // namespace pf::gui

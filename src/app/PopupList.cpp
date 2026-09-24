@@ -65,10 +65,8 @@ void PopupList::popup(const QPoint& global_pos, const std::vector<Item>& items, 
     QPoint position = global_pos;
     if (QScreen* screen = QGuiApplication::screenAt(global_pos)) {
         const QRect available = screen->availableGeometry();
-        position.setX(qBound(available.left(), position.x(),
-                             qMax(available.left(), available.right() - width() + 1)));
-        position.setY(qBound(available.top(), position.y(),
-                             qMax(available.top(), available.bottom() - height() + 1)));
+        position.setX(qBound(available.left(), position.x(), qMax(available.left(), available.right() - width() + 1)));
+        position.setY(qBound(available.top(), position.y(), qMax(available.top(), available.bottom() - height() + 1)));
     }
     move(position);
     show();

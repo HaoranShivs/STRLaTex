@@ -28,17 +28,16 @@ struct PreviewGateInput {
 enum class PreviewGateDecision : std::uint8_t {
     Accept,
     NoProject,
-    ForeignProject,   // 结果所属的项目已不再处于打开状态
-    StaleRevision,    // build 运行期间文档发生了变更
-    StaleSnapshot,    // 更新的 snapshot 取代了这一个
-    StaleBuild,       // 更新的 build 请求取代了这一个
+    ForeignProject, // 结果所属的项目已不再处于打开状态
+    StaleRevision,  // build 运行期间文档发生了变更
+    StaleSnapshot,  // 更新的 snapshot 取代了这一个
+    StaleBuild,     // 更新的 build 请求取代了这一个
 };
 
 const char* ToString(PreviewGateDecision decision);
 
 // 只接受 project、revision 与 build 身份都与当前应用状态一致的结果；
 // 其余结果按定义均属陈旧。
-PreviewGateDecision EvaluatePreviewGate(const PreviewGateInput& current,
-                                        const BuildResult& result);
+PreviewGateDecision EvaluatePreviewGate(const PreviewGateInput& current, const BuildResult& result);
 
-}  // namespace pf
+} // namespace pf

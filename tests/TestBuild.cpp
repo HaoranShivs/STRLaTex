@@ -9,9 +9,9 @@
 #include "build/DiagnosticMapper.h"
 #include "core/IdGenerator.h"
 #include "document/DocumentEditor.h"
-#include "editing/EditingSystem.h"
-#include "editing/EditCommand.h"
 #include "document/InlineText.h"
+#include "editing/EditCommand.h"
+#include "editing/EditingSystem.h"
 #include "project/ProjectState.h"
 #include "render/LatexRenderer.h"
 #include "template/TemplateRegistry.h"
@@ -30,8 +30,7 @@ struct BuildTestRig {
     std::atomic<bool> done{false};
 
     explicit BuildTestRig(bool compiler_succeeds = true,
-                          std::chrono::milliseconds debounce =
-                              std::chrono::milliseconds{0}) {
+                          std::chrono::milliseconds debounce = std::chrono::milliseconds{0}) {
         state.SetId(ProjectId("p-build"));
         compiler = std::make_unique<MockCompiler>(compiler_succeeds);
         BuildCoordinator::Host host;
@@ -44,11 +43,8 @@ struct BuildTestRig {
             results.push_back(r);
             done.store(true);
         };
-        host.on_build_event = [this](const BuildEvent& e) {
-            events.push_back(e);
-        };
-        coordinator = std::make_unique<BuildCoordinator>(std::move(host),
-                                                         compiler.get());
+        host.on_build_event = [this](const BuildEvent& e) { events.push_back(e); };
+        coordinator = std::make_unique<BuildCoordinator>(std::move(host), compiler.get());
         coordinator->set_debounce(debounce);
     }
 
@@ -68,8 +64,7 @@ struct BuildTestRig {
     }
 
     bool WaitForResult(int timeout_ms = 5000) {
-        auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::milliseconds(timeout_ms);
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
         while (!done.load() && std::chrono::steady_clock::now() < deadline) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
@@ -77,7 +72,7 @@ struct BuildTestRig {
     }
 };
 
-}  // namespace
+} // namespace
 
 PF_TEST(BuildSuccessWithMockCompiler) {
     BuildTestRig rig(true);
@@ -108,7 +103,8 @@ PF_TEST(BuildFailureProducesDiagnostics) {
     PF_CHECK(!rig.results[0].diagnostics.empty());
     const Diagnostic* compiler_diag = nullptr;
     for (const auto& d : rig.results[0].diagnostics) {
-        if (d.source == DiagnosticSource::Compiler) compiler_diag = &d;
+        if (d.source == DiagnosticSource::Compiler)
+            compiler_diag = &d;
     }
     PF_CHECK(compiler_diag != nullptr);
     if (compiler_diag) {
@@ -136,8 +132,7 @@ PF_TEST(BuildLatestWinsPending) {
     // Rev 3（最新）必须出现在结果中。
     bool has_rev3 = false;
     for (const auto& r : rig.results) {
-        if (r.revision.value == 3 &&
-            r.outcome == BuildResult::Outcome::Success) {
+        if (r.revision.value == 3 && r.outcome == BuildResult::Outcome::Success) {
             has_rev3 = true;
         }
     }
@@ -164,7 +159,7 @@ PF_TEST(DiagnosticMapperMapsLineToNode) {
     cres.status = CompileStatus::Failure;
     CompilerMessage msg;
     msg.file = "main.tex";
-    msg.line = 132;  // 位于映射范围的临近区域内
+    msg.line = 132; // 位于映射范围的临近区域内
     msg.is_error = true;
     msg.text = "Undefined control sequence";
     cres.messages.push_back(msg);
@@ -230,15 +225,13 @@ PF_TEST(BuildEmitsLifecycleEvents) {
         PF_CHECK(e.timestamp_ms > 0);
         order.push_back(e.type);
     }
-    auto has = [&](BuildEventType t) {
-        return std::find(order.begin(), order.end(), t) != order.end();
-    };
+    auto has = [&](BuildEventType t) { return std::find(order.begin(), order.end(), t) != order.end(); };
     PF_CHECK(has(BuildEventType::BuildStarted));
     PF_CHECK(has(BuildEventType::GenerationStarted));
     PF_CHECK(has(BuildEventType::GenerationFinished));
     PF_CHECK(has(BuildEventType::ProcessStarted));
     PF_CHECK(has(BuildEventType::ProcessFinished));
-    PF_CHECK(has(BuildEventType::StdOut));  // mock 日志实时流式输出
+    PF_CHECK(has(BuildEventType::StdOut)); // mock 日志实时流式输出
     PF_CHECK(has(BuildEventType::BuildSucceeded));
     // 第一个事件是开始，最后一个是终止事件（§5 状态流转）。
     PF_CHECK(order.front() == BuildEventType::BuildStarted);
@@ -257,12 +250,15 @@ PF_TEST(BuildFailureEmitsFailedEvent) {
     bool saw_failed = false;
     bool saw_succeeded = false;
     for (const auto& e : rig.events) {
-        if (e.build_id != build_id) continue;
-        if (e.type == BuildEventType::BuildFailed) saw_failed = true;
-        if (e.type == BuildEventType::BuildSucceeded) saw_succeeded = true;
+        if (e.build_id != build_id)
+            continue;
+        if (e.type == BuildEventType::BuildFailed)
+            saw_failed = true;
+        if (e.type == BuildEventType::BuildSucceeded)
+            saw_succeeded = true;
     }
     PF_CHECK(saw_failed);
-    PF_CHECK(!saw_succeeded);  // Failed 之后绝不能出现 Success（§5）
+    PF_CHECK(!saw_succeeded); // Failed 之后绝不能出现 Success（§5）
     PF_CHECK(rig.results[0].exit_code == 1);
 }
 
@@ -286,10 +282,11 @@ PF_TEST(ValidatorMissingCitation) {
     auto result = validator.Validate(input);
     bool found = false;
     for (const auto& d : result.diagnostics) {
-        if (d.code == "E-CITATION-UNKNOWN-KEY") found = true;
+        if (d.code == "E-CITATION-UNKNOWN-KEY")
+            found = true;
     }
     PF_CHECK(found);
-    PF_CHECK(result.can_render);  // 语义问题不阻塞渲染
+    PF_CHECK(result.can_render); // 语义问题不阻塞渲染
 }
 
 PF_TEST(ValidatorDanglingCrossReference) {
@@ -311,7 +308,8 @@ PF_TEST(ValidatorDanglingCrossReference) {
     auto result = validator.Validate(input);
     bool found = false;
     for (const auto& d : result.diagnostics) {
-        if (d.code == "E-MISSING-XREF-TARGET") found = true;
+        if (d.code == "E-MISSING-XREF-TARGET")
+            found = true;
     }
     PF_CHECK(found);
 }
@@ -328,7 +326,8 @@ PF_TEST(ValidatorEmptyTitleWarning) {
     auto result = validator.Validate(input);
     bool found = false;
     for (const auto& d : result.diagnostics) {
-        if (d.code == "W-EMPTY-TITLE") found = true;
+        if (d.code == "W-EMPTY-TITLE")
+            found = true;
     }
     PF_CHECK(found);
 }
@@ -350,15 +349,16 @@ PF_TEST(ValidatorTemplateRequiredFields) {
     auto result = validator.Validate(input);
     auto has = [&result](const char* code) {
         for (const auto& d : result.diagnostics) {
-            if (d.code == code) return true;
+            if (d.code == code)
+                return true;
         }
         return false;
     };
     PF_CHECK(has("W-REQ-AUTHORS"));
     PF_CHECK(has("W-REQ-AFFILIATIONS"));
     PF_CHECK(has("W-REQ-KEYWORDS"));
-    PF_CHECK(!has("W-REQ-TITLE"));       // title 存在
-    PF_CHECK(!has("W-REQ-ABSTRACT"));    // abstract 存在
+    PF_CHECK(!has("W-REQ-TITLE"));    // title 存在
+    PF_CHECK(!has("W-REQ-ABSTRACT")); // abstract 存在
 
     // generic-article 要求 authors（默认）但不要求 affiliations。
     input.template_id = "generic-article";
@@ -371,13 +371,12 @@ PF_TEST(ValidatorTemplateRequiredFields) {
 namespace {
 size_t CountOccurrences(const std::string& haystack, const std::string& needle) {
     size_t count = 0;
-    for (size_t at = haystack.find(needle); at != std::string::npos;
-         at = haystack.find(needle, at + needle.size())) {
+    for (size_t at = haystack.find(needle); at != std::string::npos; at = haystack.find(needle, at + needle.size())) {
         ++count;
     }
     return count;
 }
-}  // namespace
+} // namespace
 
 PF_TEST(AuthorsAffiliationsRenderWithThanks) {
     Document doc;
@@ -413,8 +412,7 @@ PF_TEST(AuthorsAffiliationsRenderWithThanks) {
                       "Bob\\textsuperscript{2}") != std::string::npos);
     // 两个机构都只列出一次并编号，放在单个 \thanks 内。
     PF_CHECK(tex.find("\\thanks{\\textsuperscript{1} University One \\\\ "
-                      "\\textsuperscript{2} Institute Two}") !=
-             std::string::npos);
+                      "\\textsuperscript{2} Institute Two}") != std::string::npos);
     // ... 且绝不按作者重复。
     PF_CHECK(CountOccurrences(tex, "University One") == 1);
     PF_CHECK(CountOccurrences(tex, "Institute Two") == 1);
@@ -445,8 +443,7 @@ PF_TEST(SetAffiliationsPayloadEditing) {
     auto result = editing.Apply(cmd);
     PF_CHECK(result.status == EditStatus::Applied);
     PF_CHECK(state.document().front_matter().affiliations.size() == 1);
-    PF_CHECK(state.document().front_matter().affiliations[0].name ==
-             "University One");
+    PF_CHECK(state.document().front_matter().affiliations[0].name == "University One");
 
     // 可以添加第二个机构，而指向第一个机构的作者
     // 仍保持可解析的链接。
@@ -479,8 +476,7 @@ PF_TEST(SetAffiliationsPayloadEditing) {
     PF_CHECK(state.document().front_matter().affiliations.size() == 2);
     PF_CHECK(state.document().front_matter().authors.size() == 1);
     PF_CHECK(state.document().front_matter().authors[0].affiliations.size() == 1);
-    PF_CHECK(state.document().front_matter().authors[0].affiliations[0] ==
-             AffiliationId("aff0"));
+    PF_CHECK(state.document().front_matter().authors[0].affiliations[0] == AffiliationId("aff0"));
 
     // 缩短列表会移除链接，而不是留下悬空的 id。
     EditCommand drop_cmd;

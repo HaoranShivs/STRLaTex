@@ -16,25 +16,47 @@ struct ProjectSettings {
 };
 
 class ProjectState {
-public:
-    ProjectId id() const noexcept { return id_; }
-    ProjectRevision revision() const noexcept { return revision_; }
-    const Document& document() const noexcept { return document_; }
-    const TemplateSelection& template_selection() const noexcept { return template_; }
-    const ProjectSettings& settings() const noexcept { return settings_; }
-    std::uint64_t document_version() const noexcept { return document_.version().value; }
+  public:
+    ProjectId id() const noexcept {
+        return id_;
+    }
+    ProjectRevision revision() const noexcept {
+        return revision_;
+    }
+    const Document& document() const noexcept {
+        return document_;
+    }
+    const TemplateSelection& template_selection() const noexcept {
+        return template_;
+    }
+    const ProjectSettings& settings() const noexcept {
+        return settings_;
+    }
+    std::uint64_t document_version() const noexcept {
+        return document_.version().value;
+    }
 
-    Document& mutable_document() noexcept { return document_; }
-    TemplateSelection& mutable_template() noexcept { return template_; }
-    ProjectSettings& mutable_settings() noexcept { return settings_; }
+    Document& mutable_document() noexcept {
+        return document_;
+    }
+    TemplateSelection& mutable_template() noexcept {
+        return template_;
+    }
+    ProjectSettings& mutable_settings() noexcept {
+        return settings_;
+    }
 
     // revision 管理——仅由 ProjectSession／EditingSystem 调用。
     ProjectRevision BumpRevision() noexcept {
         revision_.value += 1;
         return revision_;
     }
-    void SetRevision(ProjectRevision rev) noexcept { revision_ = rev; }
-    void SetId(ProjectId id) noexcept { id_ = std::move(id); }
+    void SetRevision(ProjectRevision rev) noexcept {
+        revision_ = rev;
+    }
+    void SetId(ProjectId id) noexcept {
+        id_ = std::move(id);
+    }
 
     void Reset() {
         document_ = Document{};
@@ -42,7 +64,7 @@ public:
         revision_ = ProjectRevision{0};
     }
 
-private:
+  private:
     ProjectId id_;
     ProjectRevision revision_{0};
     Document document_;
@@ -50,4 +72,4 @@ private:
     ProjectSettings settings_;
 };
 
-}  // namespace pf
+} // namespace pf

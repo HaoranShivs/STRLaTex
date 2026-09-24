@@ -25,7 +25,7 @@ namespace pf::gui {
 class ProblemsPanel : public QWidget {
     Q_OBJECT
 
-public:
+  public:
     explicit ProblemsPanel(QWidget* parent = nullptr);
 
     // ---- Problems 标签页 ----
@@ -41,10 +41,10 @@ public:
     void AppendEvent(const pf::BuildEvent& event);
     void ShowBuildLog();
 
-signals:
+  signals:
     void DiagnosticActivated(const pf::Diagnostic& diagnostic);
 
-private:
+  private:
     enum class ProblemsState { NeverBuilt, Building, Done };
 
     QWidget* BuildProblemsTab();
@@ -60,7 +60,7 @@ private:
     QLabel* count_label_ = nullptr;
     QPushButton* auto_scroll_button_ = nullptr;
 
-    QString filter_ = "all";  // all / error / warning
+    QString filter_ = "all"; // all / error / warning
     std::vector<Diagnostic> diagnostics_;
     ProblemsState state_ = ProblemsState::NeverBuilt;
     bool stale_ = false;
@@ -69,8 +69,8 @@ private:
     // Clear View 只重置控件，不重置此模型。
     BuildId log_build_id_;
     std::vector<pf::BuildEvent> events_;
-    std::string last_stream_;   // [stdout]/[stderr] 头部所用的 "out"/"err"
-    bool log_needs_newline_ = false;  // 上一个原始数据块在一行中途结束
+    std::string last_stream_;        // [stdout]/[stderr] 头部所用的 "out"/"err"
+    bool log_needs_newline_ = false; // 上一个原始数据块在一行中途结束
 };
 
-}  // namespace pf::gui
+} // namespace pf::gui

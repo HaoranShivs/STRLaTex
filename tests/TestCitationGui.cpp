@@ -9,11 +9,11 @@
 #include "TestMain.hpp"
 
 #include <QApplication>
-#include <QElapsedTimer>
-#include <QKeyEvent>
-#include <QFocusEvent>
 #include <QCheckBox>
+#include <QElapsedTimer>
+#include <QFocusEvent>
 #include <QImage>
+#include <QKeyEvent>
 #include <QMetaObject>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -49,9 +49,13 @@ using namespace pf::gui;
 
 namespace {
 
-QApplication* EnsureQApplication() { return qApp; }
+QApplication* EnsureQApplication() {
+    return qApp;
+}
 
-Body& BodyOf(Document& doc) { return DocumentMutableAccess::body(doc); }
+Body& BodyOf(Document& doc) {
+    return DocumentMutableAccess::body(doc);
+}
 
 void Spin(int ms) {
     QElapsedTimer timer;
@@ -62,9 +66,8 @@ void Spin(int ms) {
     }
 }
 
-std::shared_ptr<const CitationNumberResolver> ResolverFor(
-    const std::vector<std::string>& cited_in_order,
-    const std::vector<std::string>& in_bibliography) {
+std::shared_ptr<const CitationNumberResolver> ResolverFor(const std::vector<std::string>& cited_in_order,
+                                                          const std::vector<std::string>& in_bibliography) {
     BibliographyDatabase db;
     BibliographyService service(db);
     std::string bib;
@@ -83,8 +86,7 @@ std::shared_ptr<const CitationNumberResolver> ResolverFor(
         p.content.push_back(std::move(cit));
         editor.InsertBlock(s.value(), std::nullopt, p);
     }
-    return std::make_shared<const CitationNumberResolver>(
-        CitationNumberResolver::Build(doc, db));
+    return std::make_shared<const CitationNumberResolver>(CitationNumberResolver::Build(doc, db));
 }
 
 // `position`处对象的 char format（object replacement 字符）。
@@ -101,7 +103,7 @@ void SendKey(QWidget* widget, int key, Qt::KeyboardModifiers mods = {}) {
     QApplication::sendEvent(widget, &event);
 }
 
-}  // namespace
+} // namespace
 
 // ---------------------------------------------------------------------------
 // InlineEditor：语义对象 + renderer 架构
@@ -125,23 +127,21 @@ PF_TEST(CitationPillCarriesKeyPayloadAndResolvedNumber) {
     PF_CHECK(pill_position >= 0);
     const QTextCharFormat format = FormatAt(editor, pill_position);
     PF_CHECK(format.objectType() == citation_format::kObjectType);
-    PF_CHECK(format.property(inline_object_format::kKindProperty)
-                 .toInt() == static_cast<int>(InlineEditor::TokenKind::Citation));
-    PF_CHECK(format.property(inline_object_format::kPayloadProperty)
-                 .toString() == QStringLiteral("smith2024"));
-    PF_CHECK(format.property(citation_format::kDisplayTextProperty)
-                 .toString() == QStringLiteral("[1]"));
+    PF_CHECK(format.property(inline_object_format::kKindProperty).toInt() ==
+             static_cast<int>(InlineEditor::TokenKind::Citation));
+    PF_CHECK(format.property(inline_object_format::kPayloadProperty).toString() == QStringLiteral("smith2024"));
+    PF_CHECK(format.property(citation_format::kDisplayTextProperty).toString() == QStringLiteral("[1]"));
 
     // 文档收到的是 key 集合。
     const InlineContent content = editor.Content();
     const Citation* citation = nullptr;
     for (const auto& node : content) {
-        if (const auto* cit = std::get_if<Citation>(&node)) citation = cit;
+        if (const auto* cit = std::get_if<Citation>(&node))
+            citation = cit;
     }
     PF_CHECK(citation != nullptr);
     if (citation) {
-        PF_CHECK(citation->keys.size() == 1 &&
-                 citation->keys[0] == "smith2024");
+        PF_CHECK(citation->keys.size() == 1 && citation->keys[0] == "smith2024");
     }
 }
 
@@ -152,16 +152,12 @@ PF_TEST(CitationNumberingFollowsInsertionOrderAcrossRows) {
     InlineEditor editor;
     editor.SetCitationNumbers(resolver);
     editor.InsertCitationObject({QStringLiteral("a")});
-    PF_CHECK(FormatAt(editor, 0)
-                 .property(citation_format::kDisplayTextProperty)
-                 .toString() == QStringLiteral("[1]"));
+    PF_CHECK(FormatAt(editor, 0).property(citation_format::kDisplayTextProperty).toString() == QStringLiteral("[1]"));
     // 多重引文 A+B 按排序渲染：[1, 2]。
     InlineEditor multi;
     multi.SetCitationNumbers(resolver);
     multi.InsertCitationObject({QStringLiteral("b"), QStringLiteral("a")});
-    PF_CHECK(FormatAt(multi, 0)
-                 .property(citation_format::kDisplayTextProperty)
-                 .toString() == QStringLiteral("[1, 2]"));
+    PF_CHECK(FormatAt(multi, 0).property(citation_format::kDisplayTextProperty).toString() == QStringLiteral("[1, 2]"));
 }
 
 PF_TEST(UnknownCitationKeyPillShowsQuestionMark) {
@@ -169,9 +165,7 @@ PF_TEST(UnknownCitationKeyPillShowsQuestionMark) {
     InlineEditor editor;
     editor.SetCitationNumbers(ResolverFor({}, {"real"}));
     editor.InsertCitationObject({QStringLiteral("ghost")});
-    PF_CHECK(FormatAt(editor, 0)
-                 .property(citation_format::kDisplayTextProperty)
-                 .toString() == QStringLiteral("[?]"));
+    PF_CHECK(FormatAt(editor, 0).property(citation_format::kDisplayTextProperty).toString() == QStringLiteral("[?]"));
     // 仍然是语义的：key 经过往返后依然保留，可供校验。
     const InlineContent content = editor.Content();
     PF_CHECK(content.size() == 1);
@@ -228,7 +222,8 @@ PF_TEST(CitationDoesNotInheritOrPolluteMarks) {
             continue;
         }
         const auto* run = std::get_if<TextRun>(&content[i]);
-        if (!run) continue;
+        if (!run)
+            continue;
         if (run->text == "bold") {
             PF_CHECK(HasMark(run->marks, TextMark::Strong));
         } else if (run->text == "tail") {
@@ -259,7 +254,8 @@ PF_TEST(UndoRedoOfCitationKeepsTextIntact) {
     auto count_citations = [&editor]() {
         size_t n = 0;
         for (const auto& node : editor.Content()) {
-            if (std::holds_alternative<Citation>(node)) ++n;
+            if (std::holds_alternative<Citation>(node))
+                ++n;
         }
         return n;
     };
@@ -279,8 +275,7 @@ PF_TEST(PickerFocusRoundTripDoesNotCommitEarly) {
     EnsureQApplication();
     InlineEditor editor;
     bool committed = false;
-    QObject::connect(&editor, &InlineEditor::Committed,
-                     [&]() { committed = true; });
+    QObject::connect(&editor, &InlineEditor::Committed, [&]() { committed = true; });
 
     // 保护生效时（picker 已抢到焦点），focus-out
     // 绝不能被误认为「用户已完成编辑」（方案 §4）。
@@ -305,15 +300,14 @@ PF_TEST(GuiPillNumberMatchesTheBuiltPdf) {
     std::filesystem::remove_all(dir);
 
     ProjectSession::Config config;
-    config.install_root = PF_INSTALL_ROOT;  // 捆绑的可移植 TeX Live
+    config.install_root = PF_INSTALL_ROOT; // 捆绑的可移植 TeX Live
     config.debounce = std::chrono::milliseconds{0};
     ProjectSession session(config);
     PF_CHECK(session.NewProject(dir));
-    session.ImportBibliography(
-        "@article{smith2024, author={J. Smith}, title={Seminal Method}, "
-        "year={2024}}\n"
-        "@article{jones2020, author={A. Jones}, title={Follow Up}, "
-        "year={2020}}\n");
+    session.ImportBibliography("@article{smith2024, author={J. Smith}, title={Seminal Method}, "
+                               "year={2024}}\n"
+                               "@article{jones2020, author={A. Jones}, title={Follow Up}, "
+                               "year={2020}}\n");
 
     EditCommand cmd;
     cmd.operation_id = OperationId(IdGenerator::NewOperationId());
@@ -356,9 +350,7 @@ PF_TEST(GuiPillNumberMatchesTheBuiltPdf) {
     add_paragraph(cite({"smith2024", "jones2020"}));
 
     // GUI 侧的投影。
-    auto resolver =
-        CitationNumberResolver::Build(session.state().document(),
-                                      session.bibliography());
+    auto resolver = CitationNumberResolver::Build(session.state().document(), session.bibliography());
     const int gui_smith = resolver.Find("smith2024")->number;
     const int gui_jones = resolver.Find("jones2020")->number;
     PF_CHECK(gui_smith == 1 && gui_jones == 2);
@@ -367,18 +359,17 @@ PF_TEST(GuiPillNumberMatchesTheBuiltPdf) {
     // 真实工具链的投影。
     bool done = false;
     std::optional<BuildResult> result;
-    session.SetBuildResultHandler(
-        [&](const BuildResult& r) { result = r; done = true; });
+    session.SetBuildResultHandler([&](const BuildResult& r) {
+        result = r;
+        done = true;
+    });
     session.RequestBuild(true);
-    const auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::seconds{240};
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{240};
     while (!done && std::chrono::steady_clock::now() < deadline) {
         session.WaitForApplicationEvent(std::chrono::milliseconds{50});
     }
-    PF_CHECK(done && result &&
-             result->outcome == BuildResult::Outcome::Success);
-    if (!done || !result ||
-        result->outcome != BuildResult::Outcome::Success) {
+    PF_CHECK(done && result && result->outcome == BuildResult::Outcome::Success);
+    if (!done || !result || result->outcome != BuildResult::Outcome::Success) {
         if (result) {
             for (const auto& d : result->diagnostics) {
                 std::cout << "  " << d.Summary() << "\n";
@@ -391,8 +382,7 @@ PF_TEST(GuiPillNumberMatchesTheBuiltPdf) {
     // 对构建出的 PDF 运行 pdftotext，从页面上读出方括号编号。
     const std::string pdf = result->pdf_path.string();
     auto uniq = dir / "cited.txt";
-    const std::string extract = "pdftotext -layout " + pdf + " " +
-                                uniq.string();
+    const std::string extract = "pdftotext -layout " + pdf + " " + uniq.string();
     PF_CHECK(std::system(extract.c_str()) == 0);
     std::ifstream in(uniq, std::ios::binary);
     std::ostringstream ss;
@@ -412,12 +402,11 @@ PF_TEST(GuiPillNumberMatchesTheBuiltPdf) {
     PF_CHECK(second != std::string::npos);
     PF_CHECK(both != std::string::npos);
     if (first != std::string::npos && second != std::string::npos) {
-        PF_CHECK(first < second);  // 引用顺序，而非字母顺序
+        PF_CHECK(first < second); // 引用顺序，而非字母顺序
     }
     PF_CHECK(both != std::string::npos && both > second);
     // 参考文献标题中的编号也同样匹配。
-    PF_CHECK(text.find("[1] J. Smith") != std::string::npos ||
-             text.find("[1]Smith") != std::string::npos ||
+    PF_CHECK(text.find("[1] J. Smith") != std::string::npos || text.find("[1]Smith") != std::string::npos ||
              text.find("[1] ") != std::string::npos);
 }
 
@@ -434,8 +423,7 @@ struct Fixture {
     explicit Fixture(const QString& dir_name) {
         window.resize(1400, 900);
         window.show();
-        auto dir = std::filesystem::temp_directory_path() /
-                   dir_name.toStdString();
+        auto dir = std::filesystem::temp_directory_path() / dir_name.toStdString();
         std::filesystem::remove_all(dir);
         window.controller()->NewProject(QString::fromStdString(dir.string()));
         window.controller()->Save();
@@ -444,14 +432,12 @@ struct Fixture {
         Spin(250);
 
         window.controller()->ImportBibliographyText(
-            QStringLiteral(
-                "@article{smith2024, author={J. Smith}, title={Seminal}, "
-                "year={2024}}\n"
-                "@article{jones2020, author={A. Jones}, title={Later}, "
-                "year={2020}}\n"));
+            QStringLiteral("@article{smith2024, author={J. Smith}, title={Seminal}, "
+                           "year={2024}}\n"
+                           "@article{jones2020, author={A. Jones}, title={Later}, "
+                           "year={2020}}\n"));
         auto section = window.controller()->InsertSection(QStringLiteral("S"));
-        auto paragraph = window.controller()->InsertParagraph(
-            section.created_node, QStringLiteral("before after"));
+        auto paragraph = window.controller()->InsertParagraph(section.created_node, QStringLiteral("before after"));
         node_id = QString::fromStdString(paragraph.created_node.value());
         Spin(300);
     }
@@ -459,8 +445,10 @@ struct Fixture {
 
 InlineEditor* FindRow(MainWindow& window, const QString& node_id) {
     for (InlineEditor* edit : window.findChildren<InlineEditor*>()) {
-        if (!edit->isVisible()) continue;
-        if (edit->property("row_node").toString() == node_id) return edit;
+        if (!edit->isVisible())
+            continue;
+        if (edit->property("row_node").toString() == node_id)
+            return edit;
     }
     return nullptr;
 }
@@ -468,11 +456,12 @@ InlineEditor* FindRow(MainWindow& window, const QString& node_id) {
 const Paragraph* StoredParagraph(MainWindow& window) {
     Document& doc = window.controller()->session().mutable_document();
     const auto& sections = BodyOf(doc).sections;
-    if (sections.empty() || sections[0].blocks.empty()) return nullptr;
+    if (sections.empty() || sections[0].blocks.empty())
+        return nullptr;
     return std::get_if<Paragraph>(&sections[0].blocks[0]);
 }
 
-}  // namespace
+} // namespace
 
 PF_TEST(CitationCommitFlowReachesDocumentAndPillRepaints) {
     EnsureQApplication();
@@ -483,28 +472,29 @@ PF_TEST(CitationCommitFlowReachesDocumentAndPillRepaints) {
     // 必须遵循该已保存的位置（引用方案 §4）。
     BlockEditor* editor = window.findChild<BlockEditor*>();
     PF_CHECK(editor != nullptr);
-    if (!editor) return;
+    if (!editor)
+        return;
     InlineEditor* row = FindRow(window, fixture.node_id);
     PF_CHECK(row != nullptr);
-    if (!row) return;
+    if (!row)
+        return;
     QTextCursor caret(row->document());
-    caret.setPosition(7);  // "before " 与 "after" 之间
+    caret.setPosition(7); // "before " 与 "after" 之间
     row->setTextCursor(caret);
 
-    PF_CHECK(editor->InsertCitationIntoParagraph(fixture.node_id,
-                                                 QStringLiteral("smith2024")));
+    PF_CHECK(editor->InsertCitationIntoParagraph(fixture.node_id, QStringLiteral("smith2024")));
     Spin(200);
 
     // 1. 文档以 key 的形式把引文放在文本 run *之间*。
     const Paragraph* stored = StoredParagraph(window);
     PF_CHECK(stored != nullptr);
-    if (!stored) return;
+    if (!stored)
+        return;
     bool inserted_mid_paragraph = false;
     size_t index = 0;
     for (const auto& node : stored->content) {
         if (const auto* cit = std::get_if<Citation>(&node)) {
-            PF_CHECK(cit->keys.size() == 1 &&
-                     cit->keys[0] == "smith2024");
+            PF_CHECK(cit->keys.size() == 1 && cit->keys[0] == "smith2024");
             inserted_mid_paragraph = index > 0 && index < stored->content.size();
         }
         ++index;
@@ -528,9 +518,8 @@ PF_TEST(CitationCommitFlowReachesDocumentAndPillRepaints) {
         const int pill = plain.indexOf(QChar(0xFFFC));
         PF_CHECK(pill == 7);
         if (pill >= 0) {
-            PF_CHECK(FormatAt(*reloaded_row, pill)
-                         .property(citation_format::kDisplayTextProperty)
-                         .toString() == QStringLiteral("[1]"));
+            PF_CHECK(FormatAt(*reloaded_row, pill).property(citation_format::kDisplayTextProperty).toString() ==
+                     QStringLiteral("[1]"));
         }
     }
 }
@@ -541,12 +530,11 @@ PF_TEST(CitationAndReferencePickersFollowTheTextCaret) {
     MainWindow& window = fixture.window;
     InlineEditor* row = FindRow(window, fixture.node_id);
     PF_CHECK(row != nullptr);
-    if (!row) return;
+    if (!row)
+        return;
 
     int citation_x = -1;
-    for (const auto& request : {
-             std::pair{QStringLiteral("Citation"), 2},
-             std::pair{QStringLiteral("Reference"), 10}}) {
+    for (const auto& request : {std::pair{QStringLiteral("Citation"), 2}, std::pair{QStringLiteral("Reference"), 10}}) {
         row->setFocus(Qt::OtherFocusReason);
         QTextCursor cursor(row->document());
         cursor.setPosition(request.second);
@@ -558,16 +546,20 @@ PF_TEST(CitationAndReferencePickersFollowTheTextCaret) {
 
         QToolButton* button = nullptr;
         for (auto* candidate : row->parentWidget()->findChildren<QToolButton*>())
-            if (candidate->text() == request.first) button = candidate;
+            if (candidate->text() == request.first)
+                button = candidate;
         PF_CHECK(button != nullptr);
-        if (!button) return;
+        if (!button)
+            return;
         button->click();
         Spin(30);
         PopupList* popup = nullptr;
         for (auto* candidate : window.findChildren<PopupList*>())
-            if (candidate->isVisible()) popup = candidate;
+            if (candidate->isVisible())
+                popup = candidate;
         PF_CHECK(popup != nullptr);
-        if (!popup) return;
+        if (!popup)
+            return;
 
         const int line_height = row->fontMetrics().lineSpacing();
         const int gap = popup->y() - caret_bottom;
@@ -589,13 +581,12 @@ PF_TEST(InlineReferencesAndFigureSpanKeepEditorPosition) {
     auto* editor = window.findChild<BlockEditor*>();
     auto* row = FindRow(window, fixture.node_id);
     PF_CHECK(editor != nullptr && row != nullptr);
-    if (!editor || !row) return;
+    if (!editor || !row)
+        return;
 
     // 后续块使主编辑区能够滚动。
-    const auto section_id = window.controller()->session().state()
-                                .document().body().sections.front().id;
-    auto filler = window.controller()->InsertParagraph(
-        section_id, QStringLiteral("filler"));
+    const auto section_id = window.controller()->session().state().document().body().sections.front().id;
+    auto filler = window.controller()->InsertParagraph(section_id, QStringLiteral("filler"));
     PF_CHECK(filler.status == EditStatus::Applied);
     for (int i = 0; i < 16; ++i)
         window.controller()->InsertParagraph(section_id, QStringLiteral("filler"));
@@ -604,17 +595,18 @@ PF_TEST(InlineReferencesAndFigureSpanKeepEditorPosition) {
     auto* scroll = editor->findChild<QScrollArea*>();
     PF_CHECK(row != nullptr);
     PF_CHECK(scroll != nullptr);
-    if (!row || !scroll) return;
+    if (!row || !scroll)
+        return;
     Spin(80);
     auto* bar = scroll->verticalScrollBar();
     PF_CHECK(bar->maximum() > 0);
-    if (bar->maximum() == 0) return;
+    if (bar->maximum() == 0)
+        return;
     row->setFocus(Qt::OtherFocusReason);
     bar->setValue(qMin(80, bar->maximum()));
     const int position = bar->value();
 
-    PF_CHECK(editor->InsertCitationIntoParagraph(
-        fixture.node_id, QStringLiteral("smith2024"), 7));
+    PF_CHECK(editor->InsertCitationIntoParagraph(fixture.node_id, QStringLiteral("smith2024"), 7));
     Spin(80);
     PF_CHECK(FindRow(window, fixture.node_id) == row);
     PF_CHECK(bar->value() == position);
@@ -633,24 +625,25 @@ PF_TEST(InlineReferencesAndFigureSpanKeepEditorPosition) {
         PF_CHECK(has_reference);
     }
 
-    const auto image_path = std::filesystem::temp_directory_path() /
-                            "pf-editor-position.png";
+    const auto image_path = std::filesystem::temp_directory_path() / "pf-editor-position.png";
     QImage image(2, 2, QImage::Format_RGB32);
     image.fill(Qt::white);
     PF_CHECK(image.save(QString::fromStdString(image_path.string())));
-    auto figure = window.controller()->InsertFigureAfter(
-        NodeId(filler.created_node.value()),
-        QString::fromStdString(image_path.string()));
+    auto figure = window.controller()->InsertFigureAfter(NodeId(filler.created_node.value()),
+                                                         QString::fromStdString(image_path.string()));
     PF_CHECK(figure.status == EditStatus::Applied);
     std::filesystem::remove(image_path);
-    if (figure.status != EditStatus::Applied) return;
+    if (figure.status != EditStatus::Applied)
+        return;
     QCheckBox* span = nullptr;
     const QString figure_id = QString::fromStdString(figure.created_node.value());
     for (auto* box : editor->findChildren<QCheckBox*>()) {
-        if (box->property("row_node").toString() == figure_id) span = box;
+        if (box->property("row_node").toString() == figure_id)
+            span = box;
     }
     PF_CHECK(span != nullptr);
-    if (!span) return;
+    if (!span)
+        return;
     bar->setValue(qMin(80, bar->maximum()));
     const int figure_position = bar->value();
     span->setChecked(true);
@@ -659,13 +652,11 @@ PF_TEST(InlineReferencesAndFigureSpanKeepEditorPosition) {
     PF_CHECK(bar->value() == figure_position);
     PF_CHECK(span->isVisible());
     bool stored_double_column = false;
-    VisitBlocks(window.controller()->session().state().document(),
-                [&](const Block& block, const NodeAddress&) {
-                    if (const auto* value = std::get_if<Figure>(&block))
-                        if (value->id == figure.created_node)
-                            stored_double_column =
-                                value->span == FigureSpan::DoubleColumn;
-                });
+    VisitBlocks(window.controller()->session().state().document(), [&](const Block& block, const NodeAddress&) {
+        if (const auto* value = std::get_if<Figure>(&block))
+            if (value->id == figure.created_node)
+                stored_double_column = value->span == FigureSpan::DoubleColumn;
+    });
     PF_CHECK(stored_double_column);
 }
 
@@ -675,32 +666,31 @@ PF_TEST(SecondCitationNumbersIncrementallyInGui) {
     MainWindow& window = fixture.window;
     BlockEditor* editor = window.findChild<BlockEditor*>();
     PF_CHECK(editor != nullptr);
-    if (!editor) return;
+    if (!editor)
+        return;
 
-    PF_CHECK(editor->InsertCitationIntoParagraph(fixture.node_id,
-                                                QStringLiteral("jones2020"), 0));
+    PF_CHECK(editor->InsertCitationIntoParagraph(fixture.node_id, QStringLiteral("jones2020"), 0));
     Spin(150);
     // 现在 jones 先被引用 -> [1]；在其后加入 smith -> [2]。第二次提交后
     // 两个 pill 必须反映同一套共享编号。
-    PF_CHECK(editor->InsertCitationIntoParagraph(fixture.node_id,
-                                                 QStringLiteral("smith2024"), 20));
+    PF_CHECK(editor->InsertCitationIntoParagraph(fixture.node_id, QStringLiteral("smith2024"), 20));
     Spin(150);
 
     InlineEditor* row = FindRow(window, fixture.node_id);
     PF_CHECK(row != nullptr);
-    if (!row) return;
+    if (!row)
+        return;
     QStringList pills;
     const QString plain = row->toPlainText();
     for (int pos = 0; pos < plain.size(); ++pos) {
-        if (plain.at(pos) != QChar(0xFFFC)) continue;
-        pills << FormatAt(*row, pos)
-                     .property(citation_format::kDisplayTextProperty)
-                     .toString();
+        if (plain.at(pos) != QChar(0xFFFC))
+            continue;
+        pills << FormatAt(*row, pos).property(citation_format::kDisplayTextProperty).toString();
     }
     PF_CHECK(pills.size() == 2);
     if (pills.size() == 2) {
-        PF_CHECK(pills[0] == QStringLiteral("[1]"));   // jones，先被引用
-        PF_CHECK(pills[1] == QStringLiteral("[2]"));   // smith，后被引用
+        PF_CHECK(pills[0] == QStringLiteral("[1]")); // jones，先被引用
+        PF_CHECK(pills[1] == QStringLiteral("[2]")); // smith，后被引用
     }
 }
 
@@ -710,7 +700,8 @@ PF_TEST(ManualBuildFlushesTheFocusedRowFirst) {
     MainWindow& window = fixture.window;
     InlineEditor* row = FindRow(window, fixture.node_id);
     PF_CHECK(row != nullptr);
-    if (!row) return;
+    if (!row)
+        return;
 
     // 聚焦该 row 并输入：此时尚未发生提交（没有 focus-out）。
     row->setFocus(Qt::MouseFocusReason);
@@ -727,8 +718,7 @@ PF_TEST(ManualBuildFlushesTheFocusedRowFirst) {
     const Paragraph* stored = StoredParagraph(window);
     PF_CHECK(stored != nullptr);
     if (stored) {
-        PF_CHECK(InlineToPlainText(stored->content) ==
-                 "before after tail typed");
+        PF_CHECK(InlineToPlainText(stored->content) == "before after tail typed");
     }
     InlineEditor* fresh_row = FindRow(window, fixture.node_id);
     PF_CHECK(fresh_row != nullptr && !fresh_row->IsDirty());

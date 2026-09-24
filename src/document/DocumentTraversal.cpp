@@ -16,9 +16,12 @@ NodeKind BlockKind(const Block& block) {
     return std::visit(
         [](const auto& b) -> NodeKind {
             using T = std::decay_t<decltype(b)>;
-            if constexpr (std::is_same_v<T, Paragraph>) return NodeKind::Paragraph;
-            if constexpr (std::is_same_v<T, Figure>) return NodeKind::Figure;
-            if constexpr (std::is_same_v<T, Table>) return NodeKind::Table;
+            if constexpr (std::is_same_v<T, Paragraph>)
+                return NodeKind::Paragraph;
+            if constexpr (std::is_same_v<T, Figure>)
+                return NodeKind::Figure;
+            if constexpr (std::is_same_v<T, Table>)
+                return NodeKind::Table;
             return NodeKind::Equation;
         },
         block);
@@ -28,7 +31,7 @@ NodeId BlockId(const Block& block) {
     return std::visit([](const auto& b) { return b.id; }, block);
 }
 
-}  // namespace
+} // namespace
 
 std::optional<NodeAddress> LocateNode(const Document& document, const NodeId& node) {
     const auto& sections = BodyOf(document).sections;
@@ -105,26 +108,32 @@ std::optional<NodeAddress> LocateNode(const Document& document, const NodeId& no
 }
 
 std::vector<Block>* FindBlockList(Document& document, const NodeAddress& address) {
-    if (!address.section || !address.block) return nullptr;
+    if (!address.section || !address.block)
+        return nullptr;
     auto& sections = BodyOf(document).sections;
-    if (*address.section >= sections.size()) return nullptr;
+    if (*address.section >= sections.size())
+        return nullptr;
     Section& section = sections[*address.section];
-    if (!address.subsection) return &section.blocks;
-    if (*address.subsection >= section.subsections.size()) return nullptr;
+    if (!address.subsection)
+        return &section.blocks;
+    if (*address.subsection >= section.subsections.size())
+        return nullptr;
     Subsection& sub = section.subsections[*address.subsection];
-    if (!address.subsubsection) return &sub.blocks;
-    if (*address.subsubsection >= sub.subsubsections.size()) return nullptr;
+    if (!address.subsubsection)
+        return &sub.blocks;
+    if (*address.subsubsection >= sub.subsubsections.size())
+        return nullptr;
     return &sub.subsubsections[*address.subsubsection].blocks;
 }
 
-const std::vector<Block>* FindBlockList(const Document& document,
-                                        const NodeAddress& address) {
+const std::vector<Block>* FindBlockList(const Document& document, const NodeAddress& address) {
     return FindBlockList(const_cast<Document&>(document), address);
 }
 
 Section* FindSection(Document& document, const NodeId& id) {
     for (auto& section : BodyOf(document).sections) {
-        if (section.id == id) return &section;
+        if (section.id == id)
+            return &section;
     }
     return nullptr;
 }
@@ -132,7 +141,8 @@ Section* FindSection(Document& document, const NodeId& id) {
 Subsection* FindSubsection(Document& document, const NodeId& id) {
     for (auto& section : BodyOf(document).sections) {
         for (auto& sub : section.subsections) {
-            if (sub.id == id) return &sub;
+            if (sub.id == id)
+                return &sub;
         }
     }
     return nullptr;
@@ -142,7 +152,8 @@ Subsubsection* FindSubsubsection(Document& document, const NodeId& id) {
     for (auto& section : BodyOf(document).sections) {
         for (auto& sub : section.subsections) {
             for (auto& subsub : sub.subsubsections) {
-                if (subsub.id == id) return &subsub;
+                if (subsub.id == id)
+                    return &subsub;
             }
         }
     }
@@ -151,15 +162,17 @@ Subsubsection* FindSubsubsection(Document& document, const NodeId& id) {
 
 Block* FindBlock(Document& document, const NodeId& id) {
     auto address = LocateNode(document, id);
-    if (!address || !address->block) return nullptr;
+    if (!address || !address->block)
+        return nullptr;
     auto* blocks = FindBlockList(document, *address);
-    if (!blocks) return nullptr;
+    if (!blocks)
+        return nullptr;
     return &(*blocks)[*address->block];
 }
 
-void VisitNodes(const Document& document,
-                const std::function<void(const NodeAddress&)>& visit) {
-    if (!visit) return;
+void VisitNodes(const Document& document, const std::function<void(const NodeAddress&)>& visit) {
+    if (!visit)
+        return;
     const auto& sections = BodyOf(document).sections;
     for (size_t si = 0; si < sections.size(); ++si) {
         const auto& section = sections[si];
@@ -224,42 +237,47 @@ void VisitNodes(const Document& document,
     }
 }
 
-void VisitBlocks(const Document& document,
-                 const std::function<void(const Block&, const NodeAddress&)>& visit) {
-    if (!visit) return;
+void VisitBlocks(const Document& document, const std::function<void(const Block&, const NodeAddress&)>& visit) {
+    if (!visit)
+        return;
     VisitNodes(document, [&](const NodeAddress& address) {
-        if (!address.block) return;
+        if (!address.block)
+            return;
         const auto* blocks = FindBlockList(const_cast<Document&>(document), address);
-        if (!blocks) return;
+        if (!blocks)
+            return;
         visit((*blocks)[*address.block], address);
     });
 }
 
-void VisitHeadings(const Document& document,
-                   const std::function<void(const NodeAddress&)>& visit) {
-    if (!visit) return;
+void VisitHeadings(const Document& document, const std::function<void(const NodeAddress&)>& visit) {
+    if (!visit)
+        return;
     VisitNodes(document, [&](const NodeAddress& address) {
-        if (address.is_heading()) visit(address);
+        if (address.is_heading())
+            visit(address);
     });
 }
 
-void VisitSections(const Document& document,
-                   const std::function<void(const Section&, size_t index)>& visit) {
-    if (!visit) return;
+void VisitSections(const Document& document, const std::function<void(const Section&, size_t index)>& visit) {
+    if (!visit)
+        return;
     const auto& sections = BodyOf(document).sections;
-    for (size_t si = 0; si < sections.size(); ++si) visit(sections[si], si);
+    for (size_t si = 0; si < sections.size(); ++si)
+        visit(sections[si], si);
 }
 
-void VisitInlineContent(
-    const Document& document,
-    const std::function<void(const InlineContent&, const NodeAddress&)>& visit) {
-    if (!visit) return;
+void VisitInlineContent(const Document& document,
+                        const std::function<void(const InlineContent&, const NodeAddress&)>& visit) {
+    if (!visit)
+        return;
     const FrontMatter& front = FrontMatterOf(document);
     {
         NodeAddress address;
         address.node = NodeId("front:title");
         address.kind = NodeKind::Paragraph;
-        if (!front.title.empty()) visit(front.title, address);
+        if (!front.title.empty())
+            visit(front.title, address);
     }
     if (front.abstract_text) {
         NodeAddress address;
@@ -273,9 +291,9 @@ void VisitInlineContent(
                 using T = std::decay_t<decltype(b)>;
                 if constexpr (std::is_same_v<T, Paragraph>) {
                     visit(b.content, address);
-                } else if constexpr (std::is_same_v<T, Figure> ||
-                                     std::is_same_v<T, Table>) {
-                    if (!b.caption.empty()) visit(b.caption, address);
+                } else if constexpr (std::is_same_v<T, Figure> || std::is_same_v<T, Table>) {
+                    if (!b.caption.empty())
+                        visit(b.caption, address);
                 }
             },
             block);
@@ -288,4 +306,4 @@ std::vector<NodeId> CollectAllNodeIds(const Document& document) {
     return out;
 }
 
-}  // namespace pf
+} // namespace pf

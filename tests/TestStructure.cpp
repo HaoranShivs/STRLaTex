@@ -48,7 +48,9 @@ EditCommand MakeCmd(ProjectState& state, FullEditPayload payload) {
     return cmd;
 }
 
-Body& BodyOf(Document& doc) { return DocumentMutableAccess::body(doc); }
+Body& BodyOf(Document& doc) {
+    return DocumentMutableAccess::body(doc);
+}
 
 // Section(1) -> Subsection(1) -> Subsubsection(1..2)，每个各带一个段落。
 void SeedThreeLevels(Document& doc) {
@@ -68,7 +70,7 @@ void SeedThreeLevels(Document& doc) {
     (void)editor.InsertBlock(sub.value(), std::nullopt, p3);
 }
 
-}  // namespace
+} // namespace
 
 // ---------------- NodeAddress / 遍历 ----------------
 
@@ -83,7 +85,8 @@ PF_TEST(TraversalLocatesEveryNodeWithItsAddress) {
     for (const auto& id : ids) {
         auto address = LocateNode(doc, id);
         PF_CHECK(address.has_value());
-        if (!address) continue;
+        if (!address)
+            continue;
         PF_CHECK(address->node == id);
         PF_CHECK(address->section.has_value());
     }
@@ -98,17 +101,14 @@ PF_TEST(TraversalLocatesEveryNodeWithItsAddress) {
     PF_CHECK(*sub->subsection == 0);
     PF_CHECK(sub->depth() == 2);
 
-    auto subsub = LocateNode(
-        doc, BodyOf(doc).sections[0].subsections[0].subsubsections[1].id);
+    auto subsub = LocateNode(doc, BodyOf(doc).sections[0].subsections[0].subsubsections[1].id);
     PF_CHECK(subsub->kind == NodeKind::Subsubsection);
     PF_CHECK(*subsub->subsubsection == 1);
     PF_CHECK(subsub->depth() == 3);
 
     // 第二个 subsubsection 内的段落携带完整的层级链。
-    const auto& deep_block =
-        BodyOf(doc).sections[0].subsections[0].subsubsections[1].blocks[0];
-    const NodeId deep_id =
-        std::visit([](const auto& b) { return b.id; }, deep_block);
+    const auto& deep_block = BodyOf(doc).sections[0].subsections[0].subsubsections[1].blocks[0];
+    const NodeId deep_id = std::visit([](const auto& b) { return b.id; }, deep_block);
     auto deep = LocateNode(doc, deep_id);
     PF_CHECK(deep->kind == NodeKind::Paragraph);
     PF_CHECK(*deep->section == 0);
@@ -130,10 +130,8 @@ PF_TEST(TraversalVisitsInDocumentOrder) {
     // subsubsection，每个后面跟自己的 block。subsection 会先渲染自身的
     // block，再渲染 subsubsection，因此这才是文档顺序。
     const std::vector<NodeKind> expected = {
-        NodeKind::Section,       NodeKind::Subsection,
-        NodeKind::Paragraph,     NodeKind::Subsubsection,
-        NodeKind::Paragraph,     NodeKind::Subsubsection,
-        NodeKind::Paragraph,
+        NodeKind::Section,   NodeKind::Subsection,    NodeKind::Paragraph, NodeKind::Subsubsection,
+        NodeKind::Paragraph, NodeKind::Subsubsection, NodeKind::Paragraph,
     };
     PF_CHECK(kinds == expected);
 }
@@ -177,7 +175,8 @@ PF_TEST(TraversalInlineCoversParagraphsAndCaptions) {
     bool saw_caption = false;
     VisitInlineContent(doc, [&](const InlineContent& content, const NodeAddress&) {
         ++seen;
-        if (InlineToPlainText(content) == "the caption") saw_caption = true;
+        if (InlineToPlainText(content) == "the caption")
+            saw_caption = true;
     });
     // 论文标题 + 段落正文 + figure caption。
     PF_CHECK(seen == 3);
@@ -213,25 +212,18 @@ PF_TEST(SubsubsectionInsertRenameDeleteThroughProtocol) {
     PF_CHECK(created.status == EditStatus::Applied);
     const NodeId subsub_id = created.created_node;
     PF_CHECK(!subsub_id.empty());
-    PF_CHECK(BodyOf(state.mutable_document())
-                 .sections[0]
-                 .subsections[0]
-                 .subsubsections.size() == 1);
+    PF_CHECK(BodyOf(state.mutable_document()).sections[0].subsections[0].subsubsections.size() == 1);
 
     // NodeKind 与索引都反映出它。
-    PF_CHECK(state.mutable_document().GetNodeKind(subsub_id) ==
-             NodeKind::Subsubsection);
+    PF_CHECK(state.mutable_document().GetNodeKind(subsub_id) == NodeKind::Subsubsection);
 
     // 重命名。
     RenameSubsubsectionPayload rename;
     rename.subsubsection = subsub_id;
     rename.title = InlineFromText("Renamed third");
     PF_CHECK(editing.Apply(MakeCmd(state, rename)).status == EditStatus::Applied);
-    PF_CHECK(InlineToPlainText(BodyOf(state.mutable_document())
-                 .sections[0]
-                                   .subsections[0]
-                                   .subsubsections[0]
-                                   .title) == "Renamed third");
+    PF_CHECK(InlineToPlainText(BodyOf(state.mutable_document()).sections[0].subsections[0].subsubsections[0].title) ==
+             "Renamed third");
 
     // 移动：把第二个换到第一个前面。
     InsertSubsubsectionPayload second;
@@ -248,19 +240,12 @@ PF_TEST(SubsubsectionInsertRenameDeleteThroughProtocol) {
     move.from = 1;
     move.to = 0;
     PF_CHECK(editing.Apply(MakeCmd(state, move)).status == EditStatus::Applied);
-    PF_CHECK(InlineToPlainText(BodyOf(state.mutable_document())
-                 .sections[0]
-                                   .subsections[0]
-                                   .subsubsections[0]
-                                   .title) == "Second third");
+    PF_CHECK(InlineToPlainText(BodyOf(state.mutable_document()).sections[0].subsections[0].subsubsections[0].title) ==
+             "Second third");
 
     // 移动之后，"Second third"（second_id）位于索引 0，而原来的
     // "Renamed third"（subsub_id）位于索引 1。
-    PF_CHECK(BodyOf(state.mutable_document())
-                 .sections[0]
-                 .subsections[0]
-                 .subsubsections[0]
-                 .id == second_id);
+    PF_CHECK(BodyOf(state.mutable_document()).sections[0].subsections[0].subsubsections[0].id == second_id);
 
     // 按索引删除；当前位于该索引的那个就是要被删除的。
     DeleteSubsubsectionPayload del;
@@ -268,14 +253,10 @@ PF_TEST(SubsubsectionInsertRenameDeleteThroughProtocol) {
     del.subsection_index = 0;
     del.subsubsection_index = 0;
     PF_CHECK(editing.Apply(MakeCmd(state, del)).status == EditStatus::Applied);
-    PF_CHECK(BodyOf(state.mutable_document())
-                 .sections[0]
-                 .subsections[0]
-                 .subsubsections.size() == 1);
+    PF_CHECK(BodyOf(state.mutable_document()).sections[0].subsections[0].subsubsections.size() == 1);
     PF_CHECK(!state.mutable_document().ContainsNode(second_id));
     PF_CHECK(state.mutable_document().ContainsNode(subsub_id));
-    PF_CHECK(state.mutable_document().GetNodeKind(subsub_id) ==
-             NodeKind::Subsubsection);
+    PF_CHECK(state.mutable_document().GetNodeKind(subsub_id) == NodeKind::Subsubsection);
 }
 
 PF_TEST(SubsubsectionAfterAnchorTakesFollowingBlocks) {
@@ -310,12 +291,10 @@ PF_TEST(SubsubsectionAfterAnchorTakesFollowingBlocks) {
     PF_CHECK(created.status == EditStatus::Applied);
 
     const auto& subsection = BodyOf(state.mutable_document()).sections[0].subsections[0];
-    PF_CHECK(subsection.blocks.size() == 1);  // "one" 保留在原处
+    PF_CHECK(subsection.blocks.size() == 1); // "one" 保留在原处
     PF_CHECK(subsection.subsubsections.size() == 1);
     PF_CHECK(subsection.subsubsections[0].blocks.size() == 1);
-    PF_CHECK(InlineToPlainText(
-                 std::get<Paragraph>(subsection.subsubsections[0].blocks[0])
-                     .content) == "two");
+    PF_CHECK(InlineToPlainText(std::get<Paragraph>(subsection.subsubsections[0].blocks[0]).content) == "two");
     (void)p2_result;
 }
 
@@ -339,32 +318,15 @@ PF_TEST(SubsubsectionSurvivesUndoAndRedo) {
     payload.index = 0;
     payload.title = InlineFromText("Third");
     PF_CHECK(editing.Apply(MakeCmd(state, payload)).status == EditStatus::Applied);
-    PF_CHECK(BodyOf(state.mutable_document())
-                 .sections[0]
-                 .subsections[0]
-                 .subsubsections.size() == 1);
+    PF_CHECK(BodyOf(state.mutable_document()).sections[0].subsections[0].subsubsections.size() == 1);
 
     // Undo 将其移除；redo 会以相同的 id 让它恢复。
-    const NodeId created = BodyOf(state.mutable_document())
-                 .sections[0]
-                               .subsections[0]
-                               .subsubsections[0]
-                               .id;
+    const NodeId created = BodyOf(state.mutable_document()).sections[0].subsections[0].subsubsections[0].id;
     PF_CHECK(editing.Undo().status == EditStatus::Applied);
-    PF_CHECK(BodyOf(state.mutable_document())
-                 .sections[0]
-                 .subsections[0]
-                 .subsubsections.empty());
+    PF_CHECK(BodyOf(state.mutable_document()).sections[0].subsections[0].subsubsections.empty());
     PF_CHECK(editing.Redo().status == EditStatus::Applied);
-    PF_CHECK(BodyOf(state.mutable_document())
-                 .sections[0]
-                 .subsections[0]
-                 .subsubsections.size() == 1);
-    PF_CHECK(BodyOf(state.mutable_document())
-                 .sections[0]
-                 .subsections[0]
-                 .subsubsections[0]
-                 .id == created);
+    PF_CHECK(BodyOf(state.mutable_document()).sections[0].subsections[0].subsubsections.size() == 1);
+    PF_CHECK(BodyOf(state.mutable_document()).sections[0].subsections[0].subsubsections[0].id == created);
 }
 
 PF_TEST(SubsubsectionBlocksMoveAndValidate) {
@@ -373,22 +335,12 @@ PF_TEST(SubsubsectionBlocksMoveAndValidate) {
 
     DocumentEditor editor(doc);
     // block 可以从一个 subsubsection 移动到同级的另一个。
-    const NodeId source_id = std::visit(
-        [](const auto& b) { return b.id; },
-        BodyOf(doc).sections[0].subsections[0].subsubsections[0].blocks[0]);
-    const NodeId destination =
-        BodyOf(doc).sections[0].subsections[0].subsubsections[1].id;
+    const NodeId source_id = std::visit([](const auto& b) { return b.id; },
+                                        BodyOf(doc).sections[0].subsections[0].subsubsections[0].blocks[0]);
+    const NodeId destination = BodyOf(doc).sections[0].subsections[0].subsubsections[1].id;
     PF_CHECK(editor.MoveBlock(source_id, destination, 0).ok());
-    PF_CHECK(BodyOf(doc)
-                .sections[0]
-                .subsections[0]
-                .subsubsections[0]
-                .blocks.empty());
-    PF_CHECK(BodyOf(doc)
-                .sections[0]
-                .subsections[0]
-                .subsubsections[1]
-                .blocks.size() == 2);
+    PF_CHECK(BodyOf(doc).sections[0].subsections[0].subsubsections[0].blocks.empty());
+    PF_CHECK(BodyOf(doc).sections[0].subsections[0].subsubsections[1].blocks.size() == 2);
 
     // 文档在结构上保持有效。
     for (const auto& id : doc.CollectNodeIds()) {
@@ -404,7 +356,8 @@ PF_TEST(SubsubsectionBlocksMoveAndValidate) {
     auto result = Validator().Validate(input);
     bool has_error = false;
     for (const auto& d : result.diagnostics) {
-        if (d.severity == DiagnosticSeverity::Error) has_error = true;
+        if (d.severity == DiagnosticSeverity::Error)
+            has_error = true;
     }
     PF_CHECK(!has_error);
 }
@@ -423,9 +376,8 @@ PF_TEST(RendererEmitsSubsubsectionWithLabel) {
     const std::string& tex = rendered.package.files[0].content;
     PF_CHECK(tex.find("\\subsubsection{") != std::string::npos);
     const auto& subsub = BodyOf(doc).sections[0].subsections[0].subsubsections[0];
-    PF_CHECK(tex.find("\\subsubsection{" +
-                      InlineToPlainText(subsub.title) + "}\\label{" +
-                      subsub.id.value() + "}") != std::string::npos);
+    PF_CHECK(tex.find("\\subsubsection{" + InlineToPlainText(subsub.title) + "}\\label{" + subsub.id.value() + "}") !=
+             std::string::npos);
 }
 
 PF_TEST(DocumentIndexCoversThirdLevel) {
@@ -443,8 +395,7 @@ PF_TEST(DocumentIndexCoversThirdLevel) {
     PF_CHECK(location->parent == BodyOf(doc).sections[0].subsections[0].id);
 
     // 它内部的 block 以该 subsubsection 作为其父节点。
-    const NodeId block_id = std::visit(
-        [](const auto& b) { return b.id; }, subsub.blocks[0]);
+    const NodeId block_id = std::visit([](const auto& b) { return b.id; }, subsub.blocks[0]);
     auto block_location = index.Find(block_id);
     PF_CHECK(block_location.has_value());
     PF_CHECK(block_location->parent == subsub.id);
@@ -473,7 +424,8 @@ PF_TEST(ValidatorWarnsWhenHeadingExceedsTemplateDepth) {
     auto result = Validator().Validate(input);
     size_t depth_warnings = 0;
     for (const auto& d : result.diagnostics) {
-        if (d.code == "W-HEADING-DEPTH") ++depth_warnings;
+        if (d.code == "W-HEADING-DEPTH")
+            ++depth_warnings;
     }
     PF_CHECK(depth_warnings == 0);
 }
@@ -511,18 +463,15 @@ PF_TEST(SchemaMigrationV1ToV2KeepsDocumentAndStampsVersion) {
     PF_CHECK(migration.migrated);
     PF_CHECK(migration.from_version == "1");
     PF_CHECK(migration.to_version == "3");
-    PF_CHECK(migration.applied.size() == 2);  // V1->V2、V2->V3
+    PF_CHECK(migration.applied.size() == 2); // V1->V2、V2->V3
     PF_CHECK(migration.warnings.empty());
 
     // 没有任何内容丢失。
-    PF_CHECK(InlineToPlainText(
-             DocumentMutableAccess::front_matter(loaded.value().document)
-                 .title) == "Old Paper");
+    PF_CHECK(InlineToPlainText(DocumentMutableAccess::front_matter(loaded.value().document).title) == "Old Paper");
     PF_CHECK(BodyOf(loaded.value().document).sections.size() == 1);
     PF_CHECK(BodyOf(loaded.value().document).sections[0].subsections.size() == 1);
     {
-        const Block& block =
-            BodyOf(loaded.value().document).sections[0].subsections[0].blocks[0];
+        const Block& block = BodyOf(loaded.value().document).sections[0].subsections[0].blocks[0];
         const auto* para = std::get_if<Paragraph>(&block);
         PF_CHECK(para != nullptr);
         if (para) {
@@ -611,18 +560,13 @@ PF_TEST(SubsubsectionRoundTripsThroughProjectFile) {
     const std::string json = ProjectSerializer::Serialize(project);
     auto back = ProjectSerializer::Deserialize(json);
     PF_CHECK(back.ok());
-    const auto& subsub =
-        BodyOf(back.value().document).sections[0].subsections[0].subsubsections;
+    const auto& subsub = BodyOf(back.value().document).sections[0].subsections[0].subsubsections;
     PF_CHECK(subsub.size() == 2);
     PF_CHECK(InlineToPlainText(subsub[0].title) == "S1.1.1");
     PF_CHECK(subsub[0].blocks.size() == 1);
     PF_CHECK(std::visit([](const auto& b) { return b.id; }, subsub[0].blocks[0]) != NodeId());
     // id 得以保留，因此交叉引用仍然有效。
-    PF_CHECK(subsub[0].id == BodyOf(doc)
-                                 .sections[0]
-                                 .subsections[0]
-                                 .subsubsections[0]
-                                 .id);
+    PF_CHECK(subsub[0].id == BodyOf(doc).sections[0].subsections[0].subsubsections[0].id);
 }
 
 // ---------------- Session 级端到端 ----------------
@@ -668,23 +612,14 @@ PF_TEST(SessionSubsubsectionEndToEnd) {
     subsub_cmd.payload = subsub;
     auto subsub_result = session.Execute(subsub_cmd);
     PF_CHECK(subsub_result.status == EditStatus::Applied);
-    PF_CHECK(session.state().document().GetNodeKind(subsub_result.created_node) ==
-             NodeKind::Subsubsection);
+    PF_CHECK(session.state().document().GetNodeKind(subsub_result.created_node) == NodeKind::Subsubsection);
 
     // Undo 将其移除，redo 将其恢复。
     const std::uint64_t before = session.current_revision().value;
     PF_CHECK(session.Undo().status == EditStatus::Applied);
-    PF_CHECK(session.state().document()
-                 .body()
-                 .sections[0]
-                 .subsections[0]
-                 .subsubsections.empty());
+    PF_CHECK(session.state().document().body().sections[0].subsections[0].subsubsections.empty());
     PF_CHECK(session.Redo().status == EditStatus::Applied);
-    PF_CHECK(session.state().document()
-                 .body()
-                 .sections[0]
-                 .subsections[0]
-                 .subsubsections.size() == 1);
+    PF_CHECK(session.state().document().body().sections[0].subsections[0].subsubsections.size() == 1);
     PF_CHECK(session.current_revision().value > before);
 
     // 保存 + 重新加载后仍保留第三级。
@@ -692,10 +627,6 @@ PF_TEST(SessionSubsubsectionEndToEnd) {
     PF_CHECK(session.FlushSaves().status == SaveResult::Status::Ok);
     std::string error;
     PF_CHECK(session.OpenProject(dir, &error));
-    PF_CHECK(session.state().document()
-                 .body()
-                 .sections[0]
-                 .subsections[0]
-                 .subsubsections.size() == 1);
+    PF_CHECK(session.state().document().body().sections[0].subsections[0].subsubsections.size() == 1);
     std::filesystem::remove_all(dir);
 }

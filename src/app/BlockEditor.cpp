@@ -66,8 +66,7 @@ QPoint PickerPositionBelowCaret(InlineEditor* editor) {
         if (line.isValid() && line.height() > 0)
             line_height = qMax(1, qRound(line.height()));
     }
-    return editor->viewport()->mapToGlobal(
-        QPoint(caret.left(), caret.bottom() + 2 * line_height));
+    return editor->viewport()->mapToGlobal(QPoint(caret.left(), caret.bottom() + 2 * line_height));
 }
 
 // 重排序使用私有 mime 类型，因此编辑器会忽略来自外部的拖拽

@@ -76,4 +76,4 @@ std::vector<TemplateDefinition> TemplateRegistry::All() const {
     return out;
 }
 
-}  // namespace pf
+} // namespace pf

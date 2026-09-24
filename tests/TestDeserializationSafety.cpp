@@ -40,13 +40,12 @@ std::string MinimalProjectJson() {
     })";
 }
 
-}  // namespace
+} // namespace
 
 // 审查中报告的崩溃：直接调用 std::stod 抛出的 std::out_of_range
 // 逃出解析器并终止了进程。
 PF_TEST(JsonParseRejectsNumberOverflowAsError) {
-    for (const char* input : {"{\"a\": 1e999}", "{\"a\": -1e999}",
-                              "{\"a\": 1e-999}", "[1e999]"}) {
+    for (const char* input : {"{\"a\": 1e999}", "{\"a\": -1e999}", "{\"a\": 1e-999}", "[1e999]"}) {
         std::string error;
         auto value = JsonParse(input, &error);
         PF_CHECK(value == nullptr);
@@ -92,16 +91,14 @@ PF_TEST(JsonParseEnforcesStringLengthLimit) {
     JsonParseLimits limits;
     limits.max_string_bytes = 16;
     std::string error;
-    auto value = JsonParse("{\"k\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
-                           &error, limits);
+    auto value = JsonParse("{\"k\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}", &error, limits);
     PF_CHECK(value == nullptr);
     PF_CHECK(error.find("string") != std::string::npos);
 }
 
 PF_TEST(JsonParseRejectsTruncatedAndMalformed) {
-    for (const char* input : {"", "   ", "{", "[1,", "{\"a\":}", "nulL",
-                              "\"unterminated", "{\"a\": 1} trailing",
-                              "{\x01: 1}"}) {
+    for (const char* input :
+         {"", "   ", "{", "[1,", "{\"a\":}", "nulL", "\"unterminated", "{\"a\": 1} trailing", "{\x01: 1}"}) {
         std::string error;
         auto value = JsonParse(input, &error);
         PF_CHECK(value == nullptr);
@@ -116,7 +113,8 @@ PF_TEST(JsonParseStillAcceptsValidDocuments) {
             "arr": [1, {"deep": [null, false]}], "u": "\u00e9\u4e2d"})",
         &error);
     PF_CHECK(value != nullptr);
-    if (!value) return;
+    if (!value)
+        return;
     PF_CHECK(value->find("n")->as_int() == -12);
     PF_CHECK(value->find("f")->as_double() == 3.25);
 }
@@ -163,7 +161,8 @@ PF_TEST(DeserializeRejectsOversizedTable) {
     // 101 行 x 1 列：超出 table 行数上限。
     std::string cells;
     for (std::size_t i = 0; i < 101; ++i) {
-        if (i) cells += ",";
+        if (i)
+            cells += ",";
         cells += "[[]]";
     }
     const std::string json = R"({
@@ -173,7 +172,8 @@ PF_TEST(DeserializeRejectsOversizedTable) {
         "template": "generic-article",
         "body": {"sections": [{"id": "s1", "title": [], "blocks": [
             {"type": "table", "id": "t1", "caption": [],
-             "columns": ["left"], "cells": [)" + cells + R"(]}
+             "columns": ["left"], "cells": [)" +
+                             cells + R"(]}
         ], "subsections": []}]}
     })";
     auto project = ProjectSerializer::Deserialize(json);
@@ -291,7 +291,8 @@ PF_TEST(ResolveProjectRelativePathStaysInsideRoot) {
     std::filesystem::create_directories(tmp / "assets");
     auto parsed = ProjectRelativePath::Parse("assets/x.png");
     PF_CHECK(parsed.ok());
-    if (!parsed.ok()) return;
+    if (!parsed.ok())
+        return;
     auto resolved = ResolveProjectRelativePath(tmp, parsed.value());
     PF_CHECK(resolved.ok());
     if (resolved.ok()) {
@@ -308,11 +309,13 @@ PF_TEST(DeserializeRoundTripStillWorks) {
     std::string json = MinimalProjectJson();
     auto project = ProjectSerializer::Deserialize(json);
     PF_CHECK(project.ok());
-    if (!project.ok()) return;
+    if (!project.ok())
+        return;
     std::string out = ProjectSerializer::Serialize(project.value());
     auto again = ProjectSerializer::Deserialize(out);
     PF_CHECK(again.ok());
-    if (!again.ok()) return;
+    if (!again.ok())
+        return;
     PF_CHECK(again.value().project_id == "p-min");
     PF_CHECK(again.value().revision.value == 3);
 }

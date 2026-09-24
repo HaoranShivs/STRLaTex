@@ -17,21 +17,20 @@
 namespace pf {
 
 struct GeneratedSourceRange {
-    std::string file;      // "main.tex"
-    std::uint32_t begin_line = 0;  // 从 1 开始，含端点
-    std::uint32_t end_line = 0;    // 含端点
+    std::string file;             // "main.tex"
+    std::uint32_t begin_line = 0; // 从 1 开始，含端点
+    std::uint32_t end_line = 0;   // 含端点
 };
 
 // 一条生成行归属的对象：语义节点，以及供 GUI 显示的标签。
 struct SourceMapEntry {
     NodeId node;
-    std::string label;  // 块类型："Text"、"Figure"、"Table"……
+    std::string label; // 块类型："Text"、"Figure"、"Table"……
 };
 
 class SourceMap {
-public:
-    void AddMapping(const GeneratedSourceRange& range, NodeId node,
-                    std::string label = {});
+  public:
+    void AddMapping(const GeneratedSourceRange& range, NodeId node, std::string label = {});
     void AddMapping(std::uint32_t line, NodeId node, std::string label = {});
 
     // 把生成源码中从 1 开始计数的行解析为语义节点。
@@ -39,11 +38,17 @@ public:
     // 同一查找返回的完整条目（节点 + 块类型标签）。
     std::optional<SourceMapEntry> ResolveEntry(std::uint32_t line) const;
 
-    bool Empty() const noexcept { return line_to_node_.empty(); }
-    size_t Size() const noexcept { return line_to_node_.size(); }
-    void Clear() { line_to_node_.clear(); }
+    bool Empty() const noexcept {
+        return line_to_node_.empty();
+    }
+    size_t Size() const noexcept {
+        return line_to_node_.size();
+    }
+    void Clear() {
+        line_to_node_.clear();
+    }
 
-private:
+  private:
     struct Entry {
         std::uint32_t line = 0;
         SourceMapEntry value;
@@ -52,4 +57,4 @@ private:
     std::vector<Entry> line_to_node_;
 };
 
-}  // namespace pf
+} // namespace pf

@@ -47,4 +47,4 @@ bool InlineIsRich(const InlineContent& content);
 // 显式的 LaTeX 换行或预格式化块——原样返回。
 std::string ReflowHardWrappedText(std::string_view text);
 
-}  // namespace pf
+} // namespace pf

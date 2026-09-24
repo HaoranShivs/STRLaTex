@@ -1,15 +1,15 @@
 // P0-04 回归测试：I/O 处的项目相对路径信任边界。反序列化阶段的校验位于
 // TestDeserializationSafety.cpp；本文件覆盖第二道检查点——紧接真正文件系统
 // 访问之前的解析，包括评审特别指出的符号链接逃逸场景。
-#include "TestMain.hpp"
 #include "ScopedTempDir.hpp"
+#include "TestMain.hpp"
 
 #include <fstream>
 #include <string>
 
 #include "core/ProjectPath.h"
-#include "project/SnapshotFactory.h"
 #include "project/ProjectSession.h"
+#include "project/SnapshotFactory.h"
 
 using namespace pf;
 
@@ -22,9 +22,8 @@ std::filesystem::path TempDir(const std::string& name) {
 }
 
 class NullCompiler final : public ICompiler {
-public:
-    CompileResult Compile(const CompileRequest&,
-                          const std::atomic<bool>*) override {
+  public:
+    CompileResult Compile(const CompileRequest&, const std::atomic<bool>*) override {
         CompileResult result;
         result.status = CompileStatus::Success;
         return result;
@@ -69,8 +68,7 @@ PF_TEST(ResolveRejectsSymlinkEscape) {
         out << "secret";
     }
     std::error_code ec;
-    std::filesystem::create_directory_symlink(outside, root / "assets" / "link",
-                                              ec);
+    std::filesystem::create_directory_symlink(outside, root / "assets" / "link", ec);
     if (ec) {
         // 此处的文件系统不支持符号链接：显式跳过，而不是
         // 为一项从未执行的检查报告通过。
@@ -98,9 +96,7 @@ PF_TEST(BuildSnapshotDropsAssetsThatEscapeTheProject) {
     auto dir = TempDir("pf-boundary-snapshot");
     NullCompiler compiler;
     ProjectSession::Config config;
-    config.compiler_factory = [&compiler]() -> std::unique_ptr<ICompiler> {
-        return std::make_unique<NullCompiler>();
-    };
+    config.compiler_factory = [&compiler]() -> std::unique_ptr<ICompiler> { return std::make_unique<NullCompiler>(); };
     config.debounce = std::chrono::milliseconds{0};
     static pf::test::ScopedTempDir workspace("pf-boundary-workspaces");
     config.workspace_root = workspace.path();
@@ -121,16 +117,13 @@ PF_TEST(BuildSnapshotDropsAssetsThatEscapeTheProject) {
     session.assets().registry().Register(good);
 
     SnapshotFactory factory(&session.assets());
-    const auto snapshot = factory.CreateBuildSnapshot(
-        session.state(), std::string{});
+    const auto snapshot = factory.CreateBuildSnapshot(session.state(), std::string{});
     // 恶意资源被完全丢弃……
     PF_CHECK(snapshot.asset_files.count("a-evil") == 0);
     // ……且每个保留下来的源文件都位于 assets 目录内。
-    const std::string assets_root =
-        std::filesystem::weakly_canonical(session.paths().assets_dir).string();
+    const std::string assets_root = std::filesystem::weakly_canonical(session.paths().assets_dir).string();
     for (const auto& [name, source] : snapshot.asset_sources) {
-        const std::string resolved =
-            std::filesystem::weakly_canonical(source).string();
+        const std::string resolved = std::filesystem::weakly_canonical(source).string();
         PF_CHECK(resolved.compare(0, assets_root.size(), assets_root) == 0);
     }
     PF_CHECK(snapshot.asset_files.count("a-good") == 1);
@@ -143,9 +136,7 @@ PF_TEST(SaveRefusesBibliographyPathEscape) {
     auto dir = TempDir("pf-boundary-save");
     NullCompiler compiler;
     ProjectSession::Config config;
-    config.compiler_factory = [&compiler]() -> std::unique_ptr<ICompiler> {
-        return std::make_unique<NullCompiler>();
-    };
+    config.compiler_factory = [&compiler]() -> std::unique_ptr<ICompiler> { return std::make_unique<NullCompiler>(); };
     config.debounce = std::chrono::milliseconds{0};
     static pf::test::ScopedTempDir workspace("pf-boundary-workspaces2");
     config.workspace_root = workspace.path();
