@@ -46,6 +46,7 @@ struct MathRenderResponse {
     QString formula_id;
     std::uint64_t generation = 0;
     QString latex;
+    int render_font_px = 0;
     MathRenderResult result;
 };
 

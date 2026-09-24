@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QKeyEvent>
 #include <QResizeEvent>
+#include <QScopedValueRollback>
 #include <QShowEvent>
 #include <QAbstractTextDocumentLayout>
 #include <QFontMetricsF>
@@ -54,7 +55,8 @@ InlineEditor::InlineEditor(QWidget* parent)
                                 response.result.image, response.result.width,
                                 response.result.height,
                                 response.result.baseline,
-                                response.result.device_pixel_ratio);
+                                response.result.device_pixel_ratio,
+                                response.render_font_px);
             });
     setAcceptRichText(false);
     setWordWrapMode(QTextOption::WordWrap);
@@ -98,6 +100,7 @@ void InlineEditor::SetBodyTypography(const QFont& font,
     loading_ = true;
     setFont(font);
     theme::ApplyDocumentTypography(document(), font, line_height_percent);
+    RefreshMathGeometry(viewport()->width(), true);
     loading_ = false;
     ResizeToContent();
 }
@@ -390,7 +393,6 @@ void InlineEditor::RefreshObjectDisplays() {
 void InlineEditor::InsertMathObject(QTextCursor& cursor, const QString& latex) {
     ensurePolished();
     const QFont text_font = document()->defaultFont();
-    const QFontMetricsF text_metrics(text_font);
 
     // P0-07：插入轻量占位符并将渲染入队。GUI 线程绝不运行 TeX：
     // 20 秒以上的编译不再冻结窗口，结果通过服务的 queued 信号返回。
@@ -401,13 +403,8 @@ void InlineEditor::InsertMathObject(QTextCursor& cursor, const QString& latex) {
     format.setObjectType(inline_math_format::kObjectType);
     format.setFont(text_font);
     format.setVerticalAlignment(QTextCharFormat::AlignNormal);
-    // 占位符度量：一个小尺寸、基线正确的盒子，
-    // 使真实 pixmap 到达时行高不会跳动。
-    format.setProperty(inline_math_format::kWidthProperty, 24.0);
-    format.setProperty(inline_math_format::kHeightProperty,
-                       text_metrics.height());
-    format.setProperty(inline_math_format::kBaselineProperty,
-                       text_metrics.ascent());
+    // 渲染完成之前也显示一个参与排版的胶囊。
+    UpdateMathGeometry(&format, viewport()->width());
     format.setProperty(kTokenKindProperty, static_cast<int>(TokenKind::Math));
     // payload 仍然是 LaTeX 主体；formula id 通过 kind 字节的伴随属性传递，
     // 以便回复能定位到自己的对象。
@@ -417,8 +414,14 @@ void InlineEditor::InsertMathObject(QTextCursor& cursor, const QString& latex) {
     // 后续输入绝不能继承语义对象的属性。
     cursor.setCharFormat(QTextCharFormat());
 
+    RequestMathRender(formula_id, latex);
+}
+
+void InlineEditor::RequestMathRender(const QString& formula_id,
+                                     const QString& latex) {
+    const QFont text_font = document()->defaultFont();
     MathRenderStyle style;
-    style.font_px = qMax(4, qRound(text_metrics.height()));
+    style.font_px = qMax(4, qRound(QFontMetricsF(text_font).height()));
     style.color = QColor(theme::kPrimaryText);
     style.font_family = text_font.family();
     style.template_id = property("template_id").toString();
@@ -426,15 +429,86 @@ void InlineEditor::InsertMathObject(QTextCursor& cursor, const QString& latex) {
     MathRenderService::Shared()->Request(objectName(), formula_id, latex, style);
 }
 
+void InlineEditor::UpdateMathGeometry(QTextCharFormat* format,
+                                      int available_width) const {
+    const QFontMetricsF metrics(document()->defaultFont());
+    // AlignNormal 把对象高度计入行的 ascent。严格低于正文 ascent，
+    // 因而任何公式都不能把这一行撑高。
+    const qreal pill_height = qMax<qreal>(1.0, metrics.ascent() - 1.0);
+    const qreal pad_x = qMax<qreal>(4.0, metrics.height() * 0.20);
+    const qreal pad_y = qMin<qreal>(1.0, pill_height * 0.10);
+    const qreal image_limit_height = qMax<qreal>(1.0,
+                                                pill_height - 2.0 * pad_y);
+    const QPixmap pixmap = format->property(
+        inline_math_format::kPixmapProperty).value<QPixmap>();
+
+    qreal image_width = metrics.horizontalAdvance(QStringLiteral("…"));
+    qreal image_height = image_limit_height;
+    qreal baseline = pill_height - pad_y;
+    if (!pixmap.isNull()) {
+        const qreal source_width = qMax<qreal>(1.0, format->property(
+            inline_math_format::kSourceWidthProperty).toDouble());
+        const qreal source_height = qMax<qreal>(1.0, format->property(
+            inline_math_format::kSourceHeightProperty).toDouble());
+        // 透明边缘已经在 worker 中去掉。以完整位图为单位，按胶囊的
+        // 高和可用宽度等比放到最大，绝不单独压缩上高或下深。
+        const qreal max_width = qMax<qreal>(1.0,
+            available_width * kMaximumWidthFraction - 2.0 * pad_x);
+        const qreal scale = qMin(image_limit_height / source_height,
+                                 max_width / source_width);
+        image_width = source_width * scale;
+        image_height = source_height * scale;
+        baseline = pad_y + format->property(
+            inline_math_format::kSourceBaselineProperty).toDouble() * scale;
+    }
+    format->setVerticalAlignment(QTextCharFormat::AlignNormal);
+    format->setProperty(inline_math_format::kImageWidthProperty, image_width);
+    format->setProperty(inline_math_format::kImageHeightProperty, image_height);
+    format->setProperty(inline_math_format::kWidthProperty,
+                        image_width + 2.0 * pad_x);
+    format->setProperty(inline_math_format::kHeightProperty, pill_height);
+    format->setProperty(inline_math_format::kBaselineProperty,
+                        qBound<qreal>(0.0, baseline, pill_height));
+}
+
+void InlineEditor::RefreshMathGeometry(int available_width, bool rerender) {
+    if (updating_math_geometry_ || !document()) return;
+    QScopedValueRollback<bool> geometry_guard(updating_math_geometry_, true);
+    QScopedValueRollback<bool> clean_guard(refreshing_displays_, true);
+    std::vector<int> positions;
+    for (QTextBlock block = document()->begin(); block.isValid();
+         block = block.next()) {
+        for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
+            const QTextFragment fragment = it.fragment();
+            if (fragment.isValid() && fragment.charFormat().objectType() ==
+                                          inline_math_format::kObjectType)
+                positions.push_back(fragment.position());
+        }
+    }
+    for (int position : positions) {
+        QTextCursor token(document());
+        token.setPosition(position);
+        token.setPosition(position + 1, QTextCursor::KeepAnchor);
+        QTextCharFormat format = token.charFormat();
+        const QTextCharFormat old = format;
+        format.setFont(document()->defaultFont());
+        UpdateMathGeometry(&format, available_width);
+        if (format != old) token.setCharFormat(format);
+        if (rerender) {
+            RequestMathRender(format.property(kMathFormulaIdProperty).toString(),
+                              format.property(kTokenPayloadProperty).toString());
+        }
+    }
+}
+
 void InlineEditor::ApplyMathRender(const QString& formula_id,
                                    const QString& latex, const QImage& image,
                                    int width, int height, int baseline,
-                                   qreal device_pixel_ratio) {
-    if (image.isNull())
+                                   qreal device_pixel_ratio,
+                                   int render_font_px) {
+    if (image.isNull() || width <= 0 || height <= 0)
         return;
     ensurePolished();
-    const QFont text_font = document()->defaultFont();
-    const QFontMetricsF text_metrics(text_font);
 
     // 按 id 定位公式对象。渲染在途期间，文档可能已重新加载、已撤销，
     // 或对象已被删除；无论哪种情况，都直接丢弃该回复（绝不崩溃）。
@@ -450,6 +524,8 @@ void InlineEditor::ApplyMathRender(const QString& formula_id,
                 continue;
             if (fmt.property(kMathFormulaIdProperty).toString() != formula_id)
                 continue;
+            if (fmt.property(kTokenPayloadProperty).toString() != latex)
+                continue;
             found = QTextCursor(document());
             found.setPosition(fragment.position());
             found.setPosition(fragment.position() + fragment.length(),
@@ -462,17 +538,6 @@ void InlineEditor::ApplyMathRender(const QString& formula_id,
     if (found.isNull())
         return;
 
-    // 将 TeX 基线上下两侧都适配进当前文本行。
-    const qreal math_ascent = qMax<qreal>(1.0, baseline);
-    const qreal math_descent = qMax<qreal>(1.0, height - baseline);
-    qreal scale = qMin(text_metrics.ascent() / math_ascent,
-                       text_metrics.descent() / math_descent);
-    const qreal maximum_width =
-        qMax<qreal>(48.0, viewport()->width() * kMaximumWidthFraction);
-    if (width > 0)
-        scale = qMin(scale, maximum_width / width);
-    scale = qBound<qreal>(0.01, scale, 1.0);
-
     const QPixmap pixmap = PixmapFromMathResult([&] {
         MathRenderResult partial;
         partial.image = image;
@@ -480,18 +545,23 @@ void InlineEditor::ApplyMathRender(const QString& formula_id,
         return partial;
     }());
 
-    QTextCharFormat update;
+    QTextCharFormat update = found.charFormat();
     update.setProperty(inline_math_format::kPixmapProperty,
                        QVariant::fromValue(pixmap));
-    update.setProperty(inline_math_format::kWidthProperty, width * scale);
-    update.setProperty(inline_math_format::kHeightProperty, height * scale);
-    update.setProperty(inline_math_format::kBaselineProperty, baseline * scale);
-    update.setProperty(kTokenKindProperty, static_cast<int>(TokenKind::Math));
-    update.setProperty(kTokenPayloadProperty, latex);
-    update.setProperty(kMathFormulaIdProperty, formula_id);
+    const qreal dpr = device_pixel_ratio > 0 ? device_pixel_ratio : 1.0;
+    // 用真实像素尺寸保留宽高比，避免结果的整数逻辑尺寸各自取整造成形变。
+    update.setProperty(inline_math_format::kSourceWidthProperty,
+                       image.width() / dpr);
+    update.setProperty(inline_math_format::kSourceHeightProperty,
+                       image.height() / dpr);
+    update.setProperty(inline_math_format::kSourceBaselineProperty, baseline);
+    update.setProperty(inline_math_format::kRenderFontPxProperty, render_font_px);
+    UpdateMathGeometry(&update, viewport()->width());
     // 这里只改变对象的格式——QTextDocument 绝不会重建或重新创建，
     // 因此光标和周围文本保持原样。
-    found.mergeCharFormat(update);
+    QScopedValueRollback<bool> clean_guard(refreshing_displays_, true);
+    found.setCharFormat(update);
+    ResizeToContent();
     if (viewport())
         viewport()->update();
 }
@@ -809,6 +879,7 @@ void InlineEditor::mouseReleaseEvent(QMouseEvent* event) {
 
 void InlineEditor::resizeEvent(QResizeEvent* event) {
     QTextEdit::resizeEvent(event);
+    RefreshMathGeometry(event->size().width() - 2 * frameWidth(), false);
     // 使用传入的宽度进行测量：在 resize 事件投递期间，
     // width() 仍报告旧值。
     ResizeToWidth(event->size().width());

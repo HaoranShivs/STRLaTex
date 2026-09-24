@@ -25,7 +25,7 @@ public:
 
     explicit PopupList(QWidget* parent = nullptr);
 
-    // 在全局坐标处显示弹出层（锚定在光标上方）。
+    // 在全局坐标处显示弹出层，并限制在屏幕可用区域内。
     void popup(const QPoint& global_pos, const std::vector<Item>& items,
                const QString& filter = {});
     void SetFilter(const QString& text);

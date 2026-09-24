@@ -75,7 +75,8 @@ public:
     // 重新加载）时，丢弃该回复。
     void ApplyMathRender(const QString& formula_id, const QString& latex,
                          const QImage& image, int width, int height,
-                         int baseline, qreal device_pixel_ratio);
+                         int baseline, qreal device_pixel_ratio,
+                         int render_font_px);
 
     // 让控件重新适配其内容；宽度变化后调用。
     void ResizeToContent();
@@ -183,6 +184,9 @@ private:
                           const QString& payload, const QString& display);
     // 插入一个已渲染的 math 对象，其 payload 为 LaTeX body。
     void InsertMathObject(QTextCursor& cursor, const QString& latex);
+    void RequestMathRender(const QString& formula_id, const QString& latex);
+    void UpdateMathGeometry(QTextCharFormat* format, int available_width) const;
+    void RefreshMathGeometry(int available_width, bool rerender);
     // 基于当前编号 / label 映射解析出的 pill 文本。
     QString CitationDisplayText(const QStringList& keys) const;
     QString CrossReferenceDisplayText(const QString& target) const;
@@ -212,6 +216,7 @@ private:
     bool dirty_ = false;
     bool loading_ = false;
     bool refreshing_displays_ = false;
+    bool updating_math_geometry_ = false;
     bool math_editor_open_ = false;
     int protected_inserts_ = 0;
     // P0-07：该行渲染过的每个公式都会获得一个稳定 id，而每次渲染请求都会递增该

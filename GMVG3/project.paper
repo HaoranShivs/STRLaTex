@@ -135,7 +135,19 @@
               },
               {
                 "marks": 2,
-                "text": "In IRSTD tasks, targets are generally very small, weak, and are often embedded in complex backgrounds.",
+                "text": "In IRSTD tasks, targets are generally very small, weak",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "shen2023survey"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "marks": 2,
+                "text": ", and are often embedded in complex backgrounds.",
                 "type": "text"
               },
               {
@@ -150,7 +162,18 @@
                 "type": "citation"
               },
               {
-                "text": "In IRSTD tasks, targets typically include drones, aerostats, and ships, which commonly exhibit the following characteristics: (i) Low target energy: Due",
+                "text": "In IRSTD tasks, targets typically include drones, aerostats, and ships, which commonly exhibit the following",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "zhang2024irsam"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": " characteristics: (i) Low target energy: Due",
                 "type": "text"
               },
               {
@@ -191,7 +214,34 @@
                 "type": "crossReference"
               },
               {
-                "text": " texture or structural details. (iii) Complex background: The operational environment often contains numerous interfering objects that introduce edges, corners, and other salient features, significantly complicating the accurate discrimination of small targets from the background. Some examples are shown in Fig. ",
+                "text": " texture or structural details. (iii) Complex background: The operational environment often contains numerous interfering objects that introduce edges, corners, and other salient features, ",
+                "type": "text"
+              },
+              {
+                "latex": "\\frac{a}{b}",
+                "type": "inline_math"
+              },
+              {
+                "text": "significantly ",
+                "type": "text"
+              },
+              {
+                "latex": "x^1_2",
+                "type": "inline_math"
+              },
+              {
+                "text": "complicating the accurate discrimination of small targets from the background. ",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "prasad2017video"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": "Some examples are shown in Fig. ",
                 "type": "text"
               },
               {
@@ -204,21 +254,7 @@
               },
               {
                 "keys": [
-                  "wang2019miss"
-                ],
-                "mode": "parenthetical",
-                "type": "citation"
-              },
-              {
-                "keys": [
                   "10508299"
-                ],
-                "mode": "parenthetical",
-                "type": "citation"
-              },
-              {
-                "keys": [
-                  "HE2025131688"
                 ],
                 "mode": "parenthetical",
                 "type": "citation"
@@ -234,7 +270,12 @@
           {
             "alt": "",
             "assetId": "a1",
-            "caption": [],
+            "caption": [
+              {
+                "text": "IRSTD target",
+                "type": "text"
+              }
+            ],
             "id": "n15",
             "span": "single",
             "type": "figure",
@@ -307,7 +348,7 @@
     ]
   },
   "projectId": "p1",
-  "revision": 87,
+  "revision": 99,
   "schemaVersion": "3",
   "template": "ieee-conference"
 }

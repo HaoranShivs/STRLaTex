@@ -48,7 +48,9 @@ constexpr int kTexTimeoutMs = 12000;
 constexpr int kRasterTimeoutMs = 8000;
 constexpr int kMaxCacheEntries = 256;
 constexpr qreal kTexBasePointSize = 10.0;
-constexpr qreal kPagePaddingPt = 0.75;
+// Give the PDF rasterizer room for glyph overhang, then remove the transparent
+// page margin from the final bitmap. The GUI scales the complete bitmap.
+constexpr qreal kPagePaddingPt = 4.0;
 
 void NoopDraw(QPainter&, qreal, qreal) {}
 
@@ -1470,6 +1472,7 @@ MathRenderResult RenderLiteralFallback(const QString& latex, const MathRenderSty
     st.style = &style;
     st.color = style.color;
     st.base_font = QGuiApplication::font();
+    if (!style.font_family.isEmpty()) st.base_font.setFamily(style.font_family);
     st.base_font.setPixelSize(std::max(4, style.font_px));
     FontSpec sp;
     sp.auto_italic = false;
@@ -1485,6 +1488,7 @@ MathRenderResult RenderApproximate(const QString& latex,
         st.style = &style;
         st.color = style.color;
         st.base_font = QGuiApplication::font();
+        if (!style.font_family.isEmpty()) st.base_font.setFamily(style.font_family);
         st.base_font.setPixelSize(std::max(4, style.font_px));
 
         const qreal fpx = std::max(4.0, static_cast<qreal>(style.font_px));
@@ -1581,10 +1585,11 @@ QString TexDocument(const QString& latex) {
                "\\documentclass{article}\n"
                "\\usepackage{amsmath,amssymb}\n"
                "\\newsavebox{\\PFMathBox}\n"
-               "\\newdimen\\PFPad\\PFPad=.75pt\n"
+               "\\newdimen\\PFPad\\PFPad=%1pt\n"
                "\\pagestyle{empty}\n"
                "\\begin{document}\n"
-               "\\sbox{\\PFMathBox}{$\\textstyle ") +
+               "\\sbox{\\PFMathBox}{$\\textstyle ")
+               .arg(QString::number(kPagePaddingPt, 'f', 2)) +
            latex +
            QStringLiteral(
                "$}\n"
@@ -1598,7 +1603,11 @@ QString TexDocument(const QString& latex) {
                "\\hoffset=-1in\\voffset=-1in\\topmargin=0pt\n"
                "\\headheight=0pt\\headsep=0pt\\oddsidemargin=0pt\n"
                "\\textwidth=\\paperwidth\\textheight=\\paperheight\\parindent=0pt\n"
-               "\\noindent\\hspace*{\\PFPad}\\raisebox{\\dimexpr\\dp\\PFMathBox+\\PFPad\\relax}[0pt][0pt]{\\usebox{\\PFMathBox}}\n"
+               // The first line's baseline is otherwise controlled by
+               // \topskip. A zero-size \raisebox can then put tall formulas
+               // above the PDF page before rasterization even starts.
+               "\\topskip=0pt\n"
+               "\\noindent\\hspace*{\\PFPad}\\rule{0pt}{\\dimexpr\\ht\\PFMathBox+\\PFPad\\relax}\\usebox{\\PFMathBox}\n"
                "\\end{document}\n");
 }
 
@@ -1755,6 +1764,48 @@ QMutex& RenderCacheMutex() {
     return mutex;
 }
 
+void TrimTransparentMargins(MathRenderResult& result) {
+    if (result.image.isNull()) return;
+    const QImage& image = result.image;
+    int left = image.width();
+    int top = image.height();
+    int right = -1;
+    int bottom = -1;
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            if (qAlpha(image.pixel(x, y)) == 0) continue;
+            left = qMin(left, x);
+            top = qMin(top, y);
+            right = qMax(right, x);
+            bottom = qMax(bottom, y);
+        }
+    }
+    if (right < left) return;
+    // One physical pixel protects the antialiased fringe when scaled down.
+    const QRect bounds = QRect(QPoint(left, top), QPoint(right, bottom))
+                             .adjusted(-1, -1, 1, 1)
+                             .intersected(image.rect());
+    const qreal dpr = result.device_pixel_ratio > 0
+                          ? result.device_pixel_ratio : 1.0;
+    if (bounds != image.rect()) result.image = image.copy(bounds);
+    // Preserve the renderer's baseline contract even for an empty-looking
+    // command whose visible output occupies a single logical pixel.
+    const int min_pixel_height = qMax(2, qCeil(2.0 * dpr));
+    if (result.image.height() < min_pixel_height) {
+        QImage padded(result.image.width(), min_pixel_height,
+                      QImage::Format_ARGB32_Premultiplied);
+        padded.fill(Qt::transparent);
+        QPainter painter(&padded);
+        painter.drawImage(0, 0, result.image);
+        painter.end();
+        result.image = padded;
+    }
+    result.width = qMax(1, qRound(result.image.width() / dpr));
+    result.height = qMax(1, qRound(result.image.height() / dpr));
+    result.baseline = qBound(1, qRound(result.baseline - bounds.top() / dpr),
+                             result.height - 1);
+}
+
 }  // namespace
 
 // P0-07：共享缓存只存储纯图像结果，因此可以在 math worker 线程中安全访问
@@ -1788,7 +1839,7 @@ MathRenderResult RenderMathPreviewImage(const QString& latex,
                           ? QStringLiteral("math source is incomplete")
                           : QStringLiteral("math source is invalid");
         }
-        if (rendered.pixmap.isNull()) {
+        if (!rendered.HasPixels()) {
             rendered = RenderApproximate(latex, style);
             rendered.exact = false;
             rendered.used_tex = false;
@@ -1799,6 +1850,8 @@ MathRenderResult RenderMathPreviewImage(const QString& latex,
     } else {
         rendered = RenderApproximate(latex, style);
     }
+
+    TrimTransparentMargins(rendered);
 
     {
         QMutexLocker lock(&RenderCacheMutex());

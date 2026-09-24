@@ -55,6 +55,21 @@ std::string ToStd(const QString& s) {
     return s.toStdString();
 }
 
+// QTextEdit::cursorRect() 使用 viewport 坐标；按当前排版行的实际高度
+// 在光标下方留出两行，再转换为屏幕坐标供浮动列表使用。
+QPoint PickerPositionBelowCaret(InlineEditor* editor) {
+    const QRect caret = editor->cursorRect();
+    int line_height = qMax(1, caret.height());
+    const QTextCursor cursor = editor->textCursor();
+    if (const QTextLayout* layout = cursor.block().layout()) {
+        const QTextLine line = layout->lineForTextPosition(cursor.positionInBlock());
+        if (line.isValid() && line.height() > 0)
+            line_height = qMax(1, qRound(line.height()));
+    }
+    return editor->viewport()->mapToGlobal(
+        QPoint(caret.left(), caret.bottom() + 2 * line_height));
+}
+
 // 重排序使用私有 mime 类型，因此编辑器会忽略来自外部的拖拽
 // （文件、文本），其他应用也会忽略我们的拖拽。
 constexpr const char* kBlockMime = "application/x-paperforge-block";
@@ -818,7 +833,7 @@ void BlockEditor::ShowCitationPicker(InlineEditor* editor) {
     };
     connect(popup, &PopupList::dismissed, this, end_protection);
     connect(popup, &QObject::destroyed, this, end_protection);
-    popup->popup(editor->mapToGlobal(QPoint(24, editor->height() + 4)), items);
+    popup->popup(PickerPositionBelowCaret(editor), items);
 }
 
 void BlockEditor::ShowReferencePicker(InlineEditor* editor) {
@@ -880,7 +895,7 @@ void BlockEditor::ShowReferencePicker(InlineEditor* editor) {
     };
     connect(popup, &PopupList::dismissed, this, end_protection);
     connect(popup, &QObject::destroyed, this, end_protection);
-    popup->popup(editor->mapToGlobal(QPoint(24, editor->height() + 4)), items);
+    popup->popup(PickerPositionBelowCaret(editor), items);
 }
 
 // 立即提交一个富文本行：选择器不得依赖稍后的 focusOut。文档通过

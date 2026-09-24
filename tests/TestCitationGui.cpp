@@ -21,6 +21,7 @@
 #include <QTextCursor>
 #include <QTextFragment>
 #include <QThread>
+#include <QToolButton>
 
 #include <chrono>
 #include <cstdio>
@@ -531,6 +532,53 @@ PF_TEST(CitationCommitFlowReachesDocumentAndPillRepaints) {
                          .property(citation_format::kDisplayTextProperty)
                          .toString() == QStringLiteral("[1]"));
         }
+    }
+}
+
+PF_TEST(CitationAndReferencePickersFollowTheTextCaret) {
+    EnsureQApplication();
+    Fixture fixture("pf-picker-caret-position");
+    MainWindow& window = fixture.window;
+    InlineEditor* row = FindRow(window, fixture.node_id);
+    PF_CHECK(row != nullptr);
+    if (!row) return;
+
+    int citation_x = -1;
+    for (const auto& request : {
+             std::pair{QStringLiteral("Citation"), 2},
+             std::pair{QStringLiteral("Reference"), 10}}) {
+        row->setFocus(Qt::OtherFocusReason);
+        QTextCursor cursor(row->document());
+        cursor.setPosition(request.second);
+        row->setTextCursor(cursor);
+        Spin(30);
+        const QRect caret = row->cursorRect();
+        const QPoint caret_top = row->viewport()->mapToGlobal(caret.topLeft());
+        const int caret_bottom = caret_top.y() + caret.height() - 1;
+
+        QToolButton* button = nullptr;
+        for (auto* candidate : row->parentWidget()->findChildren<QToolButton*>())
+            if (candidate->text() == request.first) button = candidate;
+        PF_CHECK(button != nullptr);
+        if (!button) return;
+        button->click();
+        Spin(30);
+        PopupList* popup = nullptr;
+        for (auto* candidate : window.findChildren<PopupList*>())
+            if (candidate->isVisible()) popup = candidate;
+        PF_CHECK(popup != nullptr);
+        if (!popup) return;
+
+        const int line_height = row->fontMetrics().lineSpacing();
+        const int gap = popup->y() - caret_bottom;
+        PF_CHECK(qAbs(popup->x() - caret_top.x()) <= 2);
+        PF_CHECK(gap >= line_height && gap <= 3 * line_height);
+        if (request.first == QStringLiteral("Citation"))
+            citation_x = popup->x();
+        else
+            PF_CHECK(popup->x() > citation_x);
+        popup->close();
+        Spin(30);
     }
 }
 

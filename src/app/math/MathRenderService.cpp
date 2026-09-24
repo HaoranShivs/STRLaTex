@@ -202,6 +202,7 @@ void MathRenderService::RenderJob(const MathRenderRequest& job) {
     response.formula_id = job.formula_id;
     response.generation = job.generation;
     response.latex = job.latex;
+    response.render_font_px = job.style.font_px;
     response.result = result;
 
     // 回复通过对象自身的事件循环进入GUI线程。worker绝不直接调用widget

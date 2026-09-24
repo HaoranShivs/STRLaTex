@@ -12,6 +12,7 @@
 #include <QElapsedTimer>
 #include <QLineEdit>
 #include <QMimeData>
+#include <QPainter>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QTextBlock>
@@ -152,7 +153,7 @@ PF_TEST(InlineMathObjectRoundTripsThroughTheEditor) {
     PF_CHECK(again == content);
 }
 
-PF_TEST(InlineMathDoesNotIncreaseTheTextLineHeight) {
+PF_TEST(InlineMathPillHasBoundedLineHeight) {
     EnsureQApplication();
     InlineEditor plain;
     plain.resize(640, 80);
@@ -173,7 +174,12 @@ PF_TEST(InlineMathDoesNotIncreaseTheTextLineHeight) {
 
     std::cout << "  plain height=" << plain_height
               << " formula height=" << formula.height() << "\n";
-    PF_CHECK(formula.height() <= plain_height + 1);
+    PF_CHECK(formula.height() <= plain_height);
+    const qreal plain_line_height =
+        plain.document()->begin().layout()->lineAt(0).height();
+    const qreal formula_line_height =
+        formula.document()->begin().layout()->lineAt(0).height();
+    PF_CHECK(formula_line_height <= plain_line_height + 0.01);
 }
 
 PF_TEST(InlineMathObjectIsNotUserEditableText) {
@@ -406,7 +412,7 @@ PF_TEST(InlineMathTypingDoesNotInheritObjectPayload) {
     if (text) PF_CHECK(text->text == "a");
 }
 
-PF_TEST(InlineMathUsesTextBaselineInPolishedWidget) {
+PF_TEST(InlineMathPillReservesItsWholeLayoutRect) {
     QWidget host;
     host.setStyleSheet(QStringLiteral("QWidget { font-size: 10pt; }"));
     InlineEditor editor(&host);
@@ -414,17 +420,17 @@ PF_TEST(InlineMathUsesTextBaselineInPolishedWidget) {
     editor.ensurePolished();
     editor.SetContent(InlineFromText("before after"));
     editor.ResizeToContent();
-    const auto plain = editor.document()->begin().layout()->lineAt(0);
-    const qreal ascent = plain.ascent();
-    const qreal descent = plain.descent();
+    const qreal plain_line_height =
+        editor.document()->begin().layout()->lineAt(0).height();
     editor.InsertInlineMath(QStringLiteral("\\frac{a}{b}"));
     editor.ResizeToContent();
     const auto line = editor.document()->begin().layout()->lineAt(0);
-    PF_CHECK(qAbs(line.ascent() - ascent) < 1.0);
-    PF_CHECK(qAbs(line.descent() - descent) < 1.0);
     QTextCursor cursor(editor.document());
-    cursor.movePosition(QTextCursor::End);
-    cursor.movePosition(QTextCursor::PreviousCharacter, QTextCursor::KeepAnchor);
+    const int math_position = editor.toPlainText().indexOf(QChar(0xFFFC));
+    PF_CHECK(math_position >= 0);
+    if (math_position < 0) return;
+    cursor.setPosition(math_position);
+    cursor.setPosition(math_position + 1, QTextCursor::KeepAnchor);
     const auto format = cursor.charFormat();
     PF_CHECK(format.verticalAlignment() == QTextCharFormat::AlignNormal);
     const QFontMetricsF metrics(editor.document()->defaultFont());
@@ -432,8 +438,107 @@ PF_TEST(InlineMathUsesTextBaselineInPolishedWidget) {
         inline_math_format::kBaselineProperty).toDouble();
     const qreal height = format.property(
         inline_math_format::kHeightProperty).toDouble();
-    PF_CHECK(baseline <= metrics.ascent());
-    PF_CHECK(height - baseline <= metrics.descent());
+    PF_CHECK(height < metrics.ascent());
+    PF_CHECK(line.height() <= plain_line_height + 0.01);
+    PF_CHECK(baseline > 0 && baseline < height);
+    InlineMathObjectRenderer renderer;
+    const QSizeF reserved = renderer.intrinsicSize(editor.document(), 0, format);
+    PF_CHECK(qAbs(reserved.height() - height) < 0.01);
+}
+
+PF_TEST(InlineMathRendererDrawsBothEndsInsidePill) {
+    QImage source(160, 80, QImage::Format_ARGB32_Premultiplied);
+    source.fill(Qt::red);
+    QPainter source_painter(&source);
+    source_painter.fillRect(QRect(0, 40, 160, 40), Qt::blue);
+    source_painter.end();
+
+    QPixmap pixmap = QPixmap::fromImage(source);
+    pixmap.setDevicePixelRatio(2.0);
+
+    QTextCharFormat format;
+    format.setObjectType(inline_math_format::kObjectType);
+    format.setProperty(inline_math_format::kPixmapProperty,
+                       QVariant::fromValue(pixmap));
+    format.setProperty(inline_math_format::kImageWidthProperty, 80.0);
+    format.setProperty(inline_math_format::kImageHeightProperty, 24.0);
+
+    QImage canvas(100, 28, QImage::Format_ARGB32_Premultiplied);
+    canvas.fill(Qt::white);
+    QPainter painter(&canvas);
+    InlineMathObjectRenderer renderer;
+    renderer.drawObject(&painter, QRectF(0, 0, 100, 28), nullptr, 0,
+                        format);
+    painter.end();
+    const QColor upper = canvas.pixelColor(50, 6);
+    const QColor lower = canvas.pixelColor(50, 22);
+    PF_CHECK(upper.red() > 220 && upper.blue() < 40);
+    PF_CHECK(lower.blue() > 220 && lower.red() < 40);
+}
+
+PF_TEST(InlineMathPillTracksTextFontAndPreservesImageAspectRatio) {
+    InlineEditor editor;
+    editor.resize(640, 80);
+    QFont small(QStringLiteral("DejaVu Sans"));
+    small.setPointSize(10);
+    editor.SetBodyTypography(small, 150);
+    editor.InsertInlineMath(QStringLiteral("x"));
+    editor.MarkClean();
+    QTextCursor token(editor.document());
+    token.setPosition(0);
+    token.setPosition(1, QTextCursor::KeepAnchor);
+    const QString id = token.charFormat().property(
+        QTextFormat::UserProperty + 20).toString();
+    PF_CHECK(!id.isEmpty());
+    QImage image(200, 80, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::black);
+    editor.ApplyMathRender(id, QStringLiteral("x"), image, 100, 40, 30,
+                           2.0, 20);
+    const QTextCharFormat before = token.charFormat();
+    const qreal small_line_height =
+        editor.document()->begin().layout()->lineAt(0).height();
+    const qreal before_image_width = before.property(
+        inline_math_format::kImageWidthProperty).toDouble();
+    const qreal before_image_height = before.property(
+        inline_math_format::kImageHeightProperty).toDouble();
+    PF_CHECK(qAbs(before_image_width / before_image_height - 2.5) < 0.01);
+    PF_CHECK(before.property(inline_math_format::kHeightProperty).toDouble() >
+             before_image_height);
+    PF_CHECK(before_image_height <=
+             before.property(inline_math_format::kHeightProperty).toDouble());
+    InlineEditor plain_small;
+    plain_small.resize(640, 80);
+    plain_small.SetBodyTypography(small, 150);
+    plain_small.SetContent(InlineFromText("x"));
+    PF_CHECK(small_line_height <=
+             plain_small.document()->begin().layout()->lineAt(0).height() +
+                 0.01);
+
+    QFont large(QStringLiteral("DejaVu Serif"));
+    large.setPointSize(18);
+    editor.SetBodyTypography(large, 150);
+    const QTextCharFormat after = token.charFormat();
+    const qreal after_image_width = after.property(
+        inline_math_format::kImageWidthProperty).toDouble();
+    const qreal after_image_height = after.property(
+        inline_math_format::kImageHeightProperty).toDouble();
+    PF_CHECK(after_image_width > before_image_width * 1.3);
+    PF_CHECK(after_image_height > before_image_height * 1.3);
+    PF_CHECK(qAbs(after_image_width / after_image_height - 2.5) < 0.01);
+    PF_CHECK(after_image_height <=
+             after.property(inline_math_format::kHeightProperty).toDouble());
+    PF_CHECK(editor.document()->begin().layout()->lineAt(0).height() >
+             small_line_height);
+    InlineEditor plain_large;
+    plain_large.resize(640, 80);
+    plain_large.SetBodyTypography(large, 150);
+    plain_large.SetContent(InlineFromText("x"));
+    PF_CHECK(editor.document()->begin().layout()->lineAt(0).height() <=
+             plain_large.document()->begin().layout()->lineAt(0).height() +
+                 0.01);
+    PF_CHECK(after.font().family() == large.family());
+    PF_CHECK(!editor.IsDirty());
+    PF_CHECK(std::holds_alternative<InlineMath>(editor.Content().front()));
 }
 
 PF_TEST(InlineMathRepeatedEditingSurvivesMainWindowRefresh) {

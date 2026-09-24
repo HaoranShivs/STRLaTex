@@ -9,6 +9,11 @@
 #include <chrono>
 #include <iostream>
 
+#include <QDir>
+#include <QFileInfo>
+#include <QStringList>
+#include <QStandardPaths>
+
 #include "app/MathPreviewRenderer.h"
 
 using namespace pf::gui;
@@ -22,6 +27,40 @@ MathRenderStyle Style() {
     style.device_pixel_ratio = 2.0;
     style.backend = MathRenderBackend::ApproximateOnly;
     return style;
+}
+
+bool HasTightTransparentMargins(const QImage& image) {
+    if (image.isNull()) return false;
+    int left = image.width(), top = image.height();
+    int right = -1, bottom = -1;
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            if (qAlpha(image.pixel(x, y)) == 0) continue;
+            left = qMin(left, x);
+            top = qMin(top, y);
+            right = qMax(right, x);
+            bottom = qMax(bottom, y);
+        }
+    }
+    return right >= left && left <= 1 && top <= 1 &&
+           image.width() - 1 - right <= 1 &&
+           image.height() - 1 - bottom <= 1;
+}
+
+bool HasTransparentBorder(const QImage& image) {
+    if (image.isNull() || image.width() < 3 || image.height() < 3)
+        return false;
+    for (int x = 0; x < image.width(); ++x) {
+        if (qAlpha(image.pixel(x, 0)) != 0 ||
+            qAlpha(image.pixel(x, image.height() - 1)) != 0)
+            return false;
+    }
+    for (int y = 0; y < image.height(); ++y) {
+        if (qAlpha(image.pixel(0, y)) != 0 ||
+            qAlpha(image.pixel(image.width() - 1, y)) != 0)
+            return false;
+    }
+    return true;
 }
 
 }  // namespace
@@ -40,6 +79,40 @@ PF_TEST(MathPreviewRendersFractionWithDescent) {
     PF_CHECK(res.baseline < res.height);
     PF_CHECK_EQ(res.pixmap.devicePixelRatio(), style.device_pixel_ratio);
     PF_CHECK(res.exact);
+    PF_CHECK(HasTightTransparentMargins(res.image));
+}
+
+PF_TEST(RealTexImageFitsInsideItsPdfPageWhenAvailable) {
+    bool has_tex = !QStandardPaths::findExecutable("pdflatex").isEmpty();
+    const QDir bundled(QStringLiteral(PF_INSTALL_ROOT) +
+                       QStringLiteral("/runtime/texlive/bin"));
+    for (const QFileInfo& platform : bundled.entryInfoList(
+             QDir::Dirs | QDir::NoDotAndDotDot)) {
+        if (QFileInfo::exists(platform.absoluteFilePath() +
+                              QStringLiteral("/pdflatex")))
+            has_tex = true;
+    }
+    if (!has_tex || QStandardPaths::findExecutable("pdftocairo").isEmpty())
+        return;
+    MathRenderStyle style = Style();
+    style.backend = MathRenderBackend::RealTexPreferred;
+    const QStringList formulas = {
+        QStringLiteral("x"),
+        QStringLiteral("\\frac{\\partial u}{\\partial t}"),
+        QStringLiteral("\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}"),
+        QStringLiteral("\\sqrt{x^2+y^2}")};
+    for (const QString& formula : formulas) {
+        const MathRenderResult result = RenderMathPreviewImage(formula, style);
+        PF_CHECK(result.HasPixels());
+        PF_CHECK(result.used_tex);
+        PF_CHECK(result.width > 0 && result.height > 0);
+        if (result.used_tex) {
+            // TrimTransparentMargins leaves one physical pixel of transparent
+            // space. An opaque outer edge means the PDF page clipped ink.
+            PF_CHECK(HasTransparentBorder(result.image));
+            PF_CHECK(HasTightTransparentMargins(result.image));
+        }
+    }
 }
 
 PF_TEST(MathPreviewRendersScriptsAndGreek) {

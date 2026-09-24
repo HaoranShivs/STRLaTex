@@ -2,9 +2,11 @@
 
 #include <QEvent>
 #include <QFocusEvent>
+#include <QGuiApplication>
 #include <QHeaderView>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QScreen>
 
 #include "app/Theme.h"
 
@@ -57,9 +59,18 @@ void PopupList::popup(const QPoint& global_pos, const std::vector<Item>& items, 
     search_box_->clear();
     search_box_->blockSignals(false);
     Refilter();
-    move(global_pos);
     adjustSize();
     resize(kPopupWidth, qMin(kPopupMaxHeight, sizeHint().height()));
+    // 光标临近屏幕边缘时，把列表保持在当前屏幕可用区域内。
+    QPoint position = global_pos;
+    if (QScreen* screen = QGuiApplication::screenAt(global_pos)) {
+        const QRect available = screen->availableGeometry();
+        position.setX(qBound(available.left(), position.x(),
+                             qMax(available.left(), available.right() - width() + 1)));
+        position.setY(qBound(available.top(), position.y(),
+                             qMax(available.top(), available.bottom() - height() + 1)));
+    }
+    move(position);
     show();
     raise();
     // search_box_->setFocus(Qt::PopupFocusReason);
