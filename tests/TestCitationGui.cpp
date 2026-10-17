@@ -10,6 +10,7 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QContextMenuEvent>
 #include <QElapsedTimer>
 #include <QFocusEvent>
 #include <QImage>
@@ -540,13 +541,19 @@ PF_TEST(CitationAndReferencePickersFollowTheTextCaret) {
         cursor.setPosition(request.second);
         row->setTextCursor(cursor);
         Spin(30);
+        const QPoint menu_position = row->cursorRect().center();
+        QContextMenuEvent context(QContextMenuEvent::Mouse, menu_position,
+                                  row->viewport()->mapToGlobal(menu_position));
+        QApplication::sendEvent(row->viewport(), &context);
+        Spin(30);
+        PF_CHECK(row->hasFocus());
         const QRect caret = row->cursorRect();
         const QPoint caret_top = row->viewport()->mapToGlobal(caret.topLeft());
         const int caret_bottom = caret_top.y() + caret.height() - 1;
 
         QToolButton* button = nullptr;
         for (auto* candidate : row->parentWidget()->findChildren<QToolButton*>())
-            if (candidate->text() == request.first)
+            if (candidate->isVisible() && candidate->text() == request.first)
                 button = candidate;
         PF_CHECK(button != nullptr);
         if (!button)

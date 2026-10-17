@@ -169,9 +169,8 @@ class BlockEditor : public QWidget {
     // Table 根本不会渲染。
     QWidget* CreateBlockCard(const pf::Block& block, const QString& outline_key);
     void AppendBlocks(const std::vector<pf::Block>& blocks, const QString& outline_key);
-    // 文本行聚焦时显示的 [B] [I] [Inline Math] [Citation] [Reference] 条带
-    // （方案 §4.4）。
-    QWidget* BuildFormatToolbar(InlineEditor* editor);
+    // Selection and context menus share the same semantic editing actions.
+    void ConfigureFormatActions(InlineEditor* editor);
     // Citation / Reference 按钮背后的引用选择器。选择器在插入对象后立即提交
     // 该行（引用方案 §4）——而不是「以后某次 focusOut 会提交它」。
     void ShowCitationPicker(InlineEditor* editor);

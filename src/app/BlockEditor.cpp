@@ -1,6 +1,7 @@
 #include "app/BlockEditor.h"
 
 #include <QCheckBox>
+#include <QAction>
 #include <QColor>
 #include <QCursor>
 #include <QDrag>
@@ -699,71 +700,32 @@ void BlockEditor::CenterContentColumn() {
     }
 }
 
-QWidget* BlockEditor::BuildFormatToolbar(InlineEditor* editor) {
-    auto* bar = new QWidget(this);
-    bar->setProperty("formatBar", true);
-    auto* layout = new QHBoxLayout(bar);
-    layout->setContentsMargins(2, 2, 2, 2);
-    layout->setSpacing(4);
-
-    const QString style = QString("QToolButton { background: transparent; color: %1; border: none;"
-                                  " border-radius: 4px; padding: 2px 7px; font-weight: 600; }"
-                                  "QToolButton:hover { background: %2; color: %3; }")
-                              .arg(theme::kSecondaryText, theme::kAccentSoft, theme::kAccent);
-
-    auto* bold = new QToolButton(bar);
-    bold->setText(QStringLiteral("B"));
-    bold->setToolTip(QStringLiteral("Bold (Ctrl+B)"));
-    bold->setAutoRaise(true);
-    bold->setStyleSheet(style);
-    connect(bold, &QToolButton::clicked, editor, [editor]() { editor->ToggleBold(); });
-
-    auto* italic = new QToolButton(bar);
-    italic->setText(QStringLiteral("I"));
-    italic->setToolTip(QStringLiteral("Italic (Ctrl+I)"));
-    italic->setAutoRaise(true);
-    italic->setStyleSheet(QString(style) + "QToolButton { font-style: italic; }");
-    connect(italic, &QToolButton::clicked, editor, [editor]() { editor->ToggleItalic(); });
-
-    auto* math = new QToolButton(bar);
-    math->setText(QStringLiteral("Inline Math"));
-    math->setToolTip(QStringLiteral("Insert an inline equation"));
-    math->setAutoRaise(true);
-    math->setStyleSheet(style);
-    connect(math, &QToolButton::clicked, editor, [editor]() { editor->BeginInlineMath(); });
-
-    auto* citation = new QToolButton(bar);
-    citation->setText(QStringLiteral("Citation"));
-    citation->setToolTip(QStringLiteral("Insert a citation"));
-    citation->setAutoRaise(true);
-    citation->setStyleSheet(style);
-    connect(citation, &QToolButton::clicked, this, [this, editor]() { ShowCitationPicker(editor); });
-
-    auto* reference = new QToolButton(bar);
-    reference->setText(QStringLiteral("Reference"));
-    reference->setToolTip(QStringLiteral("Insert a cross reference"));
-    reference->setAutoRaise(true);
-    reference->setStyleSheet(style);
-    connect(reference, &QToolButton::clicked, this, [this, editor]() { ShowReferencePicker(editor); });
-
-    // 这些按钮绝不能获得焦点。否则点击它会先结束该行的编辑、提交格式化前的
-    // 内容，并在点击处理器运行之前重建每一张卡片——于是标记落在已被销毁的
-    // 编辑器上，该行也在编辑中途被重新布局（即「大块空白区域」问题）。
-    bold->setFocusPolicy(Qt::NoFocus);
-    italic->setFocusPolicy(Qt::NoFocus);
-    math->setFocusPolicy(Qt::NoFocus);
-    citation->setFocusPolicy(Qt::NoFocus);
-    reference->setFocusPolicy(Qt::NoFocus);
-
-    layout->addWidget(bold);
-    layout->addWidget(italic);
-    layout->addSpacing(6);
-    layout->addWidget(math);
-    layout->addWidget(citation);
-    layout->addWidget(reference);
-    layout->addStretch(1);
-    bar->setStyleSheet(QString("background: %1;").arg(theme::kEditorBackground));
-    return bar;
+void BlockEditor::ConfigureFormatActions(InlineEditor* editor) {
+    auto make = [editor](const QString& name, const QString& text, const QString& label, bool checkable = false) {
+        auto* action = new QAction(text, editor);
+        action->setObjectName(name);
+        action->setIconText(label);
+        action->setCheckable(checkable);
+        return action;
+    };
+    auto* bold = make("inlineBoldAction", "Bold\tCtrl+B", "B", true);
+    auto* italic = make("inlineItalicAction", "Italic\tCtrl+I", "I", true);
+    auto* math = make("inlineMathAction", "Inline Math", "Inline Math");
+    auto* citation = make("inlineCitationAction", "Citation", "Citation");
+    auto* reference = make("inlineReferenceAction", "Reference", "Reference");
+    connect(bold, &QAction::triggered, editor, &InlineEditor::ToggleBold);
+    connect(italic, &QAction::triggered, editor, &InlineEditor::ToggleItalic);
+    connect(math, &QAction::triggered, editor, &InlineEditor::BeginInlineMath);
+    connect(citation, &QAction::triggered, this, [this, editor]() { ShowCitationPicker(editor); });
+    connect(reference, &QAction::triggered, this, [this, editor]() { ShowReferencePicker(editor); });
+    auto update_marks = [editor, bold, italic]() {
+        bold->setChecked(editor->IsBoldActive());
+        italic->setChecked(editor->IsItalicActive());
+    };
+    connect(editor, &QTextEdit::currentCharFormatChanged, editor, update_marks);
+    connect(editor, &QTextEdit::selectionChanged, editor, update_marks);
+    update_marks();
+    editor->SetFormattingActions({bold, italic, math, citation, reference});
 }
 
 void BlockEditor::ShowCitationPicker(InlineEditor* editor) {
@@ -1002,12 +964,7 @@ QWidget* BlockEditor::MakeTextCard(const QString& node_id, const InlineContent& 
             [this, node_id]() { emit InsertBlockRequested(QStringLiteral("text"), node_id); });
 
     card_layout->addWidget(editor);
-    // 格式条属于块的装饰，而非其内容：它在悬停/聚焦时出现，使空闲的段落读起来
-    // 就是纯文本（UI 方案 §2）。以属性形式存储，方便 UpdateCardState 切换。
-    QWidget* format_bar = BuildFormatToolbar(editor);
-    card_layout->addWidget(format_bar);
-    card->setProperty("format_bar", QVariant::fromValue(format_bar));
-    format_bar->setVisible(false);
+    ConfigureFormatActions(editor);
 
     Block block;
     block.node_id = node_id;
@@ -1463,11 +1420,6 @@ void BlockEditor::UpdateCardState(QWidget* card) {
                             .arg(theme::spacing::kCardRadius));
 
     const bool chrome = hover || focus;
-    // 格式条是外观的一部分：聚焦的行会显示其编辑工具，空闲的行只显示文本
-    // （UI 方案 §2）。
-    if (auto* bar = card->property("format_bar").value<QWidget*>()) {
-        bar->setVisible(chrome);
-    }
     auto* header = card->property("header").value<QWidget*>();
     if (!header)
         return;

@@ -52,6 +52,7 @@ constexpr int kBlockHeaderHeight = 15; // 悬停时的标题条
 constexpr int kFocusLine = 2;          // 左侧状态线（聚焦／缺失）
 constexpr int kCardRadius = 6;         // 卡片圆角半径
 constexpr int kEditorDocMargin = 4;    // 编辑器内部 QTextDocument 的外边距
+constexpr int kInlineMenuGap = 8;      // 浮动格式菜单与选区的间距
 } // namespace spacing
 
 // ---------------- 排版 token（UI 方案 §3、§5、§12） ----------------

@@ -50,7 +50,7 @@ src/
 src/app/           Qt6 GUI（paperforge-gui）：结构化编辑器 + Outline + Problems
 │                  + Build 状态 + PDF 预览（pdftoppm 渲染）
 │                  + InlineEditor（富文本 Text 行：Bold/Italic/行内公式/
-│                    Citation/Reference token + 格式工具栏）
+│                    Citation/Reference token + 选区浮动菜单/右键菜单）
 tests/             106 个单元 + 端到端 + 场景回归测试（含真实 Tectonic 构建、
 │                  自动保存恢复、M1 线程/协议场景、遍历与三级标题、
 │                  Schema migration、GUI 冒烟）

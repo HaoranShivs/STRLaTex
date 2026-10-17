@@ -491,6 +491,10 @@ bool PdfPreview::eventFilter(QObject* watched, QEvent* event) {
         return QWidget::eventFilter(watched, event);
     }
     switch (event->type()) {
+    case QEvent::Show:
+    case QEvent::Resize:
+        ScheduleViewportUpdate();
+        break;
     case QEvent::Wheel: {
         auto* wheel = static_cast<QWheelEvent*>(event);
         const int delta = wheel->angleDelta().y();
@@ -540,22 +544,28 @@ bool PdfPreview::eventFilter(QObject* watched, QEvent* event) {
     return QWidget::eventFilter(watched, event);
 }
 
-void PdfPreview::resizeEvent(QResizeEvent* event) {
-    QWidget::resizeEvent(event);
-    if (message_label_) {
-        message_label_->setFixedWidth(std::max(200, scroll_->viewport()->width()));
-    }
-    UpdateColumnSize();
-    // 处于「适应宽度」状态时页面跟随面板，因此调整窗口大小仍能看到整页。
-    if (fit_width_ && !pages_.empty()) {
-        const double fit = FitZoomFor(scroll_->viewport()->size(), page_width_pt_, page_height_pt_, false);
-        const double clamped = std::clamp(fit, kMinZoom, kMaxZoom);
-        if (std::abs(clamped - zoom_) > 0.001) {
-            zoom_ = clamped;
-            ApplyZoom(false);
+void PdfPreview::ScheduleViewportUpdate() {
+    if (viewport_update_queued_)
+        return;
+    viewport_update_queued_ = true;
+    // Restored PDFs load while the workspace is hidden. Wait for the viewport's
+    // layout (including scrollbars) instead of using the outer widget's old size.
+    QTimer::singleShot(0, this, [this]() {
+        viewport_update_queued_ = false;
+        if (message_label_)
+            message_label_->setFixedWidth(std::max(200, scroll_->viewport()->width()));
+        if (fit_width_ && !pages_.empty()) {
+            const double fit = FitZoomFor(scroll_->viewport()->size(), page_width_pt_, page_height_pt_, false);
+            const double clamped = std::clamp(fit, kMinZoom, kMaxZoom);
+            if (!qFuzzyCompare(clamped, zoom_)) {
+                zoom_ = clamped;
+                ApplyZoom(false);
+                return;
+            }
         }
-    }
-    EnsureVisiblePages();
+        UpdateColumnSize();
+        EnsureVisiblePages();
+    });
 }
 
 } // namespace pf::gui

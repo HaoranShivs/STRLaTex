@@ -83,11 +83,18 @@ const 容器指针的场景使用。
 
 ## 3. 格式工具栏（计划 §4.4）
 
-`BlockEditor::BuildFormatToolbar`：Text 行获得焦点时可见：
+`BlockEditor::ConfigureFormatActions` 为每个 Text 行配置共享操作。选中文字后，
+`InlineEditor` 在选区附近显示浮动工具栏；右键则显示包含格式和剪贴板操作的菜单：
 
 ```text
 [B] [I] [Inline Math] [Citation] [Reference]
 ```
+
+两个浮层均使用不激活窗口的 `Qt::ToolTip`，所有按钮都是 `Qt::NoFocus`。
+弹出菜单、点击粗体或斜体都保留当前段落焦点、选区与光标，不会触发 focus-out
+提交。右键菜单复用 Qt 的剪切、复制、粘贴等动作，但不使用会获取焦点的 `QMenu`
+弹窗。格式条不占段落布局空间，位置限制在当前文档可视区域；滚动时跟随可见选区，
+取消选择、按 Esc、点击外部或隐藏段落时收起。
 
 * `B` / `I`：对选区合并格式；光标未选中时改变**接下来输入**的格式。
 * 快捷键 `Ctrl+B` / `Ctrl+I` 直接在 InlineEditor 的 keyPressEvent 处理。

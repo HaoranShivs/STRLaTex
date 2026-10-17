@@ -22,7 +22,6 @@ class QTimer;
 class QVBoxLayout;
 class QWheelEvent;
 class QMouseEvent;
-class QResizeEvent;
 
 namespace pf::gui {
 
@@ -64,7 +63,6 @@ class PdfPreview : public QWidget {
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
-    void resizeEvent(QResizeEvent* event) override;
 
   private:
     struct PageSlot {
@@ -89,6 +87,7 @@ class PdfPreview : public QWidget {
     void UpdateViewportExtent();
     void EnsureVisiblePages();
     void UpdateColumnSize();
+    void ScheduleViewportUpdate();
     QSize PageSizeAtZoom() const;
 
     QLabel* zoom_label_ = nullptr;
@@ -105,6 +104,7 @@ class PdfPreview : public QWidget {
     double page_height_pt_ = 842.0;
     double zoom_ = 1.0;
     bool fit_width_ = true; // 在用户缩放之前跟随窗格宽度
+    bool viewport_update_queued_ = false;
     bool panning_ = false;
     QPoint pan_origin_;
 

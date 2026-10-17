@@ -125,7 +125,7 @@ set_property(TARGET paperforge-inline-editor-test PROPERTY AUTOMOC ON)
 target_include_directories(paperforge-inline-editor-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/tests)
 target_link_libraries(paperforge-inline-editor-test PRIVATE
-    pf_app Qt6::Widgets)
+    pf_app Qt6::Widgets Qt6::Test)
 target_compile_definitions(paperforge-inline-editor-test
     PRIVATE PF_INSTALL_ROOT="${CMAKE_SOURCE_DIR}")
 add_test(NAME inline_editor

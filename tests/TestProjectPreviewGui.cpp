@@ -2,9 +2,13 @@
 #include "TestMain.hpp"
 
 #include <QCoreApplication>
+#include <QLabel>
 #include <QPainter>
 #include <QPdfWriter>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QStandardPaths>
+#include <QTest>
 
 #include "app/MainWindow.h"
 #include "app/PdfPreview.h"
@@ -42,6 +46,18 @@ bool CanRenderPreview() {
     return false;
 }
 
+void CheckPreviewFitsWidth(PdfPreview* preview) {
+    auto* scroll = preview->findChild<QScrollArea*>();
+    auto* page = preview->findChild<QLabel*>("pdfPageSheet");
+    PF_CHECK(scroll != nullptr && page != nullptr);
+    if (!scroll || !page)
+        return;
+    PF_CHECK(QTest::qWaitFor([&]() {
+        return preview->isVisible() && page->width() == scroll->viewport()->width() &&
+               scroll->horizontalScrollBar()->maximum() == 0;
+    }));
+}
+
 } // namespace
 
 PF_TEST(ReopeningTheEditorRestoresSavedPdfPagesWithoutBuilding) {
@@ -53,14 +69,52 @@ PF_TEST(ReopeningTheEditorRestoresSavedPdfPagesWithoutBuilding) {
     // Distinct window instances exercise startup, rather than retained widgets.
     for (int launch = 0; launch < 2; ++launch) {
         MainWindow window;
-        PF_CHECK(window.controller()->OpenProject(QString::fromStdString(project.string())));
+        window.resize(1400 + launch * 160, 900);
+        // Cover both opening from the welcome page and loading before show().
+        if (launch == 0) {
+            window.show();
+            QTest::qWait(30);
+        }
+        PF_CHECK(window.OpenProjectDir(QString::fromStdString(project.string())));
+        window.show();
         auto* preview = window.findChild<PdfPreview*>();
         PF_CHECK(preview != nullptr);
-        if (preview)
+        if (preview) {
             PF_CHECK(preview->pageCount() == 2);
+            CheckPreviewFitsWidth(preview);
+        }
         PF_CHECK(window.controller()->session().latest_build_id().empty());
         PF_CHECK(window.controller()->session().preview_state() == PreviewState::Stale);
     }
+}
+
+PF_TEST(PdfFitWidthTracksTheViewportAndPreservesManualZoom) {
+    if (!CanRenderPreview())
+        return;
+    test::ScopedTempDir project("pf-gui-preview-fit");
+    WritePreviewPdf(project / "project.pdf", 2);
+    PdfPreview preview;
+    preview.resize(720, 600);
+    preview.SetDocument(QString::fromStdString((project / "project.pdf").string()));
+    preview.show();
+    CheckPreviewFitsWidth(&preview);
+
+    preview.resize(610, 550);
+    CheckPreviewFitsWidth(&preview);
+    auto* scroll = preview.findChild<QScrollArea*>();
+    // Scrollbar changes resize the viewport without resizing PdfPreview itself.
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    CheckPreviewFitsWidth(&preview);
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    CheckPreviewFitsWidth(&preview);
+
+    preview.SetZoom(1.25);
+    preview.resize(680, 600);
+    QTest::qWait(100);
+    PF_CHECK(preview.zoom() == 1.25);
+    PF_CHECK(scroll->horizontalScrollBar()->maximum() > 0);
+    preview.FitWidth();
+    CheckPreviewFitsWidth(&preview);
 }
 
 PF_TEST(SwitchingProjectsClearsOrRestoresOnlyTheirOwnPreview) {

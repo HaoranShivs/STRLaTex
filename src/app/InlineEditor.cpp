@@ -2,19 +2,29 @@
 
 #include <atomic>
 
+#include <QAbstractScrollArea>
 #include <QAbstractTextDocumentLayout>
+#include <QAction>
 #include <QApplication>
+#include <QContextMenuEvent>
 #include <QFontMetricsF>
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QHideEvent>
 #include <QKeyEvent>
+#include <QMenu>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QResizeEvent>
 #include <QScopedValueRollback>
+#include <QScreen>
 #include <QShowEvent>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextFragment>
 #include <QTimer>
+#include <QToolButton>
+#include <QVBoxLayout>
 
 #include "app/InlineMathObjectRenderer.h"
 #include "app/MathEditorDialog.h"
@@ -65,14 +75,235 @@ InlineEditor::InlineEditor(QWidget* parent)
         if (!loading_ && !refreshing_displays_)
             dirty_ = true;
     });
+    connect(this, &QTextEdit::selectionChanged, this, [this]() {
+        formatting_dismissed_ = false;
+        ScheduleFormattingToolbar();
+    });
+    connect(this, &QTextEdit::cursorPositionChanged, this, &InlineEditor::ScheduleFormattingToolbar);
     ResizeToContent();
 }
 
 InlineEditor::~InlineEditor() {
+    HideFormattingToolbar();
     if (document() && document()->documentLayout()) {
         document()->documentLayout()->unregisterHandler(inline_math_format::kObjectType, math_object_renderer_.get());
         document()->documentLayout()->unregisterHandler(citation_format::kObjectType, citation_object_renderer_.get());
     }
+}
+
+void InlineEditor::SetFormattingActions(const QList<QAction*>& actions) {
+    HideFormattingToolbar();
+    delete formatting_toolbar_.data();
+    formatting_actions_ = actions;
+    auto* bar = new QFrame(this, Qt::ToolTip | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus);
+    formatting_toolbar_ = bar;
+    bar->setObjectName(QStringLiteral("inlineFormatToolbar"));
+    bar->setProperty("formatBar", true);
+    bar->setAttribute(Qt::WA_ShowWithoutActivating);
+    bar->setFocusPolicy(Qt::NoFocus);
+    bar->setStyleSheet(QString("QFrame#inlineFormatToolbar { background: %1; border: 1px solid %2;"
+                               " border-radius: %3px; }")
+                           .arg(theme::kEditorBackground, theme::kDivider)
+                           .arg(theme::spacing::kCardRadius));
+    auto* layout = new QHBoxLayout(bar);
+    layout->setContentsMargins(theme::spacing::kEditorDocMargin, theme::spacing::kEditorDocMargin,
+                               theme::spacing::kEditorDocMargin, theme::spacing::kEditorDocMargin);
+    layout->setSpacing(theme::spacing::kEditorDocMargin);
+    for (auto* action : actions) {
+        auto* button = new QToolButton(bar);
+        button->setDefaultAction(action);
+        button->setText(action->iconText());
+        button->setFocusPolicy(Qt::NoFocus);
+        button->setAutoRaise(true);
+        button->setStyleSheet(QString("QToolButton { color: %1; border: none; border-radius: %4px;"
+                                      " padding: %5px %6px; }"
+                                      "QToolButton:hover, QToolButton:checked { background: %2; color: %3; }")
+                                  .arg(theme::kSecondaryText, theme::kAccentSoft, theme::kAccent)
+                                  .arg(theme::spacing::kCardRadius)
+                                  .arg(theme::spacing::kBlockPaddingV)
+                                  .arg(theme::spacing::kBlockPaddingH));
+        layout->addWidget(button);
+        connect(action, &QAction::triggered, this, [this, action]() {
+            if (!action->isCheckable()) {
+                formatting_dismissed_ = true;
+                HideFormattingToolbar();
+            }
+        });
+    }
+    bar->hide();
+}
+
+void InlineEditor::ScheduleFormattingToolbar() {
+    if (!formatting_toolbar_ || formatting_update_queued_)
+        return;
+    formatting_update_queued_ = true;
+    QTimer::singleShot(0, this, [this]() {
+        formatting_update_queued_ = false;
+        UpdateFormattingToolbar();
+    });
+}
+
+void InlineEditor::HideFormattingToolbar() {
+    if (formatting_toolbar_)
+        formatting_toolbar_->hide();
+    if (context_toolbar_)
+        context_toolbar_->hide();
+    context_menu_open_ = false;
+    if (qApp)
+        qApp->removeEventFilter(this);
+}
+
+void InlineEditor::UpdateFormattingToolbar() {
+    if (!formatting_toolbar_)
+        return;
+    if (context_menu_open_)
+        return;
+    if (loading_ || formatting_dismissed_ || context_menu_open_ || math_editor_open_ || IsProtectedInsertOpen() ||
+        !isVisible() || !hasFocus() || !textCursor().hasSelection() || isReadOnly() ||
+        (QApplication::mouseButtons() & Qt::LeftButton) || viewport()->visibleRegion().isEmpty()) {
+        HideFormattingToolbar();
+        return;
+    }
+    const QRect visible(viewport()->mapToGlobal(viewport()->visibleRegion().boundingRect().topLeft()),
+                        viewport()->visibleRegion().boundingRect().size());
+    const QRect bounds = FormattingBounds();
+    // A paragraph can be much taller than the enclosing document viewport.
+    // Position within that viewport, rather than below the paragraph itself.
+    if (bounds.isEmpty()) {
+        HideFormattingToolbar();
+        return;
+    }
+    formatting_toolbar_->adjustSize();
+    const QSize size = formatting_toolbar_->size();
+    QRect caret(viewport()->mapToGlobal(cursorRect().topLeft()), cursorRect().size());
+    const int anchor_x = qBound(visible.left(), caret.left(), visible.right());
+    const int anchor_y = qBound(visible.top(), caret.top(), visible.bottom());
+    const int gap = theme::spacing::kInlineMenuGap;
+    int y = anchor_y - size.height() - gap;
+    if (y < bounds.top())
+        y = anchor_y + caret.height() + gap;
+    // Very narrow columns may let the menu extend sideways into the window,
+    // but all controls remain on screen.
+    QRect horizontal = bounds.width() >= size.width() ? bounds : screen()->availableGeometry();
+    const int x = qBound(horizontal.left(), anchor_x, qMax(horizontal.left(), horizontal.right() - size.width() + 1));
+    y = qBound(bounds.top(), y, qMax(bounds.top(), bounds.bottom() - size.height() + 1));
+    formatting_toolbar_->move(x, y);
+    if (!formatting_toolbar_->isVisible()) {
+        formatting_toolbar_->show();
+        qApp->installEventFilter(this);
+    }
+    formatting_toolbar_->raise();
+}
+
+QRect InlineEditor::FormattingBounds() const {
+    QRect bounds = screen()->availableGeometry();
+    for (auto* parent = parentWidget(); parent; parent = parent->parentWidget()) {
+        if (auto* area = qobject_cast<QAbstractScrollArea*>(parent)) {
+            bounds &= QRect(area->viewport()->mapToGlobal(QPoint()), area->viewport()->size());
+            break;
+        }
+    }
+    return bounds;
+}
+
+bool InlineEditor::eventFilter(QObject* watched, QEvent* event) {
+    QWidget* active = context_menu_open_ ? context_toolbar_.data() : formatting_toolbar_.data();
+    if (active && active->isVisible()) {
+        auto* widget = qobject_cast<QWidget*>(watched);
+        if (event->type() == QEvent::MouseButtonPress && widget && widget != this && !isAncestorOf(widget) &&
+            widget != active && !active->isAncestorOf(widget)) {
+            formatting_dismissed_ = true;
+            HideFormattingToolbar();
+        } else if (event->type() == QEvent::WindowDeactivate && widget == window()) {
+            HideFormattingToolbar();
+        } else if (widget && (widget == this || widget->isAncestorOf(this))) {
+            if (event->type() == QEvent::Hide)
+                HideFormattingToolbar();
+            else if (event->type() == QEvent::Move || event->type() == QEvent::Resize ||
+                     event->type() == QEvent::Wheel) {
+                if (context_menu_open_)
+                    HideFormattingToolbar();
+                else
+                    ScheduleFormattingToolbar();
+            }
+        }
+    }
+    return QTextEdit::eventFilter(watched, event);
+}
+
+void InlineEditor::contextMenuEvent(QContextMenuEvent* event) {
+    setFocus(Qt::MouseFocusReason);
+    if (!textCursor().hasSelection() && event->reason() == QContextMenuEvent::Mouse)
+        setTextCursor(cursorForPosition(event->pos()));
+    formatting_dismissed_ = true;
+    HideFormattingToolbar();
+    delete context_toolbar_.data();
+    // QMenu's popup focus would end paragraph editing. A non-activating palette
+    // exposes the same actions while the QTextEdit keeps keyboard focus.
+    auto* palette = new QFrame(this, Qt::ToolTip | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus);
+    context_toolbar_ = palette;
+    palette->setObjectName(QStringLiteral("inlineContextMenu"));
+    palette->setAttribute(Qt::WA_ShowWithoutActivating);
+    palette->setFocusPolicy(Qt::NoFocus);
+    palette->setStyleSheet(QString("QFrame#inlineContextMenu { background: %1; border: 1px solid %2;"
+                                   " border-radius: %3px; }")
+                               .arg(theme::kEditorBackground, theme::kDivider)
+                               .arg(theme::spacing::kCardRadius));
+    auto* layout = new QVBoxLayout(palette);
+    layout->setContentsMargins(theme::spacing::kEditorDocMargin, theme::spacing::kEditorDocMargin,
+                               theme::spacing::kEditorDocMargin, theme::spacing::kEditorDocMargin);
+    layout->setSpacing(0);
+    auto add = [this, palette, layout](QAction* action) {
+        if (action->isSeparator()) {
+            auto* line = new QFrame(palette);
+            line->setFrameShape(QFrame::HLine);
+            layout->addWidget(line);
+            return;
+        }
+        auto* button = new QToolButton(palette);
+        button->setDefaultAction(action);
+        button->setText(action->text().section(QLatin1Char('\t'), 0, 0).remove(QLatin1Char('&')));
+        button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        button->setFocusPolicy(Qt::NoFocus);
+        button->setStyleSheet(QString("QToolButton { border: none; padding: %3px %4px; }"
+                                      "QToolButton:hover, QToolButton:checked { background: %1; color: %2; }")
+                                  .arg(theme::kAccentSoft, theme::kAccent)
+                                  .arg(theme::spacing::kEditorDocMargin)
+                                  .arg(theme::spacing::kBlockPaddingH));
+        layout->addWidget(button);
+        connect(button, &QToolButton::clicked, this, &InlineEditor::HideFormattingToolbar);
+    };
+    for (auto* action : formatting_actions_)
+        add(action);
+    auto* standard = createStandardContextMenu();
+    // Retain Qt's menu only as the owner of its editing actions. Reparenting it
+    // as a regular child would show a second menu when the palette is shown.
+    standard->setParent(palette, standard->windowFlags());
+    standard->hide();
+    if (!formatting_actions_.isEmpty())
+        standard->insertSeparator(standard->actions().value(0));
+    for (auto* action : standard->actions())
+        add(action);
+    const QPoint position = event->reason() == QContextMenuEvent::Keyboard
+                                ? viewport()->mapToGlobal(cursorRect().bottomLeft())
+                                : event->globalPos();
+    palette->adjustSize();
+    QRect bounds = FormattingBounds();
+    if (bounds.width() < palette->width() || bounds.height() < palette->height())
+        bounds = screen()->availableGeometry();
+    palette->move(qBound(bounds.left(), position.x(), qMax(bounds.left(), bounds.right() - palette->width() + 1)),
+                  qBound(bounds.top(), position.y(), qMax(bounds.top(), bounds.bottom() - palette->height() + 1)));
+    context_menu_open_ = true;
+    palette->show();
+    palette->raise();
+    qApp->installEventFilter(this);
+    event->accept();
+}
+
+void InlineEditor::hideEvent(QHideEvent* event) {
+    HideFormattingToolbar();
+    QTextEdit::hideEvent(event);
 }
 
 void InlineEditor::ResizeToContent() {
@@ -688,6 +919,15 @@ void InlineEditor::OpenMathEditor(const std::optional<TokenHit>& hit) {
 // ---------------- 事件 ----------------
 
 void InlineEditor::keyPressEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Escape &&
+        (context_menu_open_ || (formatting_toolbar_ && formatting_toolbar_->isVisible()))) {
+        formatting_dismissed_ = true;
+        HideFormattingToolbar();
+        event->accept();
+        return;
+    }
+    if (context_menu_open_)
+        HideFormattingToolbar();
     // Backspace/Delete 删除整个 token，绝不删除半个。
     if (event->key() == Qt::Key_Backspace || event->key() == Qt::Key_Delete) {
         const QString text = toPlainText();
@@ -799,6 +1039,12 @@ QMimeData* InlineEditor::createMimeDataFromSelection() const {
 }
 
 void InlineEditor::mousePressEvent(QMouseEvent* event) {
+    HideFormattingToolbar();
+    if (event->button() == Qt::RightButton) {
+        event->accept();
+        return;
+    }
+    formatting_dismissed_ = false;
     // 点击 token 会整体选中它（方案 §5）。
     const QString text = toPlainText();
     const int position = document()->documentLayout()->hitTest(event->pos(), Qt::FuzzyHit);
@@ -834,7 +1080,7 @@ void InlineEditor::mouseDoubleClickEvent(QMouseEvent* event) {
 
 void InlineEditor::mouseReleaseEvent(QMouseEvent* event) {
     const auto hit = TokenAt(textCursor().position());
-    if (hit) {
+    if (hit && event->button() == Qt::LeftButton) {
         if (hit->kind == TokenKind::Citation) {
             emit CitationTokenActivated(hit->payload);
         } else if (hit->kind == TokenKind::CrossReference) {
@@ -842,6 +1088,7 @@ void InlineEditor::mouseReleaseEvent(QMouseEvent* event) {
         }
     }
     QTextEdit::mouseReleaseEvent(event);
+    ScheduleFormattingToolbar();
 }
 
 void InlineEditor::resizeEvent(QResizeEvent* event) {
@@ -869,6 +1116,7 @@ void InlineEditor::ResizeToWidth(int width) {
 }
 
 void InlineEditor::focusOutEvent(QFocusEvent* event) {
+    HideFormattingToolbar();
     QTextEdit::focusOutEvent(event);
     // 由引用/交叉引用选择器（或数学编辑器）打开导致的焦点丢失
     // *不* 是「用户完成编辑」（引用方案 §4）：选择器会自行

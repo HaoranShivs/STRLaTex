@@ -24,6 +24,7 @@
 // 的 label。pill 只是 document 所存储 key 集合的可视投影；编号来自窗口注入的
 // CitationNumberResolver，绝不来自用户文本。
 
+#include <QPointer>
 #include <QTextEdit>
 
 #include <functional>
@@ -111,6 +112,10 @@ class InlineEditor : public QTextEdit {
     bool IsBoldActive() const;
     bool IsItalicActive() const;
 
+    // Shared actions for the selection toolbar and the standard context menu.
+    // The toolbar floats above the text and never participates in row layout.
+    void SetFormattingActions(const QList<QAction*>& actions);
+
     // 在光标处插入语义行内对象。每个都构建真正的可渲染对象（citation 方案
     // §2）：不存在共享的 "InsertToken(kind, payload, label)" 伪接口。
     void InsertCitationObject(const QStringList& keys);
@@ -168,8 +173,22 @@ class InlineEditor : public QTextEdit {
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
+    void contextMenuEvent(QContextMenuEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
+    void ScheduleFormattingToolbar();
+    void UpdateFormattingToolbar();
+    void HideFormattingToolbar();
+    QRect FormattingBounds() const;
+    QList<QAction*> formatting_actions_;
+    QPointer<QWidget> formatting_toolbar_;
+    QPointer<QWidget> context_toolbar_;
+    bool formatting_update_queued_ = false;
+    bool formatting_dismissed_ = false;
+    bool context_menu_open_ = false;
+
     // ---- 语义行内对象 ----
     // 在 QTextDocument 中，每个行内对象恰好占一个字符——object replacement
     // character——并通过专用 renderer 绘制（math：InlineMathObjectRenderer；

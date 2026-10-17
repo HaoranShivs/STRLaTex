@@ -302,6 +302,10 @@ PF_TEST(InlineMathToolbarAsksForABodyInsteadOfHardcoding) {
     editor->setFocus(Qt::MouseFocusReason);
     Spin(150);
     editor->SetContentClean(InlineFromText("before after"));
+    QTextCursor selection(editor->document());
+    selection.select(QTextCursor::WordUnderCursor);
+    editor->setTextCursor(selection);
+    Spin(30);
 
     QToolButton* math = FindButton(fixture.window, QStringLiteral("Inline Math"));
     PF_CHECK(math != nullptr);
