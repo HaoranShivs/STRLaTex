@@ -12,6 +12,7 @@ add_executable(pf_tests
     TestBuild.cpp
     TestEndToEnd.cpp
     TestSessionAsync.cpp
+    TestPreviewPersistence.cpp
     TestStructure.cpp
     TestInline.cpp
     TestMath.cpp

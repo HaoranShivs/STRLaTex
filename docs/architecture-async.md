@@ -92,6 +92,18 @@ EvaluatePreviewGate(current, result) ->
 判定顺序是有意的：**先 project，再 revision，再 snapshot/build**。切换项目时
 revision 会从 0 重新开始，只比 revision 会把 A 项目的 PDF 放进 B 项目的预览。
 
+## 跨启动的 PDF 预览
+
+`ProjectSession::AcceptBuildResult()` 在 PreviewGate 接受成功结果之后，将 PDF
+经同目录临时文件原子替换到 `<project>/project.pdf`。失败、取消和过期结果均不覆盖
+已保存的文件；写入失败产生 `PDF_SAVE_FAILED` 警告，本次仍可预览临时工作区的 PDF。
+`BuildResult::pdf_path` 保留编译工作区的位置，便于诊断和查找对应的生成源码；
+`PreviewUpdate::pdf` 指向已保存的项目 PDF。
+
+打开项目（含自动保存恢复）时读取该文件；旧项目回退到 `.paperforge/build/main.pdf`。
+恢复的 PDF 没有可验证的当前 build 身份，因此 PreviewState 为 Stale，GUI 标明它
+来自上次成功构建。`projectChanged` 通知视图清空旧项目预览，再展示当前项目的 PDF。
+
 ## Save 语义
 
 * `Save()` / `Autosave()` 抓取不可变快照后立即返回 `SaveResult::Status::Queued`。
@@ -130,10 +142,10 @@ revision 会从 0 重新开始，只比 revision 会把 A 项目的 PDF 放进 B
 端到端用例）应当零警告：
 
 ```bash
-cmake -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+cmake -S . -B build/tsan -G Ninja -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_CXX_FLAGS="-fsanitize=thread -g -O1 -DPF_SKIP_TECTONIC_TESTS"
-cmake --build build-tsan --target pf_tests
-TSAN_OPTIONS=halt_on_error=0 ./build-tsan/tests/pf_tests
+cmake --build build/tsan --target pf_tests
+TSAN_OPTIONS=halt_on_error=0 ./build/tsan/tests/pf_tests
 ```
 
 第一次跑 TSan 时它抓出了 `Validator.cpp` 里一个从 build worker 递增的全局诊断

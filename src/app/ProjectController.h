@@ -31,7 +31,7 @@ class ProjectController : public QObject {
         return *session_;
     }
     bool has_project() const {
-        return session_ != nullptr;
+        return session_ && session_->lifecycle_state() == LifecycleState::Open;
     }
     ProjectRevision current_revision() const {
         return session_ ? session_->current_revision() : ProjectRevision{};
@@ -121,6 +121,8 @@ class ProjectController : public QObject {
     CitationSearchResult SearchCitations(const QString& query) const;
 
   signals:
+    // Successful project navigation, including close. Views discard old artifacts.
+    void projectChanged();
     void documentChanged();
     void buildStatusChanged(QString phase_text);
     // buildFinished(bool, pdf_path) 的类型化替代：携带 PDF 的

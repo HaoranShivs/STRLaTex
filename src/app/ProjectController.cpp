@@ -201,8 +201,13 @@ bool ProjectController::NewProject(const QString& dir, std::string* error) {
     bool ok = session_->NewProject(ToStd(dir), &local_error);
     if (!ok && error)
         *error = local_error;
-    if (ok)
+    if (ok) {
+        emit projectChanged();
         emit documentChanged();
+        EmitProjectStateChanged();
+    } else if (!has_project()) {
+        emit projectChanged();
+    }
     return ok;
 }
 
@@ -210,8 +215,12 @@ bool ProjectController::OpenProject(const QString& dir) {
     std::string error;
     bool ok = session_->OpenProject(ToStd(dir), &error);
     if (ok) {
+        emit projectChanged();
         emit documentChanged();
         emit templateChanged(ToQ(session_->state().template_selection()));
+        EmitProjectStateChanged();
+    } else if (!has_project()) {
+        emit projectChanged();
     }
     return ok;
 }
@@ -219,13 +228,20 @@ bool ProjectController::OpenProject(const QString& dir) {
 bool ProjectController::OpenProjectWithRecovery(const QString& dir, bool* recovered) {
     std::string error;
     bool ok = session_->OpenProjectWithRecovery(ToStd(dir), &error, recovered);
-    if (ok)
+    if (ok) {
+        emit projectChanged();
         emit documentChanged();
+        EmitProjectStateChanged();
+    } else if (!has_project()) {
+        emit projectChanged();
+    }
     return ok;
 }
 
 void ProjectController::CloseProject() {
     session_->CloseProject();
+    emit projectChanged();
+    EmitProjectStateChanged();
 }
 
 void ProjectController::Save() {

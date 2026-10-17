@@ -109,158 +109,7 @@
           {
             "content": [
               {
-                "text": "I",
-                "type": "text"
-              },
-              {
-                "marks": 1,
-                "text": "n recent years, infrared small target detection technologies have become increasingly significant in multiple fields, includ ing ecological environment monitoring",
-                "type": "text"
-              },
-              {
-                "keys": [
-                  "2006Random"
-                ],
-                "mode": "parenthetical",
-                "type": "citation"
-              },
-              {
-                "marks": 1,
-                "text": ", marine rescue, and military surveillance. ",
-                "type": "text"
-              },
-              {
-                "text": "This is because infrared light exhibits a longer working range and stronger penetration capability compared to visible light. ",
-                "type": "text"
-              },
-              {
-                "marks": 2,
-                "text": "In IRSTD tasks, targets are generally very small, weak",
-                "type": "text"
-              },
-              {
-                "keys": [
-                  "shen2023survey"
-                ],
-                "mode": "parenthetical",
-                "type": "citation"
-              },
-              {
-                "marks": 2,
-                "text": ", and are often embedded in complex backgrounds.",
-                "type": "text"
-              },
-              {
-                "text": " ",
-                "type": "text"
-              },
-              {
-                "keys": [
-                  "10508299"
-                ],
-                "mode": "parenthetical",
-                "type": "citation"
-              },
-              {
-                "text": "In IRSTD tasks, targets typically include drones, aerostats, and ships, which commonly exhibit the following",
-                "type": "text"
-              },
-              {
-                "keys": [
-                  "zhang2024irsam"
-                ],
-                "mode": "parenthetical",
-                "type": "citation"
-              },
-              {
-                "text": " characteristics: (i) Low target energy: Due",
-                "type": "text"
-              },
-              {
-                "keys": [
-                  "Zhao2024MultiScaleDN"
-                ],
-                "mode": "parenthetical",
-                "type": "citation"
-              },
-              {
-                "text": " to severe signal attenuation over long-distance propagation, the received infrared signal is weak. This results",
-                "type": "text"
-              },
-              {
-                "keys": [
-                  "10703135"
-                ],
-                "mode": "parenthetical",
-                "type": "citation"
-              },
-              {
-                "text": " in low contrast between the target and strong background clutter, making the target highly susceptible to being obscured by background noise. (ii) ",
-                "type": "text"
-              },
-              {
-                "keys": [
-                  "2006Random"
-                ],
-                "mode": "parenthetical",
-                "type": "citation"
-              },
-              {
-                "text": "Small target size: At long imaging ranges, targets occupy only a few pixels in the image and lack discernible ",
-                "type": "text"
-              },
-              {
-                "target": "n20",
-                "type": "crossReference"
-              },
-              {
-                "text": " texture or structural details. (iii) Complex background: The operational environment often contains numerous interfering objects that introduce edges, corners, and other salient features, ",
-                "type": "text"
-              },
-              {
-                "latex": "\\frac{a}{b}",
-                "type": "inline_math"
-              },
-              {
-                "text": "significantly ",
-                "type": "text"
-              },
-              {
-                "latex": "x^1_2",
-                "type": "inline_math"
-              },
-              {
-                "text": "complicating the accurate discrimination of small targets from the background. ",
-                "type": "text"
-              },
-              {
-                "keys": [
-                  "prasad2017video"
-                ],
-                "mode": "parenthetical",
-                "type": "citation"
-              },
-              {
-                "text": "Some examples are shown in Fig. ",
-                "type": "text"
-              },
-              {
-                "target": "n19",
-                "type": "crossReference"
-              },
-              {
-                "text": ". Therefore, efficiently and accurately detecting infrared small targets remains a critical challenge.",
-                "type": "text"
-              },
-              {
-                "keys": [
-                  "10508299"
-                ],
-                "mode": "parenthetical",
-                "type": "citation"
-              },
-              {
-                "text": " shisdfe",
+                "text": "In recent years, infrared small-target detection (IRSTD) has gained increasing impor tance in diverse applications such as ecological and environmental monitoring [1], maritime search and rescue [2,3], and military reconnaissance [4,5]. This is primarily attributed to the superior properties of infrared radiation, its longer effective range and stronger pene tration capability compared to visible light. In IRSTD tasks, typical targets include drones, aerostats, and ships, which generally exhibit the following characteristics [6]: (i) Lowtar get ener gy. Duetosevere signal attenuation over long-range propagation, the received infrared signal is very weak, resulting in extremely low contrast between the target and the strong background clutter. Consequently, the target is easily overwhelmed by background noise. (ii) Small target size. Under long-range imaging conditions, targets often span only a handful of pixels, lacking discernible texture, shape, or structural information. (iii) Com plex background. Real-world scenarios frequently involve numerous interfering elements, such as edges, corners, and other salient structures that significantly hinder the accurate separation of small targets from the background.",
                 "type": "text"
               }
             ],
@@ -327,14 +176,26 @@
       {
         "id": "aff1",
         "name": "GUET"
+      },
+      {
+        "id": "aff2",
+        "name": "LAB"
       }
     ],
     "authors": [
       {
         "affiliations": [
-          "aff1"
+          "aff1",
+          "aff2"
         ],
         "name": "shitanran"
+      },
+      {
+        "affiliations": [
+          "aff1",
+          "aff2"
+        ],
+        "name": "lvguangrui"
       }
     ],
     "keywords": [
@@ -348,7 +209,7 @@
     ]
   },
   "projectId": "p1",
-  "revision": 99,
+  "revision": 112,
   "schemaVersion": "3",
   "template": "ieee-conference"
 }

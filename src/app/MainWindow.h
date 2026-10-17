@@ -74,6 +74,7 @@ class MainWindow : public QMainWindow {
 
     void RefreshDocumentView();
     void RefreshSidePanels();
+    void OnProjectChanged();
     // 带类型的预览事件：携带该 PDF 的 project/build/revision 身份标识。
     void OnPreviewUpdated(const pf::PreviewUpdate& update);
     // P0-06：仅报告原始写入结果；此处不设置状态标签

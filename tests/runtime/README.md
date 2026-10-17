@@ -1,4 +1,4 @@
-# runtime-tests
+# Runtime fixtures
 
 Fixture documents for the bundled portable TeX Live runtime (plan §19, §20).
 They are kept as files so the health check and CI can run them without the
@@ -6,7 +6,7 @@ C++ test binary, and so a failing runtime can be reproduced by hand:
 
 ```bash
 cd /tmp && mkdir t && cd t
-cp <repo>/runtime-tests/*.tex .
+cp <repo>/tests/runtime/font-test.tex main.tex
 PATH="<repo>/runtime/texlive/bin/<platform>:$PATH" \
   HOME=<repo>/runtime/texlive \
   latexmk -pdf -interaction=nonstopmode -file-line-error -halt-on-error main.tex

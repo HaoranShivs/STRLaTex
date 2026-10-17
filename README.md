@@ -54,11 +54,14 @@ src/app/           Qt6 GUI（paperforge-gui）：结构化编辑器 + Outline + 
 tests/             106 个单元 + 端到端 + 场景回归测试（含真实 Tectonic 构建、
 │                  自动保存恢复、M1 线程/协议场景、遍历与三级标题、
 │                  Schema migration、GUI 冒烟）
+└── runtime/       font-test.tex / ieee-test.tex（runtime 健康检查与手工复现）
 docs/              architecture-async.md（线程模型）/ structure-semantics.md
 │                  （遍历 + 三级标题 + migration）/ inline-editor.md
 │                  （富文本）/ toolchain.md（编译工具链 + IEEE 字体根因）
 │                  / REPOSITORY.md（仓库布局）
-runtime-tests/     font-test.tex / ieee-test.tex（runtime 健康检查与手工复现）
+projects/          本地论文项目（现有 GMVG2 / GMVG3；约定见 projects/README.md）
+build/             当前构建；其他构建使用 build/asan、build/tsan 等子目录
+│                  / _archive/（旧构建与误入源码目录的生成文件）
 tools/build-runtime/  build_runtime.sh + packages.txt + texlive.profile
 │                  （可复现构建自带 Portable TeX Live，user-mode 免 root）
 tools/
@@ -105,8 +108,17 @@ tools/
 # 一次性构建自带 TeX runtime（user-mode，免 root；约 265MB，不进 git）
 tools/build-runtime/build_runtime.sh
 
-cmake -B build -G Ninja
+cmake -S . -B build -G Ninja
 cmake --build build
+```
+
+所有构建均使用独立输出目录。ASan/UBSan 构建示例：
+
+```bash
+cmake -S . -B build/asan -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+  -DPF_ENABLE_ASAN=ON -DPF_ENABLE_UBSAN=ON
+cmake --build build/asan
+ctest --test-dir build/asan --output-on-failure
 ```
 
 要求：CMake ≥ 3.16，C++20 编译器（GCC 12+ 已验证），Qt6（可选——未安装时自动
@@ -171,6 +183,9 @@ LaTeX**：PaperForge 用自带的 Portable TeX Live。
 - **自动保存**：30 秒后台保存；崩溃后重开提示恢复
 - **PDF 预览（多页连续 + 可缩放）**：构建成功后渲染**每一页**，按阅读顺序纵向
   排列，页与页之间留出可见的缝隙；工具条显示 `p. 当前 / 总数`
+  - 每次成功构建将 PDF 原子替换到项目根目录的 `project.pdf`；失败、取消或过期
+    的构建保留上次成功版本。重新打开项目后直接显示该 PDF，无需先点 Build。
+    状态栏标明这是上次成功构建的预览；旧项目兼容 `.paperforge/build/main.pdf`。
   - **惰性渲染**：只为视口附近的页保留位图（超出 ±2 页即释放），因此十几页的
     论文不会因为预览吃掉几百 MB
   - 每页渲染分辨率随缩放变化（96 DPI × 缩放，上限 300 DPI，140ms 去抖）
@@ -206,6 +221,7 @@ LaTeX**：PaperForge 用自带的 Portable TeX Live。
 ```
 MyPaper/
 ├── project.paper          # 真正的源数据（JSON）
+├── project.pdf            # 最后一次成功构建；重新打开时自动预览（不进 Git）
 ├── references.bib
 ├── assets/
 └── .paperforge/

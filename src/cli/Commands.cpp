@@ -104,7 +104,7 @@ int CmdBuild(const std::vector<std::string>& args) {
     std::atomic<bool> done{false};
     session.SetBuildResultHandler([&](const BuildResult& result) {
         if (result.outcome == BuildResult::Outcome::Success) {
-            std::cout << "build OK (rev " << result.revision.value << ") -> " << result.pdf_path << "\n";
+            std::cout << "build OK (rev " << result.revision.value << ") -> " << session.preview_pdf().path << "\n";
         } else if (result.outcome == BuildResult::Outcome::Failure) {
             std::cout << "build FAILED (rev " << result.revision.value << ")\n";
         } else {
@@ -218,7 +218,7 @@ int CmdDemo(const std::vector<std::string>& args) {
     std::atomic<bool> done{false};
     session.SetBuildResultHandler([&](const BuildResult& result) {
         if (result.outcome == BuildResult::Outcome::Success) {
-            std::cout << "demo build OK -> " << result.pdf_path << "\n";
+            std::cout << "demo build OK -> " << session.preview_pdf().path << "\n";
         } else {
             std::cout << "demo build failed\n";
             PrintDiagnostics(result.diagnostics);

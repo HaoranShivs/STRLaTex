@@ -100,7 +100,7 @@ LatexError / BibliographyError / Timeout / Cancelled`。
 | `BoldAndItalicReachTheBuiltPdf`（inline-editor 测试） | **IEEE 模板 + 自带 runtime 端到端**：InlineEditor 输入 → 协议 → pdfLaTeX → PDF；并断言 `pdffonts` 可见粗体/斜体字型 |
 | `ToolbarMarksWorkOnEveryTemplate` | 每个模板下工具栏加粗/斜体都落库并进入 LaTeX |
 
-`runtime-tests/` 下另有可手工复现的 `font-test.tex` 与 `ieee-test.tex`。
+[`tests/runtime/`](../tests/runtime/README.md) 下另有可手工复现的 `font-test.tex` 与 `ieee-test.tex`。
 
 ## 7. Tectonic 的处置（§26）
 

@@ -65,6 +65,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     if (!qEnvironmentVariable("PF_TRACE").isEmpty())
         fprintf(stderr, "TRACE: after WireEditor\n");
 
+    connect(controller_, &ProjectController::projectChanged, this, &MainWindow::OnProjectChanged);
     connect(controller_, &ProjectController::documentChanged, this, &MainWindow::RefreshDocumentView);
     connect(editor_, &BlockEditor::RowCommitted, this, [this]() {
         if (pending_structural_refresh_)
@@ -923,6 +924,27 @@ void MainWindow::RefreshSidePanels() {
     editor_->RefreshHints();
     RefreshReferenceItems();
     word_count_label_->setText(QString::number(CountWords()) + " words");
+}
+
+void MainWindow::OnProjectChanged() {
+    current_pdf_path_.clear();
+    last_build_revision_ = -1;
+    last_built_revision_ = {};
+    last_outcome_ = BuildResult::Outcome::Failure;
+    has_built_ = false;
+    building_ = false;
+    preview_->Clear();
+    build_button_->setText("Build  \u25B6");
+    build_button_->setStyleSheet("");
+    build_state_label_->setText("Build: Ready");
+    if (!controller_->has_project())
+        return;
+    const auto& pdf = controller_->session().preview_pdf();
+    if (pdf.valid()) {
+        current_pdf_path_ = ToQ(pdf.path.string());
+        build_state_label_->setText("Preview: last successful build");
+        RefreshPreview();
+    }
 }
 
 void MainWindow::OnPreviewUpdated(const pf::PreviewUpdate& update) {

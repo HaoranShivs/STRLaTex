@@ -91,6 +91,7 @@ target_link_libraries(pf_build PUBLIC pf_render)
 add_library(pf_persistence STATIC
     persistence/ProjectMigrator.cpp
     persistence/ProjectPersistence.cpp
+    persistence/ProjectPdf.cpp
     persistence/SaveCoordinator.cpp
 )
 target_link_libraries(pf_persistence PUBLIC pf_document pf_asset pf_bibliography)

@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
+    message(FATAL_ERROR
+        "In-source builds are not supported. Use: cmake -S . -B build -G Ninja")
+endif()
+
 project(PaperForge
     VERSION 0.1.0
     DESCRIPTION "PaperForge - structural academic paper editor (V1 core)"

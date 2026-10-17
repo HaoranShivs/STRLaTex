@@ -2,7 +2,7 @@
 # PaperForge .gitignore
 #
 # Layout rule: source, tests, test data and the pinned tectonic cache are
-# tracked; everything the application *generates* (project data, build
+# tracked; everything the application *generates* (new project data, build
 # workspaces, autosave snapshots, screenshots, scratch captures) is not.
 # See docs/REPOSITORY.md for the full layout contract.
 # ---------------------------------------------------------------------------
@@ -15,6 +15,10 @@ Testing/
 /build-*/
 /generated/
 compile_commands.json
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
 
 # ---- TeX runtime (rebuilt with tools/build-runtime/build_runtime.sh) ------
 # The portable TeX Live is ~265MB of binaries; it is reproducible from the
@@ -28,10 +32,16 @@ compile_commands.json
 /project.paper
 /.paperforge/
 /GMVG2/
-/GMVG3/
+/GMVG3
+# Keep new local papers out of Git. GMVG3 was already versioned before the move.
+/projects/*
+!/projects/README.md
+!/projects/GMVG3/
 MyPaper/
 .paperforge/
 *.paper.tmp-*
+project.pdf
+project.pdf.tmp-*
 
 # ---- Scratch captures -----------------------------------------------------
 /Screenshot*.png

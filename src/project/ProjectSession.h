@@ -255,6 +255,10 @@ class ProjectSession {
     PreviewState preview_state() const noexcept {
         return preview_state_;
     }
+    // A reopened PDF has unknown build identity and remains Stale until built.
+    const PdfArtifact& preview_pdf() const noexcept {
+        return preview_pdf_;
+    }
     ProjectRevision current_revision() const noexcept {
         return state_.revision();
     }
@@ -293,6 +297,7 @@ class ProjectSession {
     // P0-03：结构化结果；只有当所有目录都创建成功时，
     // 调用方才进入 LifecycleState::Open。
     Result<void, IoError> EnsureDirectories();
+    void RestoreProjectPreview();
     void MarkDirty();
     // 单一所有者规则的烟雾探测器：当从外部线程进入仅限所有者的入口时
     // 递增计数器。
@@ -332,6 +337,7 @@ class ProjectSession {
     LifecycleState lifecycle_state_ = LifecycleState::NoProject;
     PersistenceState persistence_state_ = PersistenceState::Clean;
     PreviewState preview_state_ = PreviewState::NoPreview;
+    PdfArtifact preview_pdf_;
 
     // 拥有下方所有可变成员的线程（M1 单一所有者规则）。
     const std::thread::id owner_thread_ = std::this_thread::get_id();

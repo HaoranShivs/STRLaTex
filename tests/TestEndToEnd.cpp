@@ -253,6 +253,9 @@ PF_TEST(EndToEndTectonicBuild) {
     if (last_result->outcome == BuildResult::Outcome::Success) {
         PF_CHECK(session.preview_state() == PreviewState::Fresh);
         PF_CHECK(std::filesystem::exists(last_result->pdf_path));
+        PF_CHECK(session.preview_pdf().path == dir / "project.pdf");
+        PF_CHECK(std::filesystem::file_size(dir / "project.pdf") ==
+                 std::filesystem::file_size(last_result->pdf_path));
         // PDF 魔数
         std::ifstream pdf(last_result->pdf_path, std::ios::binary);
         char header[4] = {0};

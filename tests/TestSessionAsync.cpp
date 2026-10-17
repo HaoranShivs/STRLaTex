@@ -47,7 +47,7 @@ namespace {
 // 使被取消或被取代的 build 永远不会卡住析构过程。
 class GateCompiler final : public ICompiler {
   public:
-    CompileResult Compile(const CompileRequest&, const std::atomic<bool>* cancel_requested) override {
+    CompileResult Compile(const CompileRequest& request, const std::atomic<bool>* cancel_requested) override {
         std::unique_lock<std::mutex> lock(mutex_);
         entered_ = true;
         entered_condition_.notify_all();
@@ -70,7 +70,10 @@ class GateCompiler final : public ICompiler {
             std::lock_guard<std::mutex> build_lock(builds_mutex_);
             attempt = ++builds_;
         }
-        result.pdf_path = std::filesystem::temp_directory_path() / ("pf-async-" + std::to_string(attempt) + ".pdf");
+        std::filesystem::create_directories(request.workspace);
+        result.pdf_path = request.workspace / "main.pdf";
+        std::ofstream pdf(result.pdf_path, std::ios::binary | std::ios::trunc);
+        pdf << "%PDF-1.4\n% Async test build " << attempt << "\n";
         return result;
     }
 

@@ -104,6 +104,7 @@ add_executable(paperforge-inline-editor-test
     ${CMAKE_SOURCE_DIR}/tests/TestCitationGui.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestProblemsPanel.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestMathRenderService.cpp
+    ${CMAKE_SOURCE_DIR}/tests/TestProjectPreviewGui.cpp
     EditorItemKind.cpp
     InlineEditor.cpp
     MainWindow.cpp

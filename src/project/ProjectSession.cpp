@@ -11,6 +11,7 @@
 #include "core/IdGenerator.h"
 #include "core/ProjectPath.h"
 #include "document/InlineText.h"
+#include "persistence/ProjectPdf.h"
 
 namespace pf {
 
@@ -253,7 +254,28 @@ bool ProjectSession::AcceptBuildResult(const BuildResult& result) {
     if (decision != PreviewGateDecision::Accept)
         return false;
 
+    std::optional<BuildResult> reported_result;
     if (result.outcome == BuildResult::Outcome::Success) {
+        preview_pdf_ = {result.pdf_path, result.build_id, result.revision};
+        // Publish only after the project/revision/build gate accepts the result.
+        // Late or foreign builds must never replace this project's saved PDF.
+        auto saved = ProjectPdf::Save(paths_.project_dir, result.pdf_path);
+        if (saved.ok()) {
+            preview_pdf_.path = saved.value();
+        } else {
+            // The workspace PDF can still be previewed; make the persistence
+            // failure visible without turning a successful compile into an error.
+            reported_result = result;
+            Diagnostic warning;
+            warning.build_id = result.build_id;
+            warning.revision = result.revision;
+            warning.source = DiagnosticSource::Persistence;
+            warning.severity = DiagnosticSeverity::Warning;
+            warning.location = DiagnosticLocation::ForProject();
+            warning.code = "PDF_SAVE_FAILED";
+            warning.message = "PDF built, but project.pdf could not be saved: " + saved.error().ToString();
+            reported_result->diagnostics.push_back(std::move(warning));
+        }
         preview_state_ = PreviewState::Fresh;
     } else if (result.outcome == BuildResult::Outcome::Failure) {
         // 保留磁盘上最后一次成功的 PDF；预览已过期。
@@ -268,18 +290,27 @@ bool ProjectSession::AcceptBuildResult(const BuildResult& result) {
     update.revision = result.revision;
     update.success = result.outcome == BuildResult::Outcome::Success;
     if (update.success) {
-        update.pdf.path = result.pdf_path;
-        update.pdf.build_id = result.build_id;
-        update.pdf.revision = result.revision;
+        update.pdf = preview_pdf_;
     }
     if (build_result_handler_)
-        build_result_handler_(result);
+        build_result_handler_(reported_result ? *reported_result : result);
     if (preview_update_handler_)
         preview_update_handler_(update);
     return true;
 }
 
 // ---------------- 生命周期 ----------------
+
+void ProjectSession::RestoreProjectPreview() {
+    preview_pdf_ = {};
+    preview_state_ = PreviewState::NoPreview;
+    if (auto pdf = ProjectPdf::Find(paths_.project_dir)) {
+        preview_pdf_.path = *pdf;
+        // An earlier build may predate unsaved edits or autosave recovery.
+        // Show its pages without claiming that they match the current revision.
+        preview_state_ = PreviewState::Stale;
+    }
+}
 
 // P0-03：每个目录都通过自己的 error_code 创建，首次失败即以携带精确路径的
 // 结构化错误中止。目录创建失败的项目绝不能进入 LifecycleState::Open（旧代码
@@ -388,6 +419,7 @@ bool ProjectSession::OpenProject(const std::filesystem::path& project_dir, std::
     preview_state_ = PreviewState::NoPreview;
     latest_snapshot_id_.clear();
     latest_build_id_.clear();
+    RestoreProjectPreview();
     return true;
 }
 
@@ -408,6 +440,7 @@ void ProjectSession::CloseProject() {
     lifecycle_state_ = LifecycleState::NoProject;
     persistence_state_ = PersistenceState::Clean;
     preview_state_ = PreviewState::NoPreview;
+    preview_pdf_ = {};
 }
 
 bool ProjectSession::OpenProjectWithRecovery(const std::filesystem::path& project_dir, std::string* error,
@@ -483,6 +516,7 @@ bool ProjectSession::OpenProjectWithRecovery(const std::filesystem::path& projec
         *recovered = true;
     // 恢复出来的内容尚未被用户保存。
     persistence_state_ = PersistenceState::Dirty;
+    RestoreProjectPreview();
     return true;
 }
 
