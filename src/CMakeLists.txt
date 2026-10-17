@@ -50,6 +50,7 @@ target_link_libraries(pf_asset PUBLIC pf_core)
 
 # Bibliography (BibTeX parsing + search)
 add_library(pf_bibliography STATIC
+    bibliography/BibTeX.cpp
     bibliography/BibliographyService.cpp
 )
 target_link_libraries(pf_bibliography PUBLIC pf_core)

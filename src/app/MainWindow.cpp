@@ -26,6 +26,7 @@
 #include <filesystem>
 
 #include "app/BlockEditor.h"
+#include "app/AddReferenceDialog.h"
 #include "app/OutlinePanel.h"
 #include "app/PdfPreview.h"
 #include "app/ProblemsPanel.h"
@@ -266,6 +267,11 @@ void MainWindow::BuildMenus() {
     file_menu->addSeparator();
     file_menu->addAction("&Close Project", this, &MainWindow::OnCloseProject);
     file_menu->addSeparator();
+    auto* add_reference = file_menu->addAction("&Add Reference…", this, &MainWindow::OnAddReference);
+    add_reference->setObjectName(QStringLiteral("addReferenceAction"));
+    add_reference->setEnabled(controller_->has_project());
+    connect(controller_, &ProjectController::projectChanged, add_reference,
+            [this, add_reference]() { add_reference->setEnabled(controller_->has_project()); });
     file_menu->addAction("&Import Bibliography (.bib)…", this, &MainWindow::OnImportBibliography);
     file_menu->addSeparator();
     file_menu->addAction("E&xit", this, &QWidget::close, QKeySequence::Quit);
@@ -801,6 +807,17 @@ void MainWindow::OnBuild() {
     editor_->CommitFocused();
     build_button_->setText("Building ◌");
     controller_->RequestBuild(true);
+}
+
+void MainWindow::OnAddReference() {
+    if (!controller_->has_project())
+        return;
+    editor_->CommitFocused();
+    AddReferenceDialog dialog(controller_, this);
+    connect(&dialog, &AddReferenceDialog::ReferenceAdded, this, [this](const QString& key) {
+        statusBar()->showMessage(QStringLiteral("Added reference: %1").arg(key));
+    });
+    dialog.exec();
 }
 
 void MainWindow::OnImportBibliography() {

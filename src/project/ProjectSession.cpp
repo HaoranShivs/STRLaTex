@@ -834,9 +834,47 @@ EditResult ProjectSession::InsertFigureFromSource(const std::filesystem::path& s
 // ---------------- 参考文献 ----------------
 
 BibliographyImportResult ProjectSession::ImportBibliography(const std::string& bibtex_text) {
+    return StoreBibliography(bibtex_text, "references.bib");
+}
+
+BibliographyImportResult ProjectSession::AddBibliographyEntry(const BibEntry& entry) {
+    BibliographyImportResult result;
+    if (lifecycle_state_ != LifecycleState::Open) {
+        result.status = BibliographyImportResult::Status::ParseError;
+        result.detail = "Open a project before adding a reference.";
+        return result;
+    }
+    std::string error;
+    const auto serialized = SerializeBibEntry(entry, &error);
+    if (!serialized) {
+        result.status = BibliographyImportResult::Status::ParseError;
+        result.detail = error;
+        return result;
+    }
+    if (bibliography_db_.Find(entry.key)) {
+        result.status = BibliographyImportResult::Status::DuplicateKey;
+        result.detail = "Citation key '" + entry.key + "' already exists. Choose a different key.";
+        return result;
+    }
+    const auto& path = state_.settings().bibliography_path;
+    result = StoreBibliography(bibliography_bibtex_ + (bibliography_bibtex_.empty() ? "" : "\n\n") + *serialized,
+                               path.empty() ? "references.bib" : path);
+    if (result.status == BibliographyImportResult::Status::Ok)
+        result.entry_count = 1;
+    return result;
+}
+
+BibliographyImportResult ProjectSession::StoreBibliography(const std::string& bibtex_text,
+                                                          const std::string& relative_path) {
     // P0-03：导入是一个小事务。先解析并暂存文件；只有在字节确实落盘之后，
     // 内存中的数据库才提交。替换之前的任何失败都不会触碰旧数据库、旧的
     // references.bib、revision 和 dirty 状态。
+    if (lifecycle_state_ != LifecycleState::Open) {
+        BibliographyImportResult result;
+        result.status = BibliographyImportResult::Status::ParseError;
+        result.detail = "Open a project before changing its bibliography.";
+        return result;
+    }
     BibliographyDatabase staged_db;
     BibliographyService staged_service(staged_db);
     auto result = staged_service.ImportText(bibtex_text);
@@ -844,21 +882,21 @@ BibliographyImportResult ProjectSession::ImportBibliography(const std::string& b
         return result;
     }
 
-    const std::filesystem::path bib_file = paths_.project_dir / "references.bib";
-    if (!WriteFileAtomically(bib_file, bibtex_text)) {
+    const auto bib_file = ResolveUntrustedProjectPath(paths_.project_dir, relative_path);
+    if (!bib_file.ok() || !WriteFileAtomically(bib_file.value(), bibtex_text)) {
         BibliographyImportResult io_fail;
         io_fail.status = BibliographyImportResult::Status::ParseError;
         // 通过 detail 区分 I/O 失败与解析失败；status 枚举没有 IoError 槽位
         // （为兼容 Qt 信号而保留）。
-        io_fail.detail = "cannot write references.bib; bibliography unchanged";
+        io_fail.detail = "Cannot write " + relative_path + "; bibliography unchanged.";
         return io_fail;
     }
 
     // 提交：数据库、缓存的源文本、设置、revision、dirty、重建。
     bibliography_db_ = std::move(staged_db);
     bibliography_bibtex_ = bibtex_text;
-    bibliography_revision_ = result.bibliography_revision;
-    state_.mutable_settings().bibliography_path = "references.bib";
+    result.bibliography_revision = ++bibliography_revision_;
+    state_.mutable_settings().bibliography_path = relative_path;
     bibliography_write_failed_ = false;
     // Bibliography 变更：ProjectRevision +1（架构 40）。
     state_.BumpRevision();

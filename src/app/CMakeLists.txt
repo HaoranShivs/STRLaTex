@@ -6,6 +6,7 @@ add_executable(paperforge-gui
     EditorItemKind.cpp
     InlineEditor.cpp
     MainWindow.cpp
+    AddReferenceDialog.cpp
     ProjectController.cpp
     BlockEditor.cpp
     PopupList.cpp
@@ -52,6 +53,7 @@ add_executable(paperforge-ui-verify
     InlineEditor.cpp
     UiVerify.cpp
     MainWindow.cpp
+    AddReferenceDialog.cpp
     ProjectController.cpp
     BlockEditor.cpp
     PopupList.cpp
@@ -78,6 +80,7 @@ add_executable(paperforge-gui-persistence-test
     InlineEditor.cpp
     EditorPersistenceTest.cpp
     MainWindow.cpp
+    AddReferenceDialog.cpp
     ProjectController.cpp
     BlockEditor.cpp
     PopupList.cpp
@@ -105,9 +108,11 @@ add_executable(paperforge-inline-editor-test
     ${CMAKE_SOURCE_DIR}/tests/TestProblemsPanel.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestMathRenderService.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestProjectPreviewGui.cpp
+    ${CMAKE_SOURCE_DIR}/tests/TestReferenceEntryGui.cpp
     EditorItemKind.cpp
     InlineEditor.cpp
     MainWindow.cpp
+    AddReferenceDialog.cpp
     ProjectController.cpp
     BlockEditor.cpp
     PopupList.cpp
@@ -151,6 +156,7 @@ add_executable(paperforge-block-projection-test
     EditorItemKind.cpp
     InlineEditor.cpp
     MainWindow.cpp
+    AddReferenceDialog.cpp
     ProjectController.cpp
     BlockEditor.cpp
     PopupList.cpp

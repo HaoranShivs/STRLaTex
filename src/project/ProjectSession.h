@@ -200,6 +200,8 @@ class ProjectSession {
 
     // ---- Bibliography ----
     BibliographyImportResult ImportBibliography(const std::string& bibtex_text);
+    // Append one entry to the current project bibliography; existing keys are never replaced.
+    BibliographyImportResult AddBibliographyEntry(const BibEntry& entry);
     CitationSearchResult SearchCitations(const std::string& query);
     bool HasBibliography() const {
         return !bibliography_bibtex_.empty();
@@ -298,6 +300,7 @@ class ProjectSession {
     // 调用方才进入 LifecycleState::Open。
     Result<void, IoError> EnsureDirectories();
     void RestoreProjectPreview();
+    BibliographyImportResult StoreBibliography(const std::string& bibtex_text, const std::string& relative_path);
     void MarkDirty();
     // 单一所有者规则的烟雾探测器：当从外部线程进入仅限所有者的入口时
     // 递增计数器。

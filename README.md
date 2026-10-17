@@ -175,6 +175,11 @@ LaTeX**：PaperForge 用自带的 Portable TeX Live。
   标题只能落到最后）。因此"在这里插入 subsection"就是所见即所得
 - **Outline 双 Tab**：Document（摘要 + 章节树，点击滚动定位）/ References
   （文献库，可搜索）
+- **逐条添加文献**：`File → Add Reference…`，粘贴一条 BibTeX 后自动解析，
+  作者、标题、年份、期刊等字段可手工修改；缺失字段保留空白，额外字段在
+  `Other fields` 中编辑。`Add` 将条目追加到当前项目的 `.bib` 文件并更新
+  References 文献库，窗口保持打开以继续录入下一条。缺少必要信息时需确认
+  `Add Anyway`；重复引用键须先修改，写入失败会保留当前草稿。
 - **结构化 Problems**：severity 分组 + All/Errors/Warnings 过滤 + Build Log Tab
 - **Build 按钮**：`Build ▶` → `Building ◌` → `✓ Built`（绿）/ `! Build failed`
   （红），状态栏显示构建阶段与 Revision

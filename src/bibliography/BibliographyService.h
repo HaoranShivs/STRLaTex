@@ -29,7 +29,7 @@ struct CitationSearchResult {
 };
 
 struct BibliographyImportResult {
-    enum class Status { Ok, FileMissing, ParseError };
+    enum class Status { Ok, FileMissing, ParseError, DuplicateKey };
     Status status = Status::Ok;
     std::string detail;
     size_t entry_count = 0;
@@ -75,5 +75,14 @@ class BibliographyService {
 
 // 把 BibTeX 的 author 字段拆分为各个作者名。
 std::vector<std::string> SplitBibAuthors(const std::string& authors);
+
+// Non-mutating parsing for the entry form; absent fields remain absent.
+struct BibTeXParseResult {
+    std::vector<BibEntry> entries;
+    std::string error;
+};
+BibTeXParseResult ParseBibTeX(const std::string& text);
+// fields is authoritative; the display fields supply values only when absent.
+std::optional<std::string> SerializeBibEntry(const BibEntry& entry, std::string* error = nullptr);
 
 } // namespace pf

@@ -118,6 +118,7 @@ class ProjectController : public QObject {
     // 参考文献。导入结果（条目数、重复 key）会暴露给 UI，
     // 因此重复项绝不会无声无息地消失。
     BibliographyImportResult ImportBibliographyText(const QString& bibtex);
+    BibliographyImportResult AddBibliographyEntry(const BibEntry& entry);
     CitationSearchResult SearchCitations(const QString& query) const;
 
   signals:

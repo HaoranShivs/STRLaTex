@@ -944,6 +944,19 @@ CitationSearchResult ProjectController::SearchCitations(const QString& query) co
     return session_->SearchCitations(ToStd(query));
 }
 
+BibliographyImportResult ProjectController::AddBibliographyEntry(const BibEntry& entry) {
+    if (!has_project()) {
+        BibliographyImportResult result;
+        result.status = BibliographyImportResult::Status::ParseError;
+        result.detail = "Open a project before adding a reference.";
+        return result;
+    }
+    auto result = session_->AddBibliographyEntry(entry);
+    if (result.status == BibliographyImportResult::Status::Ok)
+        EmitDocumentChanged();
+    return result;
+}
+
 std::shared_ptr<const pf::CitationNumberResolver> ProjectController::CitationNumbers() const {
     if (!session_)
         return nullptr;
