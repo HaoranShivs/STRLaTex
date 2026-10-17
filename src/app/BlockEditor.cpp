@@ -35,6 +35,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <functional>
 #include <initializer_list>
 
@@ -681,6 +682,30 @@ BlockEditor::BlockEditor(QWidget* parent) : QWidget(parent) {
     CenterContentColumn();
 }
 
+BlockEditor::~BlockEditor() {
+    // 析构顺序：成员（blocks_）先于 QWidget 基类销毁。基类删除子控件时
+    // 可能触发 focusOut -> InlineEditor::Committed / QLineEdit::editingFinished，
+    // 而它们的接收者会读取 blocks_。因此在成员销毁前断开所有子控件信号。
+    shutting_down_ = true;
+    for (QObject* child : findChildren<QObject*>())
+        disconnect(child, nullptr, this, nullptr);
+    for (auto& block : blocks_) {
+        if (block.inline_editor) {
+            block.inline_editor->blockSignals(true);
+            disconnect(block.inline_editor, nullptr, this, nullptr);
+        }
+        if (block.editor) {
+            block.editor->blockSignals(true);
+            disconnect(block.editor, nullptr, this, nullptr);
+        }
+    }
+    for (InlineEditor* editor : findChildren<InlineEditor*>()) {
+        editor->blockSignals(true);
+        disconnect(editor, nullptr, this, nullptr);
+    }
+    blocks_.clear();
+}
+
 void BlockEditor::CenterContentColumn() {
     auto* host_layout = qobject_cast<QVBoxLayout*>(host_->layout());
     if (!host_layout)
@@ -710,6 +735,13 @@ void BlockEditor::ConfigureFormatActions(InlineEditor* editor) {
     connect(math, &QAction::triggered, editor, &InlineEditor::BeginInlineMath);
     connect(citation, &QAction::triggered, this, [this, editor]() { ShowCitationPicker(editor); });
     connect(reference, &QAction::triggered, this, [this, editor]() { ShowReferencePicker(editor); });
+    // 浮动工具栏只在有选区时出现；快捷键让空光标也能直达选择器（P-14）。
+    citation->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+C")));
+    reference->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+R")));
+    citation->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    reference->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    editor->addAction(citation);
+    editor->addAction(reference);
     auto update_marks = [editor, bold, italic]() {
         bold->setChecked(editor->IsBoldActive());
         italic->setChecked(editor->IsItalicActive());
@@ -718,115 +750,303 @@ void BlockEditor::ConfigureFormatActions(InlineEditor* editor) {
     connect(editor, &QTextEdit::selectionChanged, editor, update_marks);
     update_marks();
     editor->SetFormattingActions({bold, italic, math, citation, reference});
+
+    // WP-00/WP-01：点击正文中已插入的 citation / cross-reference pill 时打开
+    // 同一个 picker 并替换该 token。这两个信号以前只 emit、无人接收。
+    connect(editor, &InlineEditor::CitationTokenActivated, this,
+            [this, editor](const QStringList& keys, int position, int mode) {
+                CitationPickerSeed seed;
+                seed.keys = keys;
+                seed.narrative = mode == static_cast<int>(CitationMode::Narrative);
+                seed.position = position;
+                ShowCitationPicker(editor, seed);
+            });
+    connect(editor, &InlineEditor::CrossReferenceTokenActivated, this,
+            [this, editor](const QString& target, int position) {
+                ReferencePickerSeed seed;
+                seed.target = target;
+                seed.position = position;
+                ShowReferencePicker(editor, seed);
+            });
+    // README 承诺的 '@' 菜单：行首/空白后输入 '@' 打开交叉引用选择器。
+    connect(editor, &InlineEditor::ReferenceMenuRequested, this,
+            [this, editor](const QPoint&) { ShowReferencePicker(editor); });
+}
+
+void BlockEditor::SetCitationCatalog(std::vector<pf::CitationView> entries) {
+    citation_catalog_ = std::move(entries);
 }
 
 void BlockEditor::ShowCitationPicker(InlineEditor* editor) {
+    ShowCitationPicker(editor, CitationPickerSeed{});
+}
+
+void BlockEditor::ShowCitationPicker(InlineEditor* editor, CitationPickerSeed seed) {
     if (!editor)
         return;
     std::vector<PopupList::Item> items;
-    for (const auto& item : reference_items_) {
-        if (!item.payload.startsWith(QStringLiteral("cite:")))
-            continue;
-        PopupList::Item entry;
-        entry.label = item.label;
-        entry.detail = item.detail;
-        entry.group = QStringLiteral("Citations");
-        entry.payload = item.payload.mid(5);
-        entry.search = item.label.toLower();
-        items.push_back(std::move(entry));
+    const auto make_item = [&](const pf::CitationView& view) {
+        PopupList::Item item;
+        const QString key = ToQ(view.key);
+        const QString author = ToQ(view.author_label);
+        const QString year = ToQ(view.year);
+        const QString title = ToQ(view.title);
+        const QString venue = ToQ(view.venue);
+        if (!author.isEmpty()) {
+            item.label = author;
+            if (!year.isEmpty())
+                item.label += QStringLiteral(" · ") + year;
+        } else if (!title.isEmpty()) {
+            item.label = title;
+        } else {
+            item.label = key;
+        }
+        // 标题只在没有作为主行兜底时显示为次行。
+        if (!title.isEmpty() && title != item.label)
+            item.title = title;
+        // venue 是可变长度文本，只放进可省略的 detail 区域；引用编号放进
+        // 独立 badge 区域，永远完整显示（期刊名再长也不会把它挤掉）。
+        if (!venue.isEmpty())
+            item.detail = venue;
+        else if (!view.entry_type.empty())
+            item.detail = ToQ(view.entry_type);
+        if (view.cited)
+            item.badge = QStringLiteral("[%1]").arg(view.number);
+        item.group = view.cited ? QStringLiteral("Cited in this paper") : QStringLiteral("Not cited");
+        item.payload = key;
+        item.search = (author + QLatin1Char(' ') + title + QLatin1Char(' ') + venue + QLatin1Char(' ') + year +
+                       QLatin1Char(' ') + key + QLatin1Char(' ') + ToQ(view.entry_type))
+                          .toLower();
+        item.checkable = true;
+        item.checked = seed.keys.contains(key);
+        return item;
+    };
+
+    for (const auto& view : citation_catalog_) {
+        if (view.cited)
+            items.push_back(make_item(view));
     }
+    for (const auto& view : citation_catalog_) {
+        if (!view.cited)
+            items.push_back(make_item(view));
+    }
+
+    // 兼容路径：某些 widget 级测试只注入旧 reference_items_（没有 catalog）。
+    // 这里仍提供多选与标题/编号不可用时的最小信息。
+    if (citation_catalog_.empty()) {
+        for (const auto& item : reference_items_) {
+            if (!item.payload.startsWith(QStringLiteral("cite:")))
+                continue;
+            PopupList::Item entry;
+            entry.label = item.label;
+            entry.detail = item.detail;
+            entry.title = item.title;
+            entry.group = QStringLiteral("References");
+            entry.payload = item.payload.mid(5);
+            entry.search = item.search.isEmpty() ? item.label.toLower() : item.search.toLower();
+            entry.checkable = true;
+            entry.checked = seed.keys.contains(entry.payload);
+            items.push_back(std::move(entry));
+        }
+    }
+
     if (items.empty()) {
         PopupList::Item empty;
         empty.label = QStringLiteral("No references imported");
-        empty.detail = QStringLiteral("Import a .bib file first");
+        empty.title = QStringLiteral("Import a .bib file or add a reference first");
+        empty.enabled = false;
         items.push_back(empty);
     }
 
+    PopupList::Options options;
+    options.multi_select = true;
+    options.show_toggle = true;
+    options.toggle_label = QStringLiteral("Narrative — Author [n]");
+    options.toggle_initial = seed.narrative;
+    options.width_px = 620;
+    options.max_height_px = 460;
+    options.empty_title = QStringLiteral("No references imported");
+    options.empty_hint = QStringLiteral("Import a .bib file or add a reference first");
+
     // 引用方案 §4：选择器作用于弹出层获得焦点*之前*用户所在的光标位置。弹出层
     // 的焦点往返绝不能被误认为正文编辑的结束（BeginProtectedInsert 会抑制
-    // focusOut 提交），而选中一项会立即完成语义插入 + 提交——不存在「稍后某次
-    // focusOut 会提交它」这种情况。
+    // focusOut 提交），而确认会立即完成语义插入/替换 + 提交。
     const QString node_id = editor->property("row_node").toString();
-    const int caret = editor->textCursor().position();
+    const int caret = seed.position >= 0 ? seed.position : editor->textCursor().position();
     editor->BeginProtectedInsert();
     QPointer<InlineEditor> guard(editor);
 
     auto* popup = new PopupList(this);
-    connect(popup, &PopupList::chosen, this, [this, guard, node_id, caret](QString payload) {
-        const QString key = payload.trimmed();
-        if (guard)
-            guard->EndProtectedInsert();
-        if (key.isEmpty() || !guard)
-            return;
-        // 将光标恢复到用户原来的位置，在那里插入引用对象，
-        // 并立即提交该行完整的富文本内容。
-        QTextCursor cursor(guard->document());
-        cursor.setPosition(qMax(0, qMin(caret, guard->document()->characterCount() - 1)));
-        guard->setTextCursor(cursor);
-        guard->InsertCitationObject({key});
-        guard->setFocus(Qt::OtherFocusReason);
-        CommitInlineRow(guard.data());
-        // 提交会刷新引用编号；把光标放回 pill 之后，便于继续输入。
-        const int after = caret + 1;
-        QTimer::singleShot(0, this, [this, node_id, after]() {
-            for (auto& block : blocks_) {
-                if (block.inline_editor && block.node_id == node_id) {
-                    QTextCursor c(block.inline_editor->document());
-                    c.setPosition(qMax(0, qMin(after, block.inline_editor->document()->characterCount() - 1)));
-                    block.inline_editor->setTextCursor(c);
-                    block.inline_editor->setFocus(Qt::OtherFocusReason);
+    connect(popup, &PopupList::chosenMany, this,
+            [this, guard, node_id, caret, seed](QStringList payloads, bool narrative) {
+                if (guard)
+                    guard->EndProtectedInsert();
+                if (!guard || payloads.isEmpty())
                     return;
+                const CitationMode mode = narrative ? CitationMode::Narrative : CitationMode::Parenthetical;
+                bool replaced = false;
+                if (seed.position >= 0) {
+                    replaced = guard->ReplaceCitationAt(seed.position, payloads, mode);
+                } else {
+                    QTextCursor cursor(guard->document());
+                    cursor.setPosition(qMax(0, qMin(caret, guard->document()->characterCount() - 1)));
+                    guard->setTextCursor(cursor);
+                    guard->InsertCitationObject(payloads, mode);
+                    replaced = true;
                 }
-            }
-        });
-    });
+                if (!replaced)
+                    return;
+                guard->setFocus(Qt::OtherFocusReason);
+                CommitInlineRow(guard.data());
+                // 提交会刷新引用编号；把光标放回 pill 之后，便于继续输入。
+                const int after = caret + 1;
+                QTimer::singleShot(0, this, [this, node_id, after]() {
+                    for (auto& block : blocks_) {
+                        if (block.inline_editor && block.node_id == node_id) {
+                            QTextCursor c(block.inline_editor->document());
+                            c.setPosition(qMax(0, qMin(after, block.inline_editor->document()->characterCount() - 1)));
+                            block.inline_editor->setTextCursor(c);
+                            block.inline_editor->setFocus(Qt::OtherFocusReason);
+                            return;
+                        }
+                    }
+                });
+            });
     auto end_protection = [guard]() {
         if (guard)
             guard->EndProtectedInsert();
     };
     connect(popup, &PopupList::dismissed, this, end_protection);
     connect(popup, &QObject::destroyed, this, end_protection);
-    popup->popup(PickerPositionBelowCaret(editor), items);
+    popup->popup(PickerPositionBelowCaret(editor), items, options);
 }
 
 void BlockEditor::ShowReferencePicker(InlineEditor* editor) {
+    ShowReferencePicker(editor, ReferencePickerSeed{});
+}
+
+void BlockEditor::ShowReferencePicker(InlineEditor* editor, ReferencePickerSeed seed) {
     if (!editor)
         return;
     std::vector<PopupList::Item> items;
-    // 交叉引用指向文档节点，因此这些条目来自上一次重建的引用列表，
-    // 在那里它们被标记为 node:…。
-    for (const auto& item : reference_items_) {
-        if (!item.payload.startsWith(QStringLiteral("xref:")))
-            continue;
-        PopupList::Item entry;
-        entry.label = item.label;
-        entry.detail = item.detail;
-        entry.group = QStringLiteral("Cross References");
-        entry.payload = item.payload.mid(5);
-        entry.search = item.label.toLower();
-        items.push_back(std::move(entry));
+    const auto group_for = [](NodeKind kind) {
+        switch (kind) {
+        case NodeKind::Section:
+        case NodeKind::Subsection:
+        case NodeKind::Subsubsection:
+            return QStringLiteral("Sections");
+        case NodeKind::Equation:
+            return QStringLiteral("Math");
+        case NodeKind::Figure:
+            return QStringLiteral("Figures");
+        case NodeKind::Table:
+            return QStringLiteral("Tables");
+        default:
+            return QStringLiteral("Other");
+        }
+    };
+    const auto kind_label = [](NodeKind kind) {
+        switch (kind) {
+        case NodeKind::Section:
+            return QStringLiteral("Section");
+        case NodeKind::Subsection:
+            return QStringLiteral("Subsection");
+        case NodeKind::Subsubsection:
+            return QStringLiteral("Subsubsection");
+        case NodeKind::Equation:
+            return QStringLiteral("Equation");
+        case NodeKind::Figure:
+            return QStringLiteral("Figure");
+        case NodeKind::Table:
+            return QStringLiteral("Table");
+        default:
+            return QStringLiteral("Reference");
+        }
+    };
+    if (!cross_reference_items_.empty()) {
+        for (const auto& reference : cross_reference_items_) {
+            PopupList::Item entry;
+            entry.label = ToQ(reference.display);
+            entry.title = ToQ(reference.title);
+            entry.detail = kind_label(reference.kind);
+            if (seed.position >= 0 && reference.node.value() == seed.target.toStdString())
+                entry.detail += QStringLiteral(" · current");
+            entry.group = group_for(reference.kind);
+            entry.payload = ToQ(reference.node.value());
+            entry.search = (entry.label + QLatin1Char(' ') + entry.title).toLower();
+            entry.checkable = false;
+            entry.checked = reference.node.value() == seed.target.toStdString();
+            items.push_back(std::move(entry));
+        }
+    } else {
+        // 兼容路径：只有旧 reference_items_ 的 widget 级测试。
+        for (const auto& item : reference_items_) {
+            if (!item.payload.startsWith(QStringLiteral("xref:")))
+                continue;
+            PopupList::Item entry;
+            entry.label = item.label;
+            entry.title = item.title;
+            entry.detail = item.detail;
+            entry.group = item.group.isEmpty() ? QStringLiteral("Cross references") : item.group;
+            entry.payload = item.payload.mid(5);
+            entry.search = item.search.isEmpty() ? item.label.toLower() : item.search.toLower();
+            entry.checkable = false;
+            entry.checked = entry.payload == seed.target;
+            items.push_back(std::move(entry));
+        }
     }
     if (items.empty()) {
         PopupList::Item empty;
         empty.label = QStringLiteral("Nothing to reference yet");
-        empty.detail = QStringLiteral("Add a section, figure or equation first");
+        empty.title = QStringLiteral("Add a section, figure, table or equation first");
+        empty.enabled = false;
         items.push_back(empty);
     }
+    // 同一分组必须相邻，否则列表会重复出现 group 标题。顺序与用户查找
+    // 目标的心智一致：Sections → Math → Figures → Tables。
+    const auto group_rank = [](const QString& group) {
+        if (group == QStringLiteral("Sections"))
+            return 0;
+        if (group == QStringLiteral("Math"))
+            return 1;
+        if (group == QStringLiteral("Figures"))
+            return 2;
+        if (group == QStringLiteral("Tables"))
+            return 3;
+        return 4;
+    };
+    std::stable_sort(items.begin(), items.end(), [&](const PopupList::Item& a, const PopupList::Item& b) {
+        return group_rank(a.group) < group_rank(b.group);
+    });
+    PopupList::Options options;
+    options.width_px = 520;
+    options.max_height_px = 440;
+    options.empty_title = QStringLiteral("Nothing to reference yet");
+    options.empty_hint = QStringLiteral("Add a section, figure, table or equation first");
+
     const QString node_id = editor->property("row_node").toString();
-    const int caret = editor->textCursor().position();
+    const int caret = seed.position >= 0 ? seed.position : editor->textCursor().position();
     editor->BeginProtectedInsert();
     QPointer<InlineEditor> guard(editor);
     auto* popup = new PopupList(this);
-    connect(popup, &PopupList::chosen, this, [this, guard, node_id, caret](QString payload) {
+    connect(popup, &PopupList::chosen, this, [this, guard, node_id, caret, seed](QString payload) {
         const QString target = payload.trimmed();
         if (guard)
             guard->EndProtectedInsert();
         if (target.isEmpty() || !guard)
             return;
-        QTextCursor cursor(guard->document());
-        cursor.setPosition(qMax(0, qMin(caret, guard->document()->characterCount() - 1)));
-        guard->setTextCursor(cursor);
-        guard->InsertCrossReferenceObject(target);
+        bool replaced = false;
+        if (seed.position >= 0) {
+            replaced = guard->ReplaceCrossReferenceAt(seed.position, target);
+        } else {
+            QTextCursor cursor(guard->document());
+            cursor.setPosition(qMax(0, qMin(caret, guard->document()->characterCount() - 1)));
+            guard->setTextCursor(cursor);
+            guard->InsertCrossReferenceObject(target);
+            replaced = true;
+        }
+        if (!replaced)
+            return;
         guard->setFocus(Qt::OtherFocusReason);
         CommitInlineRow(guard.data());
         const int after = caret + 1;
@@ -848,7 +1068,7 @@ void BlockEditor::ShowReferencePicker(InlineEditor* editor) {
     };
     connect(popup, &PopupList::dismissed, this, end_protection);
     connect(popup, &QObject::destroyed, this, end_protection);
-    popup->popup(PickerPositionBelowCaret(editor), items);
+    popup->popup(PickerPositionBelowCaret(editor), items, options);
 }
 
 // 立即提交一个富文本行：选择器不得依赖稍后的 focusOut。文档通过
@@ -895,15 +1115,35 @@ void BlockEditor::SetCitationNumbers(std::shared_ptr<const pf::CitationNumberRes
 
 std::map<QString, QString> BlockEditor::CrossReferenceLabels() const {
     std::map<QString, QString> labels;
+    if (!cross_reference_items_.empty()) {
+        for (const auto& item : cross_reference_items_) {
+            if (!item.node.empty() && !item.display.empty())
+                labels[ToQ(item.node.value())] = ToQ(item.display);
+        }
+        return labels;
+    }
+    // 兼容路径：只有旧 reference_items_ 的 widget 级测试仍能显示标题。
     for (const auto& item : reference_items_) {
         if (!item.payload.startsWith(QStringLiteral("xref:")))
             continue;
         const QString node = item.payload.mid(5);
-        if (!node.isEmpty() && !item.label.isEmpty()) {
+        if (!node.isEmpty() && !item.label.isEmpty())
             labels[node] = item.label;
-        }
     }
     return labels;
+}
+
+void BlockEditor::SetNumbering(std::shared_ptr<const pf::DocumentNumberer> numbering) {
+    numbering_ = std::move(numbering);
+}
+
+void BlockEditor::SetCrossReferences(std::vector<pf::CrossReferenceItem> items) {
+    cross_reference_items_ = std::move(items);
+    const auto labels = CrossReferenceLabels();
+    for (auto& block : blocks_) {
+        if (block.inline_editor)
+            block.inline_editor->SetCrossReferenceLabels(labels);
+    }
 }
 
 QWidget* BlockEditor::MakeTextCard(const QString& node_id, const InlineContent& content, const QString& outline_key) {
@@ -1123,6 +1363,35 @@ QWidget* BlockEditor::MakeEquationCard(const QString& node_id, const pf::Equatio
 // Figure 或 Table 无处渲染：文档持有它，大纲列出它，但编辑器什么都不显示。
 // 现在一个工厂加一条追加路径即可服务所有标题层级。
 
+QLineEdit* BlockEditor::AddLabelEditor(QWidget* card, const QString& node_id, const QString& label,
+                                         const QString& placeholder,
+                                         const std::function<void(const QString&)>& commit) {
+    auto* row = new QWidget(card);
+    auto* row_layout = new QHBoxLayout(row);
+    row_layout->setContentsMargins(0, 0, 0, 0);
+    row_layout->setSpacing(6);
+    auto* caption = new QLabel(QStringLiteral("Label"), row);
+    caption->setStyleSheet(QString("color: %1; font-size: 8pt;").arg(theme::kSecondaryText));
+    auto* edit = new QLineEdit(label, row);
+    edit->setPlaceholderText(placeholder);
+    edit->setProperty("row_node", node_id);
+    edit->setProperty("row_focus_key", node_id);
+    edit->setToolTip(QStringLiteral("LaTeX label used by \\ref; leave empty to use the node id"));
+    row_layout->addWidget(caption);
+    row_layout->addWidget(edit, 1);
+    qobject_cast<QVBoxLayout*>(card->layout())->addWidget(row);
+    // 失焦/回车时提交，但只在值确实变化时发命令，避免每次点击都重建卡片。
+    connect(edit, &QLineEdit::editingFinished, this, [edit, committed = label, commit]() {
+        const QString text = edit->text().trimmed();
+        // 提交后清除 modified：否则 HasUncommittedFocus 会一直认为这行还有
+        // 未写入的输入，推迟后续结构性刷新。
+        edit->setModified(false);
+        if (text != committed)
+            commit(text);
+    });
+    return edit;
+}
+
 QWidget* BlockEditor::MakeFigureCard(const pf::Figure& figure, const QString& outline_key) {
     const QString node_id = ToQ(figure.id.value());
     QWidget* card = MakeCard(node_id, "Figure", "caption", true);
@@ -1146,6 +1415,8 @@ QWidget* BlockEditor::MakeFigureCard(const pf::Figure& figure, const QString& ou
     caption->setProperty("row_focus_key", node_id);
     caption->setProperty("row_outline_key", outline_key);
     caption->setProperty("commands_enabled", true);
+    AddLabelEditor(card, node_id, ToQ(figure.label), QStringLiteral("fig:architecture"),
+                   [this, node_id](const QString& text) { emit FigureLabelEdited(node_id, text); });
     // 单栏 vs 双栏图片。无论模板是什么都记录在文档上；
     // 只有双栏模板才会导出差异（见 LatexRenderer：DoubleColumn 会输出带星号的
     // 浮动体）。
@@ -1205,6 +1476,8 @@ QWidget* BlockEditor::MakeTableCard(const pf::Table& table, const QString& outli
     caption->setProperty("row_focus_key", node_id);
     caption->setProperty("row_outline_key", outline_key);
     caption->setProperty("commands_enabled", true);
+    AddLabelEditor(card, node_id, ToQ(table.label), QStringLiteral("tab:results"),
+                   [this, node_id](const QString& text) { emit TableLabelEdited(node_id, text); });
     Block gui_block;
     gui_block.node_id = node_id;
     gui_block.kind = QStringLiteral("Table");
@@ -1279,7 +1552,14 @@ QWidget* BlockEditor::MakeCard(const QString& node_id, const QString& kind, cons
     header_layout->setContentsMargins(0, 0, 0, 0);
     header_layout->setSpacing(6);
     auto* handle = new DragHandle(node_id, header);
-    auto* type_label = new QLabel(DisplayLabelFor(kind), header);
+    // 卡片类型标签展示与 PDF 一致的编号（WP-03）：Figure 3 / Eq. (4) /
+    // Section 2.1。未编号的节点（Text、Paragraph）保持原类型名。
+    QString kind_display = kind;
+    if (numbering_) {
+        if (const auto entry = numbering_->Find(NodeId(node_id.toStdString())))
+            kind_display = ToQ(entry->display);
+    }
+    auto* type_label = new QLabel(DisplayLabelFor(kind_display), header);
     type_label->setStyleSheet(QString("color: %1; font-size: 8pt; font-weight: 600;"
                                       " letter-spacing: 0.4px;")
                                   .arg(theme::kSecondaryText));
@@ -1548,6 +1828,8 @@ void BlockEditor::CommitBlock(Block& block) {
 }
 
 bool BlockEditor::eventFilter(QObject* watched, QEvent* event) {
+    if (shutting_down_)
+        return false;
     const QEvent::Type type = event->type();
     // 窗格尺寸变化时（拖动分隔条、专注模式、窗口缩放）保持阅读列居中。
     if (scroll_ && watched == scroll_->viewport() && type == QEvent::Resize) {
@@ -2058,6 +2340,10 @@ bool BlockEditor::HasUncommittedFocus() const {
     if (auto* edit = qobject_cast<BlockEdit*>(focusWidget())) {
         return edit->IsDirty();
     }
+    // 图表 label 输入框（WP-03）。textChanged 只设置 modified，不写文档；
+    // 在失焦/回车前重建行会丢失用户正在输入的 label。
+    if (auto* line = qobject_cast<QLineEdit*>(focusWidget()))
+        return line->isModified();
     return false;
 }
 
@@ -2082,6 +2368,10 @@ void BlockEditor::CommitFocused() {
             }
         }
     }
+    if (auto* line = qobject_cast<QLineEdit*>(focusWidget())) {
+        // 触发与失焦相同的提交路径（AddLabelEditor 的 editingFinished）。
+        QMetaObject::invokeMethod(line, "editingFinished", Qt::DirectConnection);
+    }
 }
 
 std::optional<QString> BlockEditor::FocusedNodeId() const {
@@ -2092,6 +2382,11 @@ std::optional<QString> BlockEditor::FocusedNodeId() const {
     }
     if (auto* edit = qobject_cast<BlockEdit*>(focusWidget())) {
         QString node = edit->property("row_node").toString();
+        if (!node.isEmpty())
+            return node;
+    }
+    if (auto* line = qobject_cast<QLineEdit*>(focusWidget())) {
+        QString node = line->property("row_node").toString();
         if (!node.isEmpty())
             return node;
     }

@@ -440,8 +440,8 @@ PF_TEST(SchemaMigrationV1ToV2KeepsDocumentAndStampsVersion) {
     auto migration = ProjectMigrator::MigrateToCurrent(&loaded.value());
     PF_CHECK(migration.migrated);
     PF_CHECK(migration.from_version == "1");
-    PF_CHECK(migration.to_version == "3");
-    PF_CHECK(migration.applied.size() == 2); // V1->V2、V2->V3
+    PF_CHECK(migration.to_version == "4");
+    PF_CHECK(migration.applied.size() == 3); // V1->V2、V2->V3、V3->V4
     PF_CHECK(migration.warnings.empty());
 
     // 没有任何内容丢失。
@@ -462,24 +462,32 @@ PF_TEST(SchemaMigrationV1ToV2KeepsDocumentAndStampsVersion) {
     const std::string saved = ProjectSerializer::Serialize(loaded.value());
     auto reloaded = ProjectSerializer::Deserialize(saved);
     PF_CHECK(reloaded.ok());
-    PF_CHECK(reloaded.value().schema_version == "3");
+    PF_CHECK(reloaded.value().schema_version == "4");
     PF_CHECK(BodyOf(reloaded.value().document).sections.size() == 1);
 }
 
 PF_TEST(SchemaMigrationIsIdempotentAndFlagsUnknownVersions) {
     SerializedProject current;
-    current.schema_version = "3";
+    current.schema_version = "4";
     auto untouched = ProjectMigrator::MigrateToCurrent(&current);
     PF_CHECK(!untouched.migrated);
-    PF_CHECK(untouched.to_version == "3");
+    PF_CHECK(untouched.to_version == "4");
 
-    // V2 文件只会因公式格式变更而补上版本标记。
+    // V3 文件只因图表 label 字段而补版本戳。
+    SerializedProject v3;
+    v3.schema_version = "3";
+    auto from_v3 = ProjectMigrator::MigrateToCurrent(&v3);
+    PF_CHECK(from_v3.migrated);
+    PF_CHECK(from_v3.applied.size() == 1);
+    PF_CHECK(from_v3.to_version == "4");
+
+    // V2 文件会补上两个版本标记（公式格式 + 图表 label）。
     SerializedProject v2;
     v2.schema_version = "2";
     auto from_v2 = ProjectMigrator::MigrateToCurrent(&v2);
     PF_CHECK(from_v2.migrated);
-    PF_CHECK(from_v2.applied.size() == 1);
-    PF_CHECK(from_v2.to_version == "3");
+    PF_CHECK(from_v2.applied.size() == 2);
+    PF_CHECK(from_v2.to_version == "4");
 
     SerializedProject blank;
     blank.schema_version = "";
@@ -512,9 +520,9 @@ PF_TEST(LoadMigratesOldProjectFileInMemory) {
     auto result = ProjectPersistence::Load(request);
     PF_CHECK(result.status == LoadResult::Status::Ok);
     PF_CHECK(result.migration.migrated);
-    PF_CHECK(result.migration.to_version == "3");
+    PF_CHECK(result.migration.to_version == "4");
     PF_CHECK(result.project.has_value());
-    PF_CHECK(result.project->schema_version == "3");
+    PF_CHECK(result.project->schema_version == "4");
 
     // 旧文件在磁盘上保持不变——只有执行保存才会重写它。
     std::ifstream in(file, std::ios::binary);

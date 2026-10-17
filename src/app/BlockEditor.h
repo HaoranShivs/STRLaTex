@@ -26,7 +26,9 @@
 #include "document/Document.h"
 #include "document/DocumentTraversal.h"
 #include "numbering/CitationNumberResolver.h"
+#include "numbering/DocumentNumberer.h"
 
+class QLineEdit;
 class QPlainTextEdit;
 class QVBoxLayout;
 
@@ -39,6 +41,9 @@ class BlockEditor : public QWidget {
 
   public:
     explicit BlockEditor(QWidget* parent = nullptr);
+    // 子编辑器在 QWidget 基类析构时会因 focusOut 发出 Committed；此时
+    // blocks_ 已经先于基类被销毁，连接必须先断开，否则是 use-after-free。
+    ~BlockEditor() override;
 
     // 用文档内容替换所有行；保留焦点/光标。
     void RebuildFromDocument(const Document& doc);
@@ -67,6 +72,16 @@ class BlockEditor : public QWidget {
     // 文档级引用编号（引用方案 §3）。Text 行中的 pill 是此映射的视觉投影；
     // 文档本身仍然只存储 key。用 shared_ptr 是因为每一行都读取同一份映射。
     void SetCitationNumbers(std::shared_ptr<const pf::CitationNumberResolver> numbers);
+
+    // Citation picker v2 的条目目录（WP-01 §4.3）：由 MainWindow 在
+    // documentChanged / bibliography 变化后注入。picker 不再自行拼
+    // author · year，也不再依赖 BibEntry。空目录时退回旧 reference_items_。
+    void SetCitationCatalog(std::vector<pf::CitationView> entries);
+
+    // WP-03：文档编号与交叉引用目标。numbering 同时用于卡片标题
+    // （Figure 3 / Eq. (4)）与胶囊显示；cross references 是 picker 的唯一目录。
+    void SetNumbering(std::shared_ptr<const pf::DocumentNumberer> numbering);
+    void SetCrossReferences(std::vector<pf::CrossReferenceItem> items);
 
     // 把文档中的 AssetId 解析为本地图片路径，用于图片预览。
     void SetAssetPathResolver(std::function<QString(const AssetId&)> resolver);
@@ -101,6 +116,9 @@ class BlockEditor : public QWidget {
     void CaptionEdited(const QString& node_id, const QString& text);
     // 图片布局：true = 图片横跨双栏模板的两栏（无论当前模板如何都会存储）。
     void FigureSpanChanged(const QString& node_id, bool double_column);
+    // Figure/Table 的自定义 LaTeX label（WP-03）。空字符串表示回退到 node id。
+    void FigureLabelEdited(const QString& node_id, const QString& label);
+    void TableLabelEdited(const QString& node_id, const QString& label);
 
     // 在行提交其文本后发出（无论是否改变）。让窗口可以执行在用户仍在输入时
     // 被推迟的刷新。
@@ -126,6 +144,24 @@ class BlockEditor : public QWidget {
     // InlineEditor -> ParagraphContentEdited -> EditParagraphRich
     // （引用方案 §4/§5）。当该行不是 Text 行时返回 false。
     bool InsertCitationIntoParagraph(const QString& node_id, const QString& citation_key, int insert_offset = -1);
+
+    // Citation / Reference 选择器（WP-01 §4.3）。选择器在插入/替换对象后立即
+    // 提交该行（引用方案 §4）——而不是「以后某次 focusOut 会提交它」。
+    // seed.position >= 0 表示重编辑已存在的 token：确认后替换 token，而不是
+    // 在光标处再插入一个。公开是为了让宿主与 widget 级测试共用同一条入口。
+    struct CitationPickerSeed {
+        QStringList keys;
+        bool narrative = false;
+        int position = -1;
+    };
+    void ShowCitationPicker(InlineEditor* editor);
+    void ShowCitationPicker(InlineEditor* editor, CitationPickerSeed seed);
+    struct ReferencePickerSeed {
+        QString target;
+        int position = -1;
+    };
+    void ShowReferencePicker(InlineEditor* editor);
+    void ShowReferencePicker(InlineEditor* editor, ReferencePickerSeed seed);
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -171,11 +207,7 @@ class BlockEditor : public QWidget {
     void AppendBlocks(const std::vector<pf::Block>& blocks, const QString& outline_key);
     // Selection and context menus share the same semantic editing actions.
     void ConfigureFormatActions(InlineEditor* editor);
-    // Citation / Reference 按钮背后的引用选择器。选择器在插入对象后立即提交
-    // 该行（引用方案 §4）——而不是「以后某次 focusOut 会提交它」。
-    void ShowCitationPicker(InlineEditor* editor);
-    void ShowReferencePicker(InlineEditor* editor);
-    // 交叉引用 pill 的 node id -> 显示标签，来自当前的 "@" 引用条目。
+    // 交叉引用 pill 的 node id -> 显示编号（"Figure 3"/"Section 2.1"）。
     std::map<QString, QString> CrossReferenceLabels() const;
 
     QWidget* MakeCard(const QString& node_id, const QString& kind, const QString& commit_role, bool header_inline);
@@ -199,6 +231,9 @@ class BlockEditor : public QWidget {
     void ShowInsertMenu(const QString& anchor, QWidget* source);
     // Authors 卡片下每位作者一行：选择机构。
     void BuildAuthorBindingPanel(QWidget* card, const FrontMatter& front);
+    // 在图表卡片底部加一行 "Label" 输入框；只有值变化时才提交。
+    QLineEdit* AddLabelEditor(QWidget* card, const QString& node_id, const QString& label,
+                              const QString& placeholder, const std::function<void(const QString&)>& commit);
     void OpenSlashMenu(QPlainTextEdit* origin);
     void ApplyHints();
 
@@ -208,6 +243,9 @@ class BlockEditor : public QWidget {
     std::vector<Block> blocks_;
     RequiredHints hints_;
     std::vector<PopupList::Item> reference_items_;
+    std::vector<pf::CitationView> citation_catalog_;
+    std::vector<pf::CrossReferenceItem> cross_reference_items_;
+    std::shared_ptr<const pf::DocumentNumberer> numbering_;
     std::shared_ptr<const pf::CitationNumberResolver> citation_numbers_;
     std::function<QString(const AssetId&)> asset_path_resolver_;
     // 插入菜单用于查询锚点所在容器的文档。仅在 RebuildFromDocument 驱动的
@@ -215,6 +253,8 @@ class BlockEditor : public QWidget {
     const Document* container_document_ = nullptr;
     int max_heading_depth_ = 3;
     bool rebuilding_ = false;
+    // 析构期间不再响应子控件事件（标签输入框的 editingFinished 等）。
+    bool shutting_down_ = false;
 
     // 跨重建的焦点保持。
     QString focus_node_;

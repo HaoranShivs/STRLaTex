@@ -302,6 +302,7 @@ JsonValue TableToJson(const Table& table) {
     obj["id"] = table.id.value();
     obj["caption"] = InlineToJson(table.caption);
     obj["hasHeaderRow"] = table.has_header_row;
+    obj["label"] = table.label;
     JsonArray cols;
     for (const auto& col : table.columns) {
         cols.push_back(std::string(col.alignment == ColumnAlignment::Left     ? "left"
@@ -332,6 +333,8 @@ std::optional<Table> TableFromJson(const JsonValue* value) {
     }
     if (const auto* hdr = value->find("hasHeaderRow"))
         table.has_header_row = hdr->as_bool();
+    if (const auto* label = value->find("label"))
+        table.label = label->as_string();
     if (const auto* cols = value->find("columns")) {
         for (const auto& c : cols->as_array()) {
             TableColumn col;
@@ -389,6 +392,7 @@ JsonValue BlockToJson(const Block& block) {
         // 单栏与双栏图。为每个 figure 都写入，使该选择在文件中显式可见；
         // 不识别该键的旧读取方会忽略它。
         obj["span"] = fig->span == FigureSpan::DoubleColumn ? "double" : "single";
+        obj["label"] = fig->label;
     } else if (const auto* table = std::get_if<Table>(&block)) {
         JsonObject t = TableToJson(*table).as_object();
         t["type"] = "table";
@@ -443,6 +447,9 @@ std::optional<Block> BlockFromJson(const JsonValue* value) {
         if (const auto* span = value->find("span")) {
             fig.span = span->as_string() == "double" ? FigureSpan::DoubleColumn : FigureSpan::SingleColumn;
         }
+        // 缺少该键（schema v4 之前写入的文件）表示使用 node id。
+        if (const auto* label = value->find("label"))
+            fig.label = label->as_string();
         return fig;
     }
     if (t == "table") {

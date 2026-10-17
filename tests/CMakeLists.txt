@@ -18,6 +18,8 @@ add_executable(pf_tests
     TestMath.cpp
     TestRuntime.cpp
     TestCitationNumbering.cpp
+    TestCitationTokenCodec.cpp
+    TestNumbering.cpp
 )
 
 target_include_directories(pf_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

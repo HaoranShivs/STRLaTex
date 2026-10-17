@@ -14,9 +14,12 @@ namespace pf {
 // {"type":"equation","latex":...,"numbered":...,"label":...}。读取器仍
 // 接受 V2 的写法（"inlineEquation"/"displayEquation" 配 "math"），
 // 因此 V2 文件加载后数据不变。
+// V4 为交叉引用增加 Figure/Table 的可选 "label" 字段；旧文件缺省为空，
+// 读取时回退到 node id，因此 V3 -> V4 只是版本戳（不重写磁盘）。
 inline constexpr const char* kSchemaVersionV1 = "1";
 inline constexpr const char* kSchemaVersionV2 = "2";
-inline constexpr const char* kSchemaVersion = "3";
+inline constexpr const char* kSchemaVersionV3 = "3";
+inline constexpr const char* kSchemaVersion = "4";
 
 struct MigrationStep {
     std::string from_version;

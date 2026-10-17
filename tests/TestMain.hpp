@@ -36,8 +36,14 @@ struct Registrar {
 };
 
 inline int RunAll() {
+    // PF_TEST_FILTER：只运行名字包含该子串的测试，便于本地定位单个
+    // GUI/单元用例（CI 不设置该变量，仍运行全部）。
+    const char* filter_env = std::getenv("PF_TEST_FILTER");
+    const std::string filter = filter_env ? filter_env : "";
     int ran = 0;
     for (const auto& tc : Registry()) {
+        if (!filter.empty() && tc.name.find(filter) == std::string::npos)
+            continue;
         CurrentFailed() = false;
         auto start = std::chrono::steady_clock::now();
         try {

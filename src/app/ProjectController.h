@@ -10,6 +10,7 @@
 #include "build/BuildCoordinator.h"
 #include "build/BuildEvent.h"
 #include "numbering/CitationNumberResolver.h"
+#include "numbering/DocumentNumberer.h"
 #include "project/PreviewUpdate.h"
 #include "project/ProjectSession.h"
 
@@ -99,6 +100,8 @@ class ProjectController : public QObject {
     // 单栏与双栏图。无论使用哪种模板都会保存；只有双栏模板
     // 才会体现差异（通栏浮动体）。
     EditResult EditFigureSpan(const NodeId& figure, bool double_column);
+    EditResult EditFigureLabel(const NodeId& figure, const QString& label);
+    EditResult EditTableLabel(const NodeId& table, const QString& label);
     EditResult DeleteBlock(const NodeId& block);
     EditResult DeleteNode(const NodeId& node);
     EditResult MoveNode(const NodeId& node, int direction);
@@ -115,10 +118,18 @@ class ProjectController : public QObject {
     void RequestBuild(bool manual = true);
     void CancelBuild();
 
-    // 引用方案 §3：编辑器 pill 绘制所依据的全文档 citation key -> 显示编号
-    // 映射。根据实时文档与导入的参考文献重建；没有打开项目时为
-    // nullptr。
+    // 引用方案 §3 / WP-01：编辑器 pill 绘制与 picker 共用的 resolver。
+    // 根据实时文档与导入的参考文献构建；命中缓存时返回同一个 shared_ptr，
+    // 供 BlockEditor 通过指针比较跳过全量刷新。没有打开项目时为 nullptr。
+    std::shared_ptr<const pf::CitationNumberResolver> CitationResolver() const;
+    // 兼容旧调用；等价于 CitationResolver()。
     std::shared_ptr<const pf::CitationNumberResolver> CitationNumbers() const;
+    // picker / References 面板的条目视图（author/year/title/venue/cited/number）。
+    std::vector<pf::CitationView> CitationViews() const;
+
+    // WP-03：与 PDF 一致的文档编号（section/图表/公式），按 revision 缓存。
+    std::shared_ptr<const pf::DocumentNumberer> Numbering() const;
+    std::vector<pf::CrossReferenceItem> CrossReferences() const;
 
     // 参考文献。导入结果（条目数、重复 key）会暴露给 UI，
     // 因此重复项绝不会无声无息地消失。
@@ -168,6 +179,17 @@ class ProjectController : public QObject {
     EditResult ExecuteAndNotify(FullEditPayload payload);
     // Undo/Redo 共用：执行历史动作、同步模板选择并发出状态变化。
     void ApplyHistory(bool redo);
+
+    // WP-13：派生数据缓存。key = (ProjectRevision, bibliography revision)。
+    // 两个 revision 覆盖了文档编辑与文献导入两条失效路径。
+    void InvalidateDerivedCaches();
+    mutable std::shared_ptr<const pf::CitationNumberResolver> citation_cache_;
+    mutable ProjectRevision citation_cache_revision_{};
+    mutable std::uint64_t citation_cache_bib_revision_ = 0;
+    mutable bool citation_cache_valid_ = false;
+    mutable std::shared_ptr<const pf::DocumentNumberer> numbering_cache_;
+    mutable ProjectRevision numbering_cache_revision_{};
+    mutable bool numbering_cache_valid_ = false;
 
     std::unique_ptr<ProjectSession> session_;
     QTimer* pump_timer_ = nullptr;

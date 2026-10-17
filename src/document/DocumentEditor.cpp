@@ -600,6 +600,32 @@ Result<void, EditError> DocumentEditor::SetFigureSpan(const NodeId& id, FigureSp
     return {};
 }
 
+Result<void, EditError> DocumentEditor::SetFigureLabel(const NodeId& id, const std::string& label) {
+    Block* block = FindBlock(id);
+    if (!block)
+        return Unexpected(ToString(EditError::NotFound));
+    if (auto* fig = std::get_if<Figure>(block)) {
+        fig->label = label;
+    } else {
+        return Unexpected(ToString(EditError::InvalidTarget));
+    }
+    document_.BumpVersion();
+    return {};
+}
+
+Result<void, EditError> DocumentEditor::SetTableLabel(const NodeId& id, const std::string& label) {
+    Block* block = FindBlock(id);
+    if (!block)
+        return Unexpected(ToString(EditError::NotFound));
+    if (auto* table = std::get_if<Table>(block)) {
+        table->label = label;
+    } else {
+        return Unexpected(ToString(EditError::InvalidTarget));
+    }
+    document_.BumpVersion();
+    return {};
+}
+
 // ---------------- Tables（表格） ----------------
 
 std::vector<std::vector<TableCell>> DocumentEditor::MakeCells(size_t rows, size_t cols) {

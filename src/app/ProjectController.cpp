@@ -187,6 +187,7 @@ int SuperscriptOrdinal(QChar ch) {
 } // namespace
 
 bool ProjectController::NewProject(const QString& dir, std::string* error) {
+    InvalidateDerivedCaches();
     std::string local_error;
     bool ok = session_->NewProject(ToStd(dir), &local_error);
     if (!ok && error)
@@ -202,6 +203,7 @@ bool ProjectController::NewProject(const QString& dir, std::string* error) {
 }
 
 bool ProjectController::OpenProject(const QString& dir) {
+    InvalidateDerivedCaches();
     std::string error;
     bool ok = session_->OpenProject(ToStd(dir), &error);
     if (ok) {
@@ -216,6 +218,7 @@ bool ProjectController::OpenProject(const QString& dir) {
 }
 
 bool ProjectController::OpenProjectWithRecovery(const QString& dir, bool* recovered) {
+    InvalidateDerivedCaches();
     std::string error;
     bool ok = session_->OpenProjectWithRecovery(ToStd(dir), &error, recovered);
     if (ok) {
@@ -229,6 +232,7 @@ bool ProjectController::OpenProjectWithRecovery(const QString& dir, bool* recove
 }
 
 void ProjectController::CloseProject() {
+    InvalidateDerivedCaches();
     session_->CloseProject();
     emit projectChanged();
     EmitProjectStateChanged();
@@ -598,6 +602,20 @@ EditResult ProjectController::EditFigureSpan(const NodeId& figure, bool double_c
     return ExecuteAndNotify(std::move(payload));
 }
 
+EditResult ProjectController::EditFigureLabel(const NodeId& figure, const QString& label) {
+    EditFigureLabelPayload payload;
+    payload.figure = figure;
+    payload.label = ToStd(label);
+    return ExecuteAndNotify(std::move(payload));
+}
+
+EditResult ProjectController::EditTableLabel(const NodeId& table, const QString& label) {
+    EditTableLabelPayload payload;
+    payload.table = table;
+    payload.label = ToStd(label);
+    return ExecuteAndNotify(std::move(payload));
+}
+
 EditResult ProjectController::DeleteBlock(const NodeId& block) {
     DeleteBlockPayload p;
     p.node = block;
@@ -889,11 +907,60 @@ BibliographyImportResult ProjectController::AddBibliographyEntry(const BibEntry&
     return result;
 }
 
-std::shared_ptr<const pf::CitationNumberResolver> ProjectController::CitationNumbers() const {
-    if (!session_)
+void ProjectController::InvalidateDerivedCaches() {
+    citation_cache_.reset();
+    citation_cache_valid_ = false;
+    citation_cache_revision_ = ProjectRevision{};
+    citation_cache_bib_revision_ = 0;
+    numbering_cache_.reset();
+    numbering_cache_valid_ = false;
+    numbering_cache_revision_ = ProjectRevision{};
+}
+
+std::shared_ptr<const pf::CitationNumberResolver> ProjectController::CitationResolver() const {
+    if (!session_ || !has_project())
         return nullptr;
-    return std::make_shared<const pf::CitationNumberResolver>(
+    const ProjectRevision revision = session_->current_revision();
+    const std::uint64_t bibliography_revision = session_->bibliography_revision();
+    if (citation_cache_valid_ && citation_cache_ && citation_cache_revision_.value == revision.value &&
+        citation_cache_bib_revision_ == bibliography_revision) {
+        return citation_cache_;
+    }
+    citation_cache_ = std::make_shared<const pf::CitationNumberResolver>(
         pf::CitationNumberResolver::Build(session_->state().document(), session_->bibliography()));
+    citation_cache_revision_ = revision;
+    citation_cache_bib_revision_ = bibliography_revision;
+    citation_cache_valid_ = true;
+    return citation_cache_;
+}
+
+std::shared_ptr<const pf::CitationNumberResolver> ProjectController::CitationNumbers() const {
+    return CitationResolver();
+}
+
+std::vector<pf::CitationView> ProjectController::CitationViews() const {
+    const auto resolver = CitationResolver();
+    return resolver ? resolver->Views() : std::vector<pf::CitationView>{};
+}
+
+std::shared_ptr<const pf::DocumentNumberer> ProjectController::Numbering() const {
+    if (!session_ || !has_project())
+        return nullptr;
+    const ProjectRevision revision = session_->current_revision();
+    if (numbering_cache_valid_ && numbering_cache_ && numbering_cache_revision_.value == revision.value)
+        return numbering_cache_;
+    numbering_cache_ = std::make_shared<const pf::DocumentNumberer>(
+        pf::DocumentNumberer::Build(session_->state().document()));
+    numbering_cache_revision_ = revision;
+    numbering_cache_valid_ = true;
+    return numbering_cache_;
+}
+
+std::vector<pf::CrossReferenceItem> ProjectController::CrossReferences() const {
+    const auto numbering = Numbering();
+    if (!numbering)
+        return {};
+    return pf::CollectCrossReferences(session_->state().document(), *numbering);
 }
 
 } // namespace pf::gui

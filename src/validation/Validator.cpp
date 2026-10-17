@@ -8,6 +8,7 @@
 #include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
 #include "math/MathValidator.h"
+#include "numbering/LabelRegistry.h"
 #include "template/TemplateRegistry.h"
 
 namespace pf {
@@ -57,6 +58,18 @@ ValidationResult Validator::Validate(const ValidationInput& input) const {
 }
 
 void Validator::ValidateSemantic(const Document& doc, const ValidationInput& input, ValidationResult* result) const {
+    // 重复 \label（WP-03）：planner 会拒绝生成，Problems 面板必须先给出
+    // 可定位的错误，而不是让用户从“引用指错了地方”反推。
+    {
+        const LabelRegistry labels = LabelRegistry::Build(doc);
+        for (const auto& conflict : labels.conflicts()) {
+            result->diagnostics.push_back(MakeDiag(
+                input.revision, DiagnosticSeverity::Error, "E-DUPLICATE-LABEL",
+                "label '" + conflict.label + "' is already used by node '" + conflict.first.value() + "'",
+                DiagnosticLocation::ForNode(conflict.second)));
+        }
+    }
+
     // 标题为空
     if (InlineIsBlank(doc.front_matter().title)) {
         result->diagnostics.push_back(MakeDiag(input.revision, DiagnosticSeverity::Warning, "W-EMPTY-TITLE",

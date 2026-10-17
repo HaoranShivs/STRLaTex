@@ -23,9 +23,16 @@ struct TemplateRequiredFields {
 
 // 模板能够表达的内容。驱动插入菜单（只支持两级的模板不提供 Subsubsection
 // Title）与校验器。
+enum class CrossReferenceStyle {
+    Ref,      // \ref{label}（默认，所有内置模板）
+    Cleveref, // \cref{label}（需要模板加载 cleveref）
+};
+
 struct TemplateCapabilities {
     // Section = 1，Subsection = 2，Subsubsection = 3。限制在 [1, 3]。
     int max_heading_depth = 3;
+    // 交叉引用命令。默认 Ref 保持现有模板的字节级输出不变。
+    CrossReferenceStyle cross_reference = CrossReferenceStyle::Ref;
 };
 
 struct LatexPackageRequirement {

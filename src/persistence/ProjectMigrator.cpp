@@ -5,7 +5,8 @@
 namespace pf {
 
 bool ProjectMigrator::IsKnownVersion(const std::string& version) {
-    return version == kSchemaVersionV1 || version == kSchemaVersionV2 || version == kSchemaVersion;
+    return version == kSchemaVersionV1 || version == kSchemaVersionV2 || version == kSchemaVersionV3 ||
+           version == kSchemaVersion;
 }
 
 MigrationResult ProjectMigrator::MigrateToCurrent(SerializedProject* project) {
@@ -49,9 +50,21 @@ MigrationResult ProjectMigrator::MigrateToCurrent(SerializedProject* project) {
     if (project->schema_version == kSchemaVersionV2) {
         MigrationStep step;
         step.from_version = kSchemaVersionV2;
-        step.to_version = kSchemaVersion;
+        step.to_version = kSchemaVersionV3;
         step.description = "math expression format: MathExpression with a bare LaTeX body "
                            "(no data change)";
+        result.applied.push_back(step);
+        result.migrated = true;
+        project->schema_version = kSchemaVersionV3;
+    }
+
+    // V3 -> V4：Figure/Table 增加可选的 "label"。旧文件没有该键，
+    // 读取器回退到 node id；迁移只打版本戳，磁盘文件保持不变。
+    if (project->schema_version == kSchemaVersionV3) {
+        MigrationStep step;
+        step.from_version = kSchemaVersionV3;
+        step.to_version = kSchemaVersion;
+        step.description = "optional figure/table labels for cross-references (no data change)";
         result.applied.push_back(step);
         result.migrated = true;
         project->schema_version = kSchemaVersion;

@@ -32,6 +32,7 @@
 #include "app/Theme.h"
 #include "app/math/MathRenderService.h"
 #include "document/InlineText.h"
+#include "document/InlineTokenCodec.h"
 
 namespace pf::gui {
 
@@ -343,7 +344,11 @@ void InlineEditor::InsertContent(const InlineContent& content) {
             for (const auto& key : cit->keys) {
                 keys << QString::fromStdString(key);
             }
-            InsertPillObject(cursor, TokenKind::Citation, keys.join(','), CitationDisplayText(keys));
+            const std::string encoded = EncodeCitationToken(*cit);
+            if (!encoded.empty()) {
+                InsertPillObject(cursor, TokenKind::Citation, QString::fromStdString(encoded),
+                                 CitationDisplayText(keys, cit->mode));
+            }
         } else if (const auto* ref = std::get_if<CrossReference>(&node)) {
             const QString target = QString::fromStdString(ref->target.value());
             InsertPillObject(cursor, TokenKind::CrossReference, target, CrossReferenceDisplayText(target));
@@ -409,16 +414,11 @@ InlineContent InlineEditor::ContentInRange(int begin, int end) const {
                 if (token_count > 0) {
                     for (int t = 0; t < token_count; ++t) {
                         if (kind == TokenKind::Citation) {
-                            Citation citation;
-                            const QStringList keys = payload.split(',');
-                            for (const QString& key : keys) {
-                                const QString trimmed = key.trimmed();
-                                if (!trimmed.isEmpty()) {
-                                    citation.keys.push_back(trimmed.toStdString());
-                                }
-                            }
-                            if (!citation.keys.empty()) {
-                                content.push_back(std::move(citation));
+                            // payload 编码了 keys + mode（"p|a,b" / "n|a,b"）；
+                            // 旧格式 "a,b" 仍按 Parenthetical 解码。
+                            const auto citation = DecodeCitationToken(payload.toStdString());
+                            if (citation && !citation->keys.empty()) {
+                                content.push_back(*citation);
                             }
                         } else if (kind == TokenKind::CrossReference) {
                             CrossReference ref;
@@ -526,7 +526,7 @@ void InlineEditor::InsertPillObject(QTextCursor& cursor, TokenKind kind, const Q
     cursor.setCharFormat(QTextCharFormat());
 }
 
-QString InlineEditor::CitationDisplayText(const QStringList& keys) const {
+QString InlineEditor::CitationDisplayText(const QStringList& keys, CitationMode mode) const {
     if (!citation_numbers_) {
         // 尚无编号 snapshot（新建的 widget）：显示 key，
         // 让 pill 仍能如实表明自己所代表的含义。
@@ -536,7 +536,7 @@ QString InlineEditor::CitationDisplayText(const QStringList& keys) const {
     std_keys.reserve(keys.size());
     for (const QString& key : keys)
         std_keys.push_back(key.toStdString());
-    return QString::fromStdString(citation_numbers_->FormatPill(std_keys));
+    return QString::fromStdString(citation_numbers_->FormatPill(std_keys, mode));
 }
 
 QString InlineEditor::CrossReferenceDisplayText(const QString& target) const {
@@ -578,9 +578,20 @@ void InlineEditor::RefreshObjectDisplays() {
             if (token_kind == TokenKind::Math)
                 continue;
             const QString payload = format.property(kTokenPayloadProperty).toString();
-            const QString display = token_kind == TokenKind::Citation
-                                        ? CitationDisplayText(payload.split(',', Qt::SkipEmptyParts))
-                                        : CrossReferenceDisplayText(payload);
+            QString display;
+            if (token_kind == TokenKind::Citation) {
+                const auto citation = DecodeCitationToken(payload.toStdString());
+                if (citation) {
+                    QStringList keys;
+                    for (const auto& key : citation->keys)
+                        keys << QString::fromStdString(key);
+                    display = CitationDisplayText(keys, citation->mode);
+                } else {
+                    display = QStringLiteral("[?]");
+                }
+            } else {
+                display = CrossReferenceDisplayText(payload);
+            }
             if (format.property(citation_format::kDisplayTextProperty).toString() == display) {
                 continue;
             }
@@ -753,16 +764,26 @@ void InlineEditor::ApplyMathRender(const QString& formula_id, const QString& lat
         viewport()->update();
 }
 
+QTextCharFormat InlineEditor::TokenFormatAt(int position) const {
+    for (QTextBlock block = document()->begin(); block.isValid(); block = block.next()) {
+        for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
+            const QTextFragment fragment = it.fragment();
+            if (!fragment.isValid() || fragment.length() == 0)
+                continue;
+            if (position >= fragment.position() && position < fragment.position() + fragment.length())
+                return fragment.charFormat();
+        }
+    }
+    return {};
+}
+
 std::optional<InlineEditor::TokenHit> InlineEditor::TokenAt(int position) const {
     const int last = document()->characterCount() - 1;
     if (position < 0 || position >= last)
         return std::nullopt;
-    QTextCursor cursor(document());
-    cursor.setPosition(position);
-    // 除非有内容被选中，否则 charFormat() 报告的是光标 *之前* 的字符，
-    // 因此精确选中要检测的那个字符。
-    cursor.setPosition(position + 1, QTextCursor::KeepAnchor);
-    const QTextCharFormat format = cursor.charFormat();
+    // 按 fragment 精确读取目标字符的格式。charFormat() 在光标/选区
+    // 边界上的“前一个字符”语义曾让 token 判定整体偏移一位。
+    const QTextCharFormat format = TokenFormatAt(position);
     const QVariant kind = format.property(kTokenKindProperty);
     if (!kind.isValid())
         return std::nullopt;
@@ -824,20 +845,96 @@ void InlineEditor::SanitizeTokens() {
     }
 }
 
-void InlineEditor::InsertCitationObject(const QStringList& keys) {
+void InlineEditor::InsertCitationObject(const QStringList& keys, CitationMode mode) {
     QStringList cleaned;
     for (const QString& key : keys) {
         const QString trimmed = key.trimmed();
-        if (!trimmed.isEmpty())
+        if (!trimmed.isEmpty() && !cleaned.contains(trimmed))
             cleaned << trimmed;
     }
     if (cleaned.isEmpty())
         return;
+    Citation citation;
+    citation.mode = mode;
+    for (const QString& key : cleaned)
+        citation.keys.push_back(key.toStdString());
     QTextCursor cursor = textCursor();
-    InsertPillObject(cursor, TokenKind::Citation, cleaned.join(QLatin1Char(',')), CitationDisplayText(cleaned));
+    InsertPillObject(cursor, TokenKind::Citation, QString::fromStdString(EncodeCitationToken(citation)),
+                     CitationDisplayText(cleaned, mode));
     setTextCursor(cursor);
     dirty_ = true;
     ResizeToContent();
+}
+
+std::optional<InlineEditor::CitationTokenInfo> InlineEditor::CitationAt(int position) const {
+    const auto hit = TokenAt(position);
+    if (!hit || hit->kind != TokenKind::Citation)
+        return std::nullopt;
+    const auto citation = DecodeCitationToken(hit->payload.toStdString());
+    if (!citation)
+        return std::nullopt;
+    CitationTokenInfo info;
+    info.mode = citation->mode;
+    info.position = hit->position;
+    for (const auto& key : citation->keys)
+        info.keys << QString::fromStdString(key);
+    return info;
+}
+
+bool InlineEditor::ReplaceCitationAt(int position, const QStringList& keys, CitationMode mode) {
+    QStringList cleaned;
+    for (const QString& key : keys) {
+        const QString trimmed = key.trimmed();
+        if (!trimmed.isEmpty() && !cleaned.contains(trimmed))
+            cleaned << trimmed;
+    }
+    if (cleaned.isEmpty())
+        return false;
+    Citation citation;
+    citation.mode = mode;
+    for (const QString& key : cleaned)
+        citation.keys.push_back(key.toStdString());
+    return ReplacePillPayload(position, TokenKind::Citation, QString::fromStdString(EncodeCitationToken(citation)),
+                              CitationDisplayText(cleaned, mode));
+}
+
+std::optional<InlineEditor::CrossReferenceTokenInfo> InlineEditor::CrossReferenceAt(int position) const {
+    const auto hit = TokenAt(position);
+    if (!hit || hit->kind != TokenKind::CrossReference || hit->payload.isEmpty())
+        return std::nullopt;
+    CrossReferenceTokenInfo info;
+    info.target = hit->payload;
+    info.position = hit->position;
+    return info;
+}
+
+bool InlineEditor::ReplaceCrossReferenceAt(int position, const QString& target) {
+    if (target.isEmpty())
+        return false;
+    return ReplacePillPayload(position, TokenKind::CrossReference, target, CrossReferenceDisplayText(target));
+}
+
+bool InlineEditor::ReplacePillPayload(int position, TokenKind kind, const QString& payload, const QString& display) {
+    const auto hit = TokenAt(position);
+    if (!hit || hit->kind != kind || payload.isEmpty())
+        return false;
+    QTextCharFormat format = TokenFormatAt(position);
+    if (format.property(kTokenKindProperty).toInt() != static_cast<int>(kind))
+        return false;
+    format.setProperty(kTokenPayloadProperty, payload);
+    format.setProperty(citation_format::kDisplayTextProperty, display);
+    QTextCursor cursor(document());
+    cursor.setPosition(position);
+    cursor.setPosition(position + 1, QTextCursor::KeepAnchor);
+    {
+        QScopedValueRollback<bool> clean_guard(refreshing_displays_, true);
+        cursor.setCharFormat(format);
+    }
+    dirty_ = true;
+    ResizeToContent();
+    if (viewport())
+        viewport()->update();
+    return true;
 }
 
 void InlineEditor::InsertCrossReferenceObject(const QString& target_node) {
@@ -941,6 +1038,20 @@ void InlineEditor::keyPressEvent(QKeyEvent* event) {
     if ((event->modifiers() & Qt::ControlModifier) && event->key() == Qt::Key_I) {
         ToggleItalic();
         return;
+    }
+    // '@' 引用菜单（README 承诺的行为）：只在行首或空白之后触发，因此
+    // 邮箱/用户名中的 '@' 不会误触发。触发器本身被消费掉：取消选择器后
+    // 文本里不会留下一个孤立的 '@'。
+    if (event->key() == Qt::Key_At && !textCursor().hasSelection() &&
+        !(event->modifiers() & (Qt::ControlModifier | Qt::AltModifier))) {
+        const QString text = toPlainText();
+        const int position = textCursor().position();
+        const bool at_line_start = position == 0 || (position > 0 && text.at(position - 1).isSpace());
+        if (at_line_start) {
+            emit ReferenceMenuRequested(mapToGlobal(cursorRect().bottomLeft()));
+            event->accept();
+            return;
+        }
     }
     QTextEdit::keyPressEvent(event);
     ResizeToContent();
@@ -1068,12 +1179,26 @@ void InlineEditor::mouseDoubleClickEvent(QMouseEvent* event) {
 }
 
 void InlineEditor::mouseReleaseEvent(QMouseEvent* event) {
-    const auto hit = TokenAt(textCursor().position());
-    if (hit && event->button() == Qt::LeftButton) {
-        if (hit->kind == TokenKind::Citation) {
-            emit CitationTokenActivated(hit->payload);
-        } else if (hit->kind == TokenKind::CrossReference) {
-            emit CrossReferenceTokenActivated(hit->payload);
+    if (event->button() == Qt::LeftButton) {
+        const QTextCursor cursor = textCursor();
+        // 只有“按下时命中了 pill”（mousePressEvent 会把该 pill 整体选中）
+        // 才打开重编辑选择器。仅仅把光标放在 pill 旁边不应触发，否则用户
+        // 点空白处继续输入时会意外弹出 picker。
+        if (cursor.hasSelection() && cursor.selectionEnd() == cursor.selectionStart() + 1) {
+            const auto hit = TokenAt(cursor.selectionStart());
+            if (hit) {
+                if (hit->kind == TokenKind::Citation) {
+                    const auto citation = DecodeCitationToken(hit->payload.toStdString());
+                    if (citation) {
+                        QStringList keys;
+                        for (const auto& key : citation->keys)
+                            keys << QString::fromStdString(key);
+                        emit CitationTokenActivated(keys, hit->position, static_cast<int>(citation->mode));
+                    }
+                } else if (hit->kind == TokenKind::CrossReference) {
+                    emit CrossReferenceTokenActivated(hit->payload, hit->position);
+                }
+            }
         }
     }
     QTextEdit::mouseReleaseEvent(event);

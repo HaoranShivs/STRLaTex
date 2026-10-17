@@ -19,6 +19,7 @@
 #include <QDropEvent>
 #include <QFrame>
 #include <QLabel>
+#include <QLayout>
 #include <QMenu>
 #include <QMimeData>
 #include <QPlainTextEdit>

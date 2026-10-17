@@ -119,7 +119,7 @@ void OutlinePanel::ApplyReferenceFilter() {
     }
 }
 
-void OutlinePanel::RebuildFromDocument(const Document& doc, const std::vector<BibEntry>& references) {
+void OutlinePanel::RebuildFromDocument(const Document& doc, const std::vector<pf::CitationView>& references) {
     // 大纲：先是读者可导航到的 front matter，然后是正文结构（设计 #17）。
     outline_->clear();
     const auto& front = doc.front_matter();
@@ -167,22 +167,7 @@ void OutlinePanel::RebuildFromDocument(const Document& doc, const std::vector<Bi
     }
 
     // References 部分。
-    references_ = references;
-    ref_list_->clear();
-    for (const auto& entry : references) {
-        QString authors =
-            entry.authors.empty()
-                ? QString()
-                : ToQ(entry.authors.front()) + (entry.authors.size() > 1 ? QStringLiteral(" et al.") : QString());
-        QString line = authors.isEmpty() ? ToQ(entry.title) : authors + QStringLiteral(" · ") + ToQ(entry.year);
-        auto* item = new QListWidgetItem(ref_list_);
-        item->setText(line);
-        item->setData(Qt::UserRole, ToQ(entry.key));
-        item->setToolTip(ToQ(entry.title));
-    }
-    ref_count_->setText(QString("%1 references").arg(references.size()));
-    // 在新构建出的列表上继续沿用用户的搜索词。
-    ApplyReferenceFilter();
+    SetReferences(references);
 
     // 重新高亮光标所在行：重建替换了所有项，因此在此恢复
     // 跟踪高亮（UI 方案 §10）。不滚动——用户可能在树的其他位置
@@ -192,6 +177,47 @@ void OutlinePanel::RebuildFromDocument(const Document& doc, const std::vector<Bi
             outline_->setCurrentItem(keep);
         }
     }
+}
+
+void OutlinePanel::SetReferences(std::vector<pf::CitationView> references) {
+    references_ = std::move(references);
+    ref_list_->clear();
+    int cited = 0;
+    for (const auto& view : references_) {
+        const QString key = ToQ(view.key);
+        const QString author = ToQ(view.author_label);
+        const QString year = ToQ(view.year);
+        const QString title = ToQ(view.title);
+        const QString venue = ToQ(view.venue);
+        QStringList parts;
+        if (!author.isEmpty()) {
+            parts << (year.isEmpty() ? author : author + QStringLiteral(" · ") + year);
+        }
+        if (!title.isEmpty())
+            parts << title;
+        if (parts.isEmpty())
+            parts << key;
+        QString line;
+        if (view.cited) {
+            ++cited;
+            line = QStringLiteral("[%1] ").arg(view.number);
+        }
+        line += parts.join(QStringLiteral(" · "));
+        auto* item = new QListWidgetItem(ref_list_);
+        item->setText(line);
+        item->setData(Qt::UserRole, key);
+        QString tooltip = title.isEmpty() ? key : title;
+        if (!venue.isEmpty())
+            tooltip += QStringLiteral("\n") + venue;
+        if (view.cited)
+            tooltip += QStringLiteral("\nCited as [%1]").arg(view.number);
+        tooltip += QStringLiteral("\n") + key;
+        item->setToolTip(tooltip);
+    }
+    ref_count_->setText(cited > 0 ? QStringLiteral("%1 references · %2 cited").arg(references_.size()).arg(cited)
+                                  : QStringLiteral("%1 references").arg(references_.size()));
+    // 在新构建出的列表上继续沿用用户的搜索词。
+    ApplyReferenceFilter();
 }
 
 void OutlinePanel::OnTabChanged(int index) {

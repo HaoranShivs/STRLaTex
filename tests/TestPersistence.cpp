@@ -9,6 +9,7 @@
 #include <string>
 
 #include "document/DocumentEditor.h"
+#include "document/DocumentTraversal.h"
 #include "persistence/ProjectPersistence.h"
 
 using namespace pf;
@@ -252,4 +253,50 @@ PF_TEST(FigureSpanPersistsAndDefaultsToSingleColumn) {
     const auto* single_again = std::get_if<Figure>(&back[1]);
     PF_CHECK(wide_again && wide_again->span == FigureSpan::DoubleColumn);
     PF_CHECK(single_again && single_again->span == FigureSpan::SingleColumn);
+}
+
+
+PF_TEST(FigureAndTableLabelsRoundTripThroughSchemaV4) {
+    SerializedProject sp;
+    sp.project_id = "p-labels";
+    sp.revision = ProjectRevision{7};
+    sp.template_id = "generic-article";
+    DocumentEditor editor(sp.document);
+    auto section = editor.InsertSection(0, InlineFromText("S"));
+
+    Figure figure;
+    figure.asset_id = AssetId("a1");
+    figure.caption = InlineFromText("Architecture");
+    figure.label = "fig:architecture";
+    auto figure_id = editor.InsertBlock(section.value(), std::nullopt, figure);
+    PF_CHECK(figure_id.ok());
+
+    auto table = DocumentEditor::MakeTable(std::vector<TableColumn>{{ColumnAlignment::Left}}, 1, true).value();
+    table.label = "tab:results";
+    table.caption = InlineFromText("Results");
+    auto table_id = editor.InsertBlock(section.value(), std::nullopt, table);
+    PF_CHECK(table_id.ok());
+
+    const std::string json = ProjectSerializer::Serialize(sp);
+    PF_CHECK(json.find("\"schemaVersion\": \"4\"") != std::string::npos);
+    auto parsed = ProjectSerializer::Deserialize(json);
+    PF_CHECK(parsed.ok());
+    if (!parsed.ok())
+        return;
+    PF_CHECK(parsed.value().schema_version == "4");
+    bool saw_figure = false;
+    bool saw_table = false;
+    for (const auto& block : DocumentMutableAccess::body(parsed.value().document).sections[0].blocks) {
+        if (const auto* fig = std::get_if<Figure>(&block)) {
+            saw_figure = true;
+            PF_CHECK(fig->id == figure_id.value());
+            PF_CHECK(fig->label == "fig:architecture");
+        }
+        if (const auto* tab = std::get_if<Table>(&block)) {
+            saw_table = true;
+            PF_CHECK(tab->id == table_id.value());
+            PF_CHECK(tab->label == "tab:results");
+        }
+    }
+    PF_CHECK(saw_figure && saw_table);
 }

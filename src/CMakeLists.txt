@@ -25,6 +25,7 @@ add_library(pf_document STATIC
     document/DocumentEditor.cpp
     document/DocumentTraversal.cpp
     document/InlineText.cpp
+    document/InlineTokenCodec.cpp
 )
 target_link_libraries(pf_document PUBLIC pf_core pf_math)
 
@@ -61,6 +62,8 @@ target_link_libraries(pf_bibliography PUBLIC pf_core)
 # BibTeX styles (unsrtnat / IEEEtran) will print in the PDF.
 add_library(pf_numbering STATIC
     numbering/CitationNumberResolver.cpp
+    numbering/DocumentNumberer.cpp
+    numbering/LabelRegistry.cpp
 )
 target_link_libraries(pf_numbering PUBLIC pf_document pf_bibliography)
 
@@ -68,7 +71,7 @@ target_link_libraries(pf_numbering PUBLIC pf_document pf_bibliography)
 add_library(pf_validation STATIC
     validation/Validator.cpp
 )
-target_link_libraries(pf_validation PUBLIC pf_document pf_template)
+target_link_libraries(pf_validation PUBLIC pf_document pf_template pf_numbering)
 
 # Rendering: semantic document -> LaTeX
 add_library(pf_render STATIC

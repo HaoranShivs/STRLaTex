@@ -22,7 +22,11 @@ class OutlinePanel : public QWidget {
   public:
     explicit OutlinePanel(QWidget* parent = nullptr);
 
-    void RebuildFromDocument(const Document& doc, const std::vector<BibEntry>& references);
+    void RebuildFromDocument(const Document& doc, const std::vector<pf::CitationView>& references);
+
+    // 只更新 References 列表（不重建大纲）。picker 与 References 面板共用
+    // 同一份 CitationView，因此行信息（author · year · title、[n]）完全一致。
+    void SetReferences(std::vector<pf::CitationView> references);
 
     // 反向导航（UI 方案 §10）：编辑器告诉大纲光标所在行属于哪个小节，
     // 这样高亮项就能在长稿件中跟随用户移动。空 key 会清除选中
@@ -54,7 +58,7 @@ class OutlinePanel : public QWidget {
     void ApplyReferenceFilter();
     QListWidget* ref_list_;
     QLabel* ref_count_;
-    std::vector<BibEntry> references_;
+    std::vector<pf::CitationView> references_;
 };
 
 } // namespace pf::gui

@@ -371,6 +371,22 @@ void MainWindow::WireEditor() {
             statusBar()->showMessage(ToQ(result.detail), 3000);
         }
     });
+    connect(editor_, &BlockEditor::FigureLabelEdited, this, [this](QString node, QString label) {
+        if (shutting_down_)
+            return;
+        QScopedValueRollback<bool> keep_rows(editor_change_in_progress_, true);
+        const auto result = controller_->EditFigureLabel(NodeId(node.toStdString()), label);
+        if (result.status != pf::EditStatus::Applied)
+            statusBar()->showMessage(ToQ(result.detail), 3000);
+    });
+    connect(editor_, &BlockEditor::TableLabelEdited, this, [this](QString node, QString label) {
+        if (shutting_down_)
+            return;
+        QScopedValueRollback<bool> keep_rows(editor_change_in_progress_, true);
+        const auto result = controller_->EditTableLabel(NodeId(node.toStdString()), label);
+        if (result.status != pf::EditStatus::Applied)
+            statusBar()->showMessage(ToQ(result.detail), 3000);
+    });
     connect(editor_, &BlockEditor::DeleteBlockRequested, this, [this](QString node) {
         auto result = controller_->DeleteNode(NodeId(node.toStdString()));
         if (result.status != pf::EditStatus::Applied) {
@@ -426,44 +442,19 @@ void MainWindow::UpdateRequiredHints() {
     editor_->SetRequiredHints(hints);
 }
 
-void MainWindow::RefreshReferenceItems() {
+void MainWindow::RefreshCitationCatalog() {
     if (!controller_->has_project())
         return;
-    std::vector<PopupList::Item> items;
-    for (const auto& entry : controller_->session().bibliography().Entries()) {
-        PopupList::Item item;
-        QString authors = entry.authors.empty() ? QString() : ToQ(entry.authors.front()) + " et al.";
-        item.label = authors.isEmpty() ? ToQ(entry.title) : authors + " · " + ToQ(entry.year);
-        item.detail = "Reference";
-        item.group = "References";
-        item.payload = "cite:" + ToQ(entry.key);
-        items.push_back(std::move(item));
-    }
-    const Document& doc = controller_->session().state().document();
-    for (const auto& section : doc.body().sections) {
-        PopupList::Item item;
-        item.label = ToQ(pf::InlineToPlainText(section.title));
-        if (item.label.isEmpty())
-            item.label = "Untitled Section";
-        item.detail = "Section";
-        item.group = "Sections";
-        item.payload = "xref:" + ToQ(section.id.value());
-        items.push_back(std::move(item));
-        for (const auto& block : section.blocks) {
-            if (const auto* fig = std::get_if<pf::Figure>(&block)) {
-                PopupList::Item fig_item;
-                fig_item.label = ToQ(pf::InlineToPlainText(fig->caption));
-                if (fig_item.label.isEmpty()) {
-                    fig_item.label = "Untitled figure";
-                }
-                fig_item.detail = "Figure";
-                fig_item.group = "Figures";
-                fig_item.payload = "xref:" + ToQ(fig->id.value());
-                items.push_back(std::move(fig_item));
-            }
-        }
-    }
-    editor_->SetReferenceItems(std::move(items));
+    editor_->SetCitationNumbers(controller_->CitationResolver());
+    editor_->SetCitationCatalog(controller_->CitationViews());
+}
+
+void MainWindow::RefreshCrossReferences() {
+    if (!controller_->has_project())
+        return;
+    const auto numbering = controller_->Numbering();
+    editor_->SetNumbering(numbering);
+    editor_->SetCrossReferences(controller_->CrossReferences());
 }
 
 int MainWindow::CountWords() const {
@@ -868,7 +859,9 @@ void MainWindow::OnImportBibliography() {
         } else {
             statusBar()->showMessage(message);
         }
-        RefreshReferenceItems();
+        // bibliography 变化会影响 picker 目录与 References 面板；
+        // 结构性的 documentChanged 可能已被去抖，这里显式刷新派生数据。
+        RefreshCitationCatalog();
     } else {
         // 导入失败时，原有 bibliography 及其 references.bib 保持不变
         // （引用方案 §7）。
@@ -918,10 +911,13 @@ void MainWindow::RefreshDocumentView() {
                                                  ? revision.value - last_built_revision_.value
                                                  : 0));
     }
-    // 引用方案 §3：在重建各行之前，把文档级的 key -> number 映射交给
-    // 编辑器。GUI 中的「[1]」pill 与 PDF 中的编号是同一套引用顺序策略
-    // 的同一种投影。
-    editor_->SetCitationNumbers(controller_->CitationNumbers());
+    // 引用方案 §3 / WP-01：在重建各行之前，把文档级的 key -> number 映射
+    // 与 picker 目录交给编辑器。GUI 中的「[1]」pill 与 PDF 中的编号是同一套
+    // 引用顺序策略的同一种投影。
+    RefreshCitationCatalog();
+    // WP-03：编号必须在重建之前就位，卡片的 "Figure 3"/"Eq. (4)" 标签与
+    // 胶囊显示都读取它。
+    RefreshCrossReferences();
     // InlineEditor 的富内容和 Figure 的复选框已经显示了刚提交的值。
     // documentChanged 在提交栈内同步发出；此时只刷新由文档派生的 UI。
     // 若先前有结构变更待处理，RowCommitted 仍会在提交后完成那次重建。
@@ -953,11 +949,14 @@ void MainWindow::RefreshDocumentView() {
 void MainWindow::RefreshSidePanels() {
     if (shutting_down_)
         return;
+    RefreshCitationCatalog();
+    RefreshCrossReferences();
+    // picker 与 References 面板共用同一份 CitationView：author · year · title、
+    // [n] 与 cited 状态不会在两处各拼一次。
     outline_->RebuildFromDocument(controller_->session().state().document(),
-                                  controller_->session().bibliography().Entries());
+                                  controller_->CitationViews());
     UpdateRequiredHints();
     editor_->RefreshHints();
-    RefreshReferenceItems();
     word_count_label_->setText(QString::number(CountWords()) + " words");
 }
 

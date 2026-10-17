@@ -13,7 +13,9 @@ std::string InlineToPlainText(const InlineContent& content) {
         } else if (const auto* eq = std::get_if<InlineMath>(&node)) {
             out += eq->expression.latex;
         } else if (const auto* cit = std::get_if<Citation>(&node)) {
-            out += "[cite:";
+            // Narrative 使用 [citet:]，Parenthetical 保持旧的 [cite:] 写法：
+            // 旧文本仍然可读，模式也不会在纯文本投影里丢失。
+            out += cit->mode == CitationMode::Narrative ? "[citet:" : "[cite:";
             for (size_t i = 0; i < cit->keys.size(); ++i) {
                 if (i)
                     out += ",";
@@ -68,12 +70,9 @@ InlineContent InlineFromEditorText(std::string text) {
     size_t cursor = 0;
     while (cursor < text.size()) {
         const size_t cite = text.find("[cite:", cursor);
+        const size_t citet = text.find("[citet:", cursor);
         const size_t ref = text.find("[ref:", cursor);
-        size_t token = std::min(cite, ref);
-        if (cite == std::string::npos)
-            token = ref;
-        if (ref == std::string::npos)
-            token = cite;
+        const size_t token = std::min({cite, citet, ref});
         if (token == std::string::npos) {
             append_text(text.substr(cursor));
             break;
@@ -85,9 +84,12 @@ InlineContent InlineFromEditorText(std::string text) {
             break;
         }
 
-        if (token == cite) {
-            std::string keys = text.substr(token + 6, close - token - 6);
+        const bool narrative = token == citet;
+        if (token == cite || narrative) {
+            const size_t open_length = narrative ? 7 : 6; // "[citet:" / "[cite:"
+            std::string keys = text.substr(token + open_length, close - token - open_length);
             Citation citation;
+            citation.mode = narrative ? CitationMode::Narrative : CitationMode::Parenthetical;
             size_t start = 0;
             while (start <= keys.size()) {
                 size_t comma = keys.find(',', start);
@@ -162,7 +164,9 @@ std::string InlineToRichText(const InlineContent& content) {
             // 与生成器输出的 LaTeX 一致。
             out += "\\(" + eq->expression.latex + "\\)";
         } else if (const auto* cit = std::get_if<Citation>(&node)) {
-            out += "[cite:";
+            // Narrative 使用 [citet:]，Parenthetical 保持旧的 [cite:] 写法：
+            // 旧文本仍然可读，模式也不会在纯文本投影里丢失。
+            out += cit->mode == CitationMode::Narrative ? "[citet:" : "[cite:";
             for (size_t i = 0; i < cit->keys.size(); ++i) {
                 if (i)
                     out += ",";
@@ -231,7 +235,8 @@ InlineContent InlineFromRichText(const std::string& text) {
     size_t i = 0;
     while (i < text.size()) {
         // 优先处理语义 token：它们绝不是标记。
-        if (text.compare(i, 6, "[cite:") == 0 || text.compare(i, 5, "[ref:") == 0) {
+        if (text.compare(i, 7, "[citet:") == 0 || text.compare(i, 6, "[cite:") == 0 ||
+            text.compare(i, 5, "[ref:") == 0) {
             const size_t close = text.find(']', i);
             if (close != std::string::npos) {
                 flush();

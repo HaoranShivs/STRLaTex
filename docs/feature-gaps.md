@@ -34,6 +34,13 @@
 > 如果只做三件事：**§4.1 Citation Picker v2、§4.2 Math Palette、§4.3/4.4 交叉引用与图表编辑**。
 > 这三项决定了“图形界面”是否真的能替代手写 LaTeX。
 
+> **实施状态（2026-10）**：§4.1 的 Citation Picker v2 已落地（C-01~C-07、
+> P-1~P-9）：标题/venue/编号/已引分组、标题搜索、多选、Narrative、点击重编辑、
+> Narrative 不再丢失。§4.3/§3.3 的交叉引用（X-01~X-07）也已完成：
+> `DocumentNumberer`、跨 Section/Equation/Figure/Table 的选择器、与 PDF 一致的
+> 胶囊编号、图表自定义 label 与 `E-DUPLICATE-LABEL`，schema 升到 v4。
+> 实现细节与回归测试见 [`docs/inline-editor.md`](inline-editor.md) §10/§11。
+
 ---
 
 ## 1. 判定口径
@@ -65,7 +72,7 @@
 | 预览：多页、缩放、惰性位图 | `app/PdfPreview.cpp` |
 | 参考文献：`.bib` 导入、逐条新增、引用编号、搜索服务 | `bibliography/*`、`numbering/CitationNumberResolver.cpp` |
 | 模板：2 个内置 + zip 外部模板导入 + 固定绑定 | `template/*`、`app/TemplateImportDialog.cpp` |
-| 持久化：JSON schema v3、原子保存、autosave 恢复 | `persistence/*` |
+| 持久化：JSON schema v4（V3→V4 只加图表 label 字段）、原子保存、autosave 恢复 | `persistence/*` |
 | 撤销/重做、大纲、Problems、CLI | `editing/*`、`app/OutlinePanel.cpp`、`app/ProblemsPanel.cpp`、`cli/*` |
 
 **重要判断**：很多“看起来缺失”的 LaTeX 能力其实管线是通的，例如

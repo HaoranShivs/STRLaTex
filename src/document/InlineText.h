@@ -17,15 +17,16 @@ bool InlineIsBlank(const InlineContent& content);
 InlineContent InlineFromText(std::string text, std::uint8_t marks = 0);
 
 // 解析由 InlineToPlainText 生成的稳定编辑器表示形式。
-// 识别 [cite:key,key2] 与 [ref:node-id]，在用户编辑周边段落文本时
-// 保留语义内联节点。
+// 识别 [cite:key,key2] / [citet:key,key2] 与 [ref:node-id]，在用户编辑
+// 周边段落文本时保留语义内联节点（citet = Narrative）。
 InlineContent InlineFromEditorText(std::string text);
 
 // ---- 富文本（阶段 B）----
 
 // 同时携带字符标记的编辑器表示形式。token 保持可读（[cite:key] /
-// [ref:node-id]），因此字符串依然可做 diff，旧的纯文本路径也继续可用；
-// 标记通过下列分隔符附加到文本上，这些分隔符不会出现在正常行文中：
+// [citet:key] / [ref:node-id]），因此字符串依然可做 diff，旧的纯文本
+// 路径也继续可用；标记通过下列分隔符附加到文本上，这些分隔符不会出现在
+// 正常行文中：
 //   **粗体**、*斜体*、***粗斜体***
 // 公式变为 $math$。往返：InlineFromRichText(InlineToRichText(x))
 // 会保留每个 run 的标记以及每个语义节点。

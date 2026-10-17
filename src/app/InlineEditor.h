@@ -106,8 +106,27 @@ class InlineEditor : public QTextEdit {
 
     // 在光标处插入语义行内对象。每个都构建真正的可渲染对象（citation 方案
     // §2）：不存在共享的 "InsertToken(kind, payload, label)" 伪接口。
-    void InsertCitationObject(const QStringList& keys);
+    void InsertCitationObject(const QStringList& keys, CitationMode mode = CitationMode::Parenthetical);
     void InsertCrossReferenceObject(const QString& target_node);
+
+    // Citation picker v2 的重编辑接口（WP-01 §4.4）：token 的 payload 中
+    // 同时保存 keys 与 mode，因此重新编辑段落不会把 Narrative 压回
+    // Parenthetical。Replace 只替换同一个 token 的格式，不增加节点。
+    struct CitationTokenInfo {
+        QStringList keys;
+        CitationMode mode = CitationMode::Parenthetical;
+        int position = -1;
+    };
+    std::optional<CitationTokenInfo> CitationAt(int position) const;
+    bool ReplaceCitationAt(int position, const QStringList& keys, CitationMode mode);
+
+    // 交叉引用 token 的同类接口；target 为空表示无效。
+    struct CrossReferenceTokenInfo {
+        QString target;
+        int position = -1;
+    };
+    std::optional<CrossReferenceTokenInfo> CrossReferenceAt(int position) const;
+    bool ReplaceCrossReferenceAt(int position, const QString& target);
     // 从 LaTeX body 插入一个 inline math 对象（不含定界符）。
     void InsertInlineMath(const QString& latex);
     // 工具栏入口：向用户索取 math body，然后插入。
@@ -142,10 +161,14 @@ class InlineEditor : public QTextEdit {
     void Committed();
     // 用户要求在该行之后插入一个 block（Ctrl+Enter）。
     void NewBlockAfter();
-    // 某个 citation token 被激活以重新挑选（payload = keys）。
-    void CitationTokenActivated(const QString& keys);
+    // 某个 citation token 被激活以重新挑选（keys + token 位置 + mode）。
+    // mode 用 int 传递，避免 GUI 测试/信号连接依赖 CitationMode 的元类型注册。
+    void CitationTokenActivated(const QStringList& keys, int position, int mode);
     // 某个 cross-reference token 被激活以重新挑选。
-    void CrossReferenceTokenActivated(const QString& target);
+    void CrossReferenceTokenActivated(const QString& target, int position);
+    // 用户在行首/空白后输入 '@'：请求引用/交叉引用选择器。'@' 本身已被
+    // 编辑器消费，取消选择器不会留下一个多余的触发字符。
+    void ReferenceMenuRequested(const QPoint& global_pos);
 
   protected:
     void keyPressEvent(QKeyEvent* event) override;
@@ -201,8 +224,8 @@ class InlineEditor : public QTextEdit {
     void RequestMathRender(const QString& formula_id, const QString& latex);
     void UpdateMathGeometry(QTextCharFormat* format, int available_width) const;
     void RefreshMathGeometry(int available_width, bool rerender);
-    // 基于当前编号 / label 映射解析出的 pill 文本。
-    QString CitationDisplayText(const QStringList& keys) const;
+    // 基于当前编号 / label 映射解析出的 pill 文本（mode-aware）。
+    QString CitationDisplayText(const QStringList& keys, CitationMode mode = CitationMode::Parenthetical) const;
     QString CrossReferenceDisplayText(const QString& target) const;
     // 重绘该行的 pill，但不触碰 dirty 状态或光标（用于编号映射或 label 集合
     // 发生变化时）。
@@ -216,6 +239,11 @@ class InlineEditor : public QTextEdit {
         int position; // token 字符的位置
     };
     std::optional<TokenHit> TokenAt(int position) const;
+    // 精确读取 `position` 处字符的格式（按 fragment 查找，绝不依赖
+    // charFormat() 的“前一个字符”语义）。
+    QTextCharFormat TokenFormatAt(int position) const;
+    // 用新的 payload/display 就地替换某个 pill（token 数量保持不变）。
+    bool ReplacePillPayload(int position, TokenKind kind, const QString& payload, const QString& display);
     // 把存储的比例行高重新应用到每个 block（在 document 重新加载之后、于
     // loading_ 保护下调用）。
     void ApplyLineHeight();

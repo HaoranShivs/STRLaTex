@@ -118,5 +118,6 @@ Schema V3 stores:
 ```
 
 The reader still accepts the V2 spellings (`inlineEquation`/`displayEquation`
-with `math`), so existing projects load unchanged; `ProjectMigrator` stamps
-V2 files to V3 with a lossless step.
+with `math`), so existing projects load unchanged. Schema V4 keeps this exact
+math representation (it only adds optional Figure/Table labels), and
+`ProjectMigrator` stamps V2/V3 files to V4 with lossless steps.

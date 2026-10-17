@@ -5,10 +5,10 @@
 #include "core/ProjectPath.h"
 #include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
+#include "numbering/LabelRegistry.h"
 #include "math/MathGenerator.h"
 #include "math/MathValidator.h"
 #include <algorithm>
-#include <cctype>
 #include <set>
 #include <stdexcept>
 
@@ -57,16 +57,6 @@ Node Origin(Node n, const std::string& label, const std::string& component) {
     n.origin = component;
     return n;
 }
-std::string Label(const std::string& input) {
-    std::string out;
-    for (unsigned char c : input) {
-        if (std::isalnum(c) || c == ':' || c == '.' || c == '_' || c == '-')
-            out += static_cast<char>(c);
-        else if (c == ' ')
-            out += '-';
-    }
-    return out;
-}
 JsonValue NodeJson(const Node& node) {
     JsonArray args, children;
     for (const auto& arg : node.arguments) {
@@ -89,19 +79,19 @@ JsonValue NodeJson(const Node& node) {
 
 class CommonPlanner {
   public:
-    explicit CommonPlanner(const RenderRequest& request) : request_(request) {
-        VisitBlocks(
-            *request.document, [&](const Block& block, const NodeAddress&) {
-                if (const auto* eq = std::get_if<EquationBlock>(&block)) {
-                    auto label = Label(eq->label);
-                    labels_[eq->id.value()] =
-                        label.empty() ? eq->id.value() : label;
-                }
-            });
+    explicit CommonPlanner(const RenderRequest& request,
+                           CrossReferenceStyle cross_reference = CrossReferenceStyle::Ref)
+        : request_(request), labels_(LabelRegistry::Build(*request.document)),
+          cross_reference_(cross_reference) {
+        // Validator 会先给出 E-DUPLICATE-LABEL；这里拒绝生成会被 TeX 静默
+        // 覆盖的重复 \label，避免“PDF 编译成功但引用指向错误目标”。
+        if (!labels_.conflicts().empty()) {
+            const auto& conflict = labels_.conflicts().front();
+            throw std::runtime_error("Duplicate LaTeX label '" + conflict.label + "'");
+        }
     }
     std::string LabelFor(const NodeId& id) const {
-        auto it = labels_.find(id.value());
-        return it == labels_.end() ? id.value() : it->second;
+        return labels_.LabelFor(id);
     }
     std::string Asset(const AssetId& id) const {
         auto it = request_.asset_files.find(id.value());
@@ -138,7 +128,8 @@ class CommonPlanner {
                     cite->mode == CitationMode::Narrative ? "citet" : "citep",
                     std::move(keys)));
             } else if (const auto* ref = std::get_if<CrossReference>(&item))
-                out.push_back(Cmd("ref", {Id(LabelFor(ref->target))}));
+                out.push_back(Cmd(cross_reference_ == CrossReferenceStyle::Cleveref ? "cref" : "ref",
+                                  {Id(LabelFor(ref->target))}));
         }
         return out;
     }
@@ -167,7 +158,7 @@ class CommonPlanner {
                           std::move(image),
                           Lit("\n"),
                           Cmd("caption", Inline(fig->caption)),
-                          Cmd("label", {Id(fig->id.value())}),
+                          Cmd("label", {Id(LabelFor(fig->id))}),
                           Lit("\n")};
             auto env = Env(fig->span == FigureSpan::DoubleColumn ? "figure*"
                                                                  : "figure",
@@ -195,11 +186,11 @@ class CommonPlanner {
             auto tabular = Env("tabular", std::move(rows));
             tabular.arguments = {{Lit(cols)}};
             Nodes content{Lit("\\centering\n")};
-            if (!InlineIsBlank(table->caption)) {
-                content.push_back(Cmd("caption", Inline(table->caption)));
-                content.push_back(Cmd("label", {Id(table->id.value())}));
-                content.push_back(Lit("\n"));
-            }
+            // 表格始终写 caption + label（WP-03/X-06）：空题注也生成编号，
+            // 使交叉引用绝不会指向悬空 label。
+            content.push_back(Cmd("caption", Inline(table->caption)));
+            content.push_back(Cmd("label", {Id(LabelFor(table->id))}));
+            content.push_back(Lit("\n"));
             content.push_back(std::move(tabular));
             auto env = Env("table", std::move(content));
             env.option = "htbp";
@@ -228,7 +219,8 @@ class CommonPlanner {
 
   private:
     const RenderRequest& request_;
-    std::map<std::string, std::string> labels_;
+    LabelRegistry labels_;
+    CrossReferenceStyle cross_reference_ = CrossReferenceStyle::Ref;
 };
 
 std::vector<std::size_t> Slots(const FrontMatter& fm, const Author& author) {
@@ -409,7 +401,7 @@ PlanResult LatexPlanner::Plan(const RenderRequest& request,
         if (def.toolchain.bibliography_engine != BibliographyEngine::BibTex)
             throw std::runtime_error(
                 "The numeric citation component requires BibTeX");
-        CommonPlanner common(request);
+        CommonPlanner common(request, def.capabilities.cross_reference);
         auto plan =
             std::shared_ptr<LatexGenerationPlan>(new LatexGenerationPlan());
         auto& nodes = plan->nodes_;
@@ -432,10 +424,21 @@ PlanResult LatexPlanner::Plan(const RenderRequest& request,
         // Citations may appear before a bibliography is imported; keep commands
         // defined.
         packages.push_back({"natbib", "numbers,sort&compress", false});
+        if (def.capabilities.cross_reference == CrossReferenceStyle::Cleveref &&
+            std::none_of(packages.begin(), packages.end(),
+                         [](const auto& p) { return p.name == "cleveref"; }))
+            packages.push_back({"cleveref", "", false});
+        // hyperref 必须在普通包之后；cleveref 必须在 hyperref 之后。
+        auto package_rank = [](const std::string& name) {
+            if (name == "hyperref")
+                return 1;
+            if (name == "cleveref")
+                return 2;
+            return 0;
+        };
         std::stable_sort(packages.begin(), packages.end(),
-                         [](const auto& a, const auto& b) {
-                             return (a.name == "hyperref" ? 1 : 0) <
-                                    (b.name == "hyperref" ? 1 : 0);
+                         [&](const auto& a, const auto& b) {
+                             return package_rank(a.name) < package_rank(b.name);
                          });
         std::map<std::string, std::string> seen;
         JsonArray package_audit;
@@ -474,7 +477,7 @@ PlanResult LatexPlanner::Plan(const RenderRequest& request,
             title.source_node = section.id;
             title.source_label = "Heading";
             nodes.push_back(std::move(title));
-            nodes.push_back(Cmd("label", {Id(section.id.value())}));
+            nodes.push_back(Cmd("label", {Id(common.LabelFor(section.id))}));
             nodes.push_back(Lit("\n\n"));
             for (const auto& block : section.blocks)
                 nodes.push_back(common.BlockPlan(block));

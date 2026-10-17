@@ -182,13 +182,31 @@ Linux 外部模板导入及构建还需要 Bubblewrap、prlimit 和可用的用�
   仍有一个入口用来建立第一个 section，不需要先找到任何块的菜单
 - **`/` 斜杠命令**：空行输入 `/` 弹出块创建菜单（Basic/Academic 分组，
   键盘 Up/Down/Enter/Esc + 文本过滤），完全非模态
-- **`@` 引用菜单**：输入 `@` 弹出 References / Sections / Figures 分组菜单，
-  双击 Outline 的 References Tab 条目也可插入引用
+- **交叉引用（WP-03）**：在行首或空白后输入 `@`、工具栏 `Reference` 或
+  `Ctrl+Shift+R` 打开选择器，按 **Sections / Math / Figures / Tables** 分组；
+  条目显示与 PDF 一致的编号（`Section 2.1`、`Eq. (4)`、`Figure 3`、
+  `Table 1`）和标题，可搜索标题。Email 等词中间的 `@` 不会误触发，取消选择器
+  不会留下孤立的 `@`。点击正文中已有的引用胶囊会预选当前目标并就地替换。
+- **图表 label**：Figure/Table 卡片新增 `Label` 输入框（如 `fig:arch`、
+  `tab:stats`）；留空自动回退到 node id。Reserved 字符会被清洗，重复 label
+  在 Problems 面板报 `E-DUPLICATE-LABEL`，渲染前拒绝生成会被 TeX 静默覆盖的
+  `\label`。
+- **Citation Picker v2**：工具栏 `Citation` / 点击正文中已有引用胶囊打开同一个
+  选择器。条目显示 `作者 · 年份`、论文标题、venue 与文中编号 `[n]`，按
+  **Cited in this paper / Not cited** 分组；搜索覆盖标题、作者、年份、venue 与
+  key。支持多选生成单个 `\citep{a,b}`，`Narrative` 开关生成 `\citet`
+  （胶囊显示 `Author [n]`）。点击已有引用可预选当前 keys/mode 并**就地替换**，
+  不会新增 token；Narrative 在保存/重开/Undo/Redo 后保持不变。
+- **引用胶囊与 PDF 编号一致**：`[n]` 来自 `CitationNumberResolver`
+  （首次引用顺序 + natbib 的 sort&compress），交叉引用编号来自
+  `DocumentNumberer`；文档里只存 key/mode/label，不存编号。schema v4 只增加
+  Figure/Table 的可选 `label`，旧 v1–v3 项目加载时在内存中迁移、保存时写 v4。
 - **Subsection 插到点击处**：subsection 标题插入后，**其下方的块会归入该
   subsection**（文档模型把 section 自身的块排在 subsections 之前，不这样做
   标题只能落到最后）。因此"在这里插入 subsection"就是所见即所得
 - **Outline 双 Tab**：Document（摘要 + 章节树，点击滚动定位）/ References
-  （文献库，可搜索）
+  （文献库，可搜索；条目显示 `[n] 作者 · 年份 · 标题`，与 picker 共用同一份
+  `CitationView`，双击仍可直接插入引用）
 - **逐条添加文献**：`File → Add Reference…`，粘贴一条 BibTeX 后自动解析，
   作者、标题、年份、期刊等字段可手工修改；缺失字段保留空白，额外字段在
   `Other fields` 中编辑。`Add` 将条目追加到当前项目的 `.bib` 文件并更新

@@ -107,6 +107,8 @@ struct Figure {
     std::string alt_text;
     FigureWidth width = FigureWidth::Percent100;
     FigureSpan span = FigureSpan::SingleColumn;
+    // 用户可读的 LaTeX label（"fig:arch"）；空表示回退到 node id。
+    std::string label;
 };
 
 enum class ColumnAlignment : std::uint8_t {
@@ -130,6 +132,8 @@ struct Table {
     std::vector<TableColumn> columns;
     // 行优先；不变式：cells.size() == 行数，每行 size == columns.size()
     std::vector<std::vector<TableCell>> cells;
+    // 用户可读的 LaTeX label（"tab:stats"）；空表示回退到 node id。
+    std::string label;
 
     size_t RowCount() const noexcept {
         return cells.size();

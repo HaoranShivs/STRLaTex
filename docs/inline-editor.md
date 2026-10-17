@@ -45,14 +45,19 @@ bool         InlineIsRich(const InlineContent&);
 
 ### Token 模型
 
-一个 token 占**一个 QChar**（私有区 U+E000），payload 存在该字符格式的
-property 上：
+一个 token 占**一个 QChar**（object replacement character U+FFFC），payload
+存在该字符格式的 property 上：
 
 | Kind | payload | 显示 |
 | --- | --- | --- |
-| Citation | `key,key2` | 高亮胶囊 |
+| Citation | `p\|key,key2`（Parenthetical）/ `n\|key,key2`（Narrative）；旧格式 `key,key2` 仍可读 | 高亮胶囊 |
 | CrossReference | node id | 高亮胶囊 |
 | Math | LaTeX 主体 | **公式预览图片**（双击编辑源） |
+
+Citation 的 payload 必须同时携带 **keys 与 mode**（`document/InlineTokenCodec`）。
+否则 `ContentInRange` 只能用默认 Parenthetical 重建，编辑含叙述式引用的段落
+会把 Narrative 静默压平。编解码器同时接受升级前的裸 key 列表，因此旧 token
+不会因为格式升级而消失。
 
 数学对象的具体设计（`MathExpression`、输入边界、生成器、预览器、保存格式）
 见 [math-input.md](math-input.md)。
@@ -62,8 +67,12 @@ property 上：
 * **内部标识符不可编辑**：token 是单字符 + 属性，用户改不了里面的 key。
 * **Backspace/Delete 整体删除**：按键被拦截，删除的是那个字符（即整个 token）。
 * **点击即选中**：mousePressEvent 用 hit-test 命中 token 后选中整块。
-* **可重新选择**：释放鼠标时发 `CitationTokenActivated` /
-  `CrossReferenceTokenActivated`，宿主据此打开选择器替换 token。
+* **可重新选择**：释放鼠标时发 `CitationTokenActivated(keys, position, mode)` /
+  `CrossReferenceTokenActivated(target, position)`；`BlockEditor` 接收后打开同一个
+  选择器并预选当前值，确认时调用 `ReplaceCitationAt` / `ReplaceCrossReferenceAt`
+  **就地替换** token（token 数量不变）。
+* **`@` 引用菜单**：行首/空白后输入 `@` 发 `ReferenceMenuRequested`，宿主打开
+  交叉引用选择器；`@` 由编辑器消费，取消后不会留下孤立字符。
 * **保存/Undo/Redo 后结构不变**：提交的是 `InlineContent`，经
   `EditParagraphPayload` 走既有协议，快照式 Undo/Redo 原样恢复。
 
@@ -97,14 +106,22 @@ const 容器指针的场景使用。
 取消选择、按 Esc、点击外部或隐藏段落时收起。
 
 * `B` / `I`：对选区合并格式；光标未选中时改变**接下来输入**的格式。
-* 快捷键 `Ctrl+B` / `Ctrl+I` 直接在 InlineEditor 的 keyPressEvent 处理。
+* 快捷键 `Ctrl+B` / `Ctrl+I` 直接在 InlineEditor 的 keyPressEvent 处理；
+  `Ctrl+Shift+C` / `Ctrl+Shift+R` 在没有选区时也能打开 citation / reference
+  选择器（浮动工具栏只在有选区时出现）。
 * `Inline Math` 打开 `MathEditorDialog`（源码 + 实时预览 + 状态），用户在
   对话框里输入数学主体后插入一个公式预览对象；**不再**硬编码插入 `x^{2}`。
   双击已有公式对象会带着它的源码重新打开同一个对话框。源只保存数学主体，
   `\(...\)` 由生成器添加（见 [math-input.md](math-input.md)）。
-* `Citation` / `Reference` 打开 `PopupList` 选择器，payload 来自
-  `SetReferenceItems`（`cite:` → 引用 key，`xref:` → 节点 id，与 `/` `@`
-  菜单共用同一份数据）。
+* `Citation` 打开 **Citation Picker v2**：条目来自
+  `BlockEditor::SetCitationCatalog(std::vector<CitationView>)`（标题 / venue /
+  文中编号 / cited 状态与 References 面板共用同一份数据），支持搜索标题、
+  多选、`Narrative` 开关与点击已有胶囊重编辑。只选中一项时仍通过
+  `InsertCitationObject(keys, mode)` 生成单个 `Citation` 节点。
+* `Reference` / `@` 打开交叉引用选择器（WP-03）：条目来自
+  `BlockEditor::SetCrossReferences`，显示 `DocumentNumberer` 的
+  `Section 2.1` / `Eq. (4)` / `Figure 3` / `Table 1`，按
+  Sections / Math / Figures / Tables 分组；未编号公式不进入列表。
 
 **不支持**（按计划）：字体家族、任意字号、颜色、背景色、任意行距——正文的
 视觉排版由 Template 决定。粘贴时这些属性也被丢弃（见下）。
@@ -280,11 +297,73 @@ ieee-conference: doc(bold=1 italic=1) tex(bold=1 italic=1)
 任何"注册"步骤。斜体失效与公式无关——是第一轮的格式错位（§7 根因 1）和
 第二轮的焦点缺陷（§8.1）叠加造成的。
 
-## 10. 尚未实施
+## 10. WP-01：Citation Picker v2（已实现）
+
+本次迭代补齐了 citation 的 P0 缺口：
+
+| 能力 | 实现位置 |
+| --- | --- |
+| token 同时保存 keys + mode，编辑段落不再丢 Narrative | `document/InlineTokenCodec.{h,cpp}`、`InlineEditor::{InsertContent,ContentInRange,CitationDisplayText}` |
+| 作者 · 年份、标题、venue、`[n]`、 Cited / Not cited 分组 | `CitationNumberResolver::Views()`、`BlockEditor::SetCitationCatalog`、`PopupList::Item::title` |
+| 编号使用第一行末尾的独立 badge 区域，venue 再长也不会挤掉 `[n]` | `PopupList::LayoutFirstLine` / `Item::badge` |
+| 搜索 title/author/year/venue/key | `BlockEditor::ShowCitationPicker` 的 `Item::search` |
+| 多选生成单个 `Citation{keys}` | `PopupList::Options::multi_select` + `chosenMany` |
+| Narrative 开关，胶囊显示 `Author [n]` | `CitationNumberResolver::FormatPill(keys, mode)` |
+| 点击胶囊预选并就地替换 | `InlineEditor::CitationAt/ReplaceCitationAt`、`BlockEditor` 信号连接 |
+| 引用编号/条目视图缓存 | `ProjectController::{CitationResolver,CitationViews}` |
+
+新增回归测试：
+
+* domain：`TestCitationTokenCodec`（5 个）、`TestCitationNumbering` 的
+  Narrative / Views / author-year 用例、`TestInline` 的 citet 往返用例；
+* GUI：`NarrativeCitationModeSurvivesLoadAndReplace`、
+  `AtSignRequestsReferenceMenuOnlyAtWhitespaceBoundary`、
+  `PopupListV2ShowsTwoLinesFiltersAndConfirmsMultiSelect`、
+  `CitationPickerV2GroupsCitedEntriesAndInsertsOneCitation`、
+  `CitationPickerV2ReeditPreselectsAndReplacesTheToken`、
+  `PopupListV2EmptyStateIsTwoLines`。
+
+顺带修复：`BlockEditor` 析构时成员 `blocks_` 先于 `QWidget` 基类销毁，
+子编辑器在基类析构期间发出的 `Committed` 会读取已释放的 `blocks_`
+（ASan 报 heap-use-after-free，`~BlockEditor` 现在先断开子行信号）。
+
+## 11. WP-03：交叉引用与文档编号（已实现）
+
+| 能力 | 实现位置 |
+| --- | --- |
+| 与 LaTeX 一致的 Section/图表/公式编号 | `numbering/DocumentNumberer.{h,cpp}` |
+| 唯一 label 目录、清洗与重复检测 | `numbering/LabelRegistry.{h,cpp}` |
+| picker 覆盖 Section/Subsection/Subsubsection/Figure/Table/Equation | `BlockEditor::ShowReferencePicker`、`ProjectController::CrossReferences` |
+| 类型前缀 + 编号的胶囊显示 | `DocumentNumberer` → `BlockEditor::SetCrossReferences` → `InlineEditor::SetCrossReferenceLabels` |
+| 卡片标题显示 `Figure 3` / `Eq. (4)` | `BlockEditor::MakeCard` |
+| Figure/Table 自定义 label + schema v4 | `Document.h`、`ProjectPersistence`、`ProjectMigrator`、卡片 `Label` 行 |
+| 重复 label 诊断与渲染拒绝 | `Validator` 的 `E-DUPLICATE-LABEL`、`LatexPlanner` 的 `LabelRegistry` |
+| `\ref` / `\cref` 模板能力 | `CrossReferenceStyle` + planner 的包排序 |
+
+关键决策：
+
+* **未编号公式不写 `\label`，也不进入 picker**，避免生成永远显示 `??` 的引用。
+* **表格始终写 `\caption` + `\label`**（即使题注为空），使表格编号与引用
+  目标不会悬空。
+* **label 唯一性由渲染前检查兜底**：Validator 先报错并定位到第二个节点；
+  planner 仍拒绝生成重复 `\label`，因为 TeX 会静默覆盖且不报错。
+* schema v4 只增加 Figure/Table 的可选 `label`；旧文件在内存中迁移，
+  磁盘文件在下次保存时才重写。
+
+新增回归测试：
+
+* domain：`TestNumbering` 的编号/label/重复诊断/renderer `\ref`/`\cref`；
+  `TestPersistence` 的 schema v4 图表 label 往返；`TestStructure` 的 V3→V4 迁移。
+* GUI：`CrossReferencePickerShowsNumberedTargetsAcrossKinds`、
+  `CrossReferenceCapsuleUsesPdfNumberingAndReeditReplacesTarget`、
+  `FigureAndTableLabelEditorsCommitToDocument`、
+  `AtSignUsesNumberedCrossReferencesInMainWindow`。
+
+## 12. 尚未实施
 
 * **Stage D**：xlsx/csv/tsv 导入、Import Table 对话框、TableSource 元数据。
 * **Stage E**：TableImportRequest 的后台导入 worker（Build/Save 的管道已在
   M1 完成，导入只需走同一条 Snapshot→worker→typed event→应用线程 accept）。
-* Citation/Reference 的**点击后重选**目前提供"删除 + 重新插入"，token 级的
-  in-place 重选（§5 第 4 条）留给下一次迭代——现在双击 token 会选中它，
-  删除后用工具栏按钮重新插入即可。
+* Citation 的 author-year/biblatex 样式、locator/prefix/suffix、文献条目编辑
+  与删除（对应 design 文档 WP-10 / C-08 / C-09）。
+* 合并单元格、子图与表格高级编辑（WP-08）。

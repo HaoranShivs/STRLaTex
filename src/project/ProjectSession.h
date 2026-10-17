@@ -273,6 +273,11 @@ class ProjectSession {
     const std::string& bibliography_bibtex() const noexcept {
         return bibliography_bibtex_;
     }
+    // 每次成功导入/新增文献都会递增。派生数据（编号、picker 目录）把它
+    // 纳入缓存 key，因此参考文献变化即使没有结构性编辑也会使缓存失效。
+    std::uint64_t bibliography_revision() const noexcept {
+        return bibliography_revision_;
+    }
 
     // ---- 观察者（应用线程）----
     // 只接收被采纳的 build 结果（过期结果绝不会到达这里）。

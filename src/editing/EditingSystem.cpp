@@ -253,6 +253,12 @@ EditResult EditingSystem::ApplyDocumentPayload(const EditCommand& cmd, const Edi
         // 且永不触发相邻内容的 reflow。
         return finishVoid(editor.SetFigureSpan(p->figure, p->span), {p->figure}, ChangeKind::MetadataChanged);
     }
+    if (const auto* p = std::get_if<EditFigureLabelPayload>(&payload)) {
+        return finishVoid(editor.SetFigureLabel(p->figure, p->label), {p->figure}, ChangeKind::MetadataChanged);
+    }
+    if (const auto* p = std::get_if<EditTableLabelPayload>(&payload)) {
+        return finishVoid(editor.SetTableLabel(p->table, p->label), {p->table}, ChangeKind::MetadataChanged);
+    }
     if (const auto* p = std::get_if<InsertCitationPayload>(&payload)) {
         // 将 citation 以内联方式插入段落内容。
         Block* block = editor.FindBlock(p->paragraph);

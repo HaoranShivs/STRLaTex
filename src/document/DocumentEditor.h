@@ -92,6 +92,9 @@ class DocumentEditor {
     // 单栏与双栏 figure。该值会被无条件存储，仅在双栏模板中才会产生
     // 可见效果（对于 DoubleColumn，renderer 会输出带星号的 float）。
     Result<void, EditError> SetFigureSpan(const NodeId& id, FigureSpan span);
+    // 用户可读的 LaTeX label；空字符串表示回退到 node id。
+    Result<void, EditError> SetFigureLabel(const NodeId& id, const std::string& label);
+    Result<void, EditError> SetTableLabel(const NodeId& id, const std::string& label);
 
     // Table 变更——强制维持矩形不变量。
     static Result<Table, EditError> MakeTable(std::vector<TableColumn> columns, size_t rows, bool has_header_row,

@@ -8,6 +8,15 @@
 > 相关文档：[运行时调用链路](runtime-call-chain.md)、
 > [编辑器设计审查](editor-design-review.md)、[冗余清理记录](redundancy-cleanup.md)。
 
+> **实施状态（2026-10）**：WP-00、WP-01、WP-03 已实现并通过测试。token
+> 编解码见 `document/InlineTokenCodec`，picker 见
+> `BlockEditor::ShowCitationPicker`，缓存见
+> `ProjectController::CitationResolver`；编号见
+> `numbering/DocumentNumberer` 与 `numbering/LabelRegistry`，schema 已升到 v4
+> （Figure/Table 可选 `label`）。实现记录见
+> [`docs/inline-editor.md`](inline-editor.md) §10/§11。后续工作包（WP-02 起）
+> 仍按本文接口草案推进。
+
 ---
 
 ## 0. 阅读指南与工作包矩阵

@@ -15,7 +15,12 @@
 #include <QFocusEvent>
 #include <QImage>
 #include <QKeyEvent>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QMetaObject>
+#include <QPointer>
+#include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QTextBlock>
@@ -23,6 +28,8 @@
 #include <QTextFragment>
 #include <QThread>
 #include <QToolButton>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 
 #include <chrono>
 #include <cstdio>
@@ -36,13 +43,18 @@
 #include "app/CitationObjectRenderer.h"
 #include "app/InlineEditor.h"
 #include "app/MainWindow.h"
+#include "app/OutlinePanel.h"
+#include "app/PopupList.h"
+#include "app/QtConvert.h"
 #include "build/BuildCoordinator.h"
 #include "core/IdGenerator.h"
 #include "document/DocumentEditor.h"
 #include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
+#include "document/InlineTokenCodec.h"
 #include "editing/EditCommand.h"
 #include "numbering/CitationNumberResolver.h"
+#include "numbering/DocumentNumberer.h"
 #include "project/ProjectSession.h"
 
 using namespace pf;
@@ -130,7 +142,15 @@ PF_TEST(CitationPillCarriesKeyPayloadAndResolvedNumber) {
     PF_CHECK(format.objectType() == citation_format::kObjectType);
     PF_CHECK(format.property(inline_object_format::kKindProperty).toInt() ==
              static_cast<int>(InlineEditor::TokenKind::Citation));
-    PF_CHECK(format.property(inline_object_format::kPayloadProperty).toString() == QStringLiteral("smith2024"));
+    // payload 现在编码 keys + mode（WP-01）：显式 Parenthetical 为 "p|key"；
+    // 旧格式 "key" 仍可解码。
+    const auto payload_citation =
+        DecodeCitationToken(format.property(inline_object_format::kPayloadProperty).toString().toStdString());
+    PF_CHECK(payload_citation.has_value());
+    if (payload_citation) {
+        PF_CHECK(payload_citation->keys == std::vector<std::string>{"smith2024"});
+        PF_CHECK(payload_citation->mode == CitationMode::Parenthetical);
+    }
     PF_CHECK(format.property(citation_format::kDisplayTextProperty).toString() == QStringLiteral("[1]"));
 
     // 文档收到的是 key 集合。
@@ -729,4 +749,889 @@ PF_TEST(ManualBuildFlushesTheFocusedRowFirst) {
     }
     InlineEditor* fresh_row = FindRow(window, fixture.node_id);
     PF_CHECK(fresh_row != nullptr && !fresh_row->IsDirty());
+}
+
+// ---------------------------------------------------------------------------
+// WP-01 Citation picker v2：mode、标题/编号/分组、多选、重编辑
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// 构造一个可预测的 bibliography：一篇有作者/标题/venue 的已引条目，
+// 一篇未引条目。
+BibliographyDatabase PickerBibliography() {
+    BibliographyDatabase db;
+    BibliographyService service(db);
+    service.ImportText("@inproceedings{smith2024, author={Jane Smith and John Doe}, "
+                       "title={Attention Is All You Need}, year={2024}, booktitle={NeurIPS}}\n"
+                       "@article{jones2020, author={Alice Jones}, title={Follow Up}, "
+                       "year={2020}}\n");
+    return db;
+}
+
+// 用 `content` 建立包含一个段落的文档；返回段落 node id 与文档。
+struct ParagraphDocument {
+    Document doc;
+    NodeId paragraph;
+};
+
+ParagraphDocument MakeParagraphDocument(InlineContent content) {
+    ParagraphDocument result;
+    DocumentEditor editor(result.doc);
+    auto section = editor.InsertSection(0, InlineFromText("S"));
+    Paragraph paragraph;
+    paragraph.content = std::move(content);
+    auto inserted = editor.InsertBlock(section.value(), std::nullopt, std::move(paragraph));
+    if (inserted.ok())
+        result.paragraph = inserted.value();
+    return result;
+}
+
+InlineEditor* RowForNode(BlockEditor& editor, const NodeId& node) {
+    for (InlineEditor* edit : editor.findChildren<InlineEditor*>()) {
+        if (edit->property("row_node").toString() == ToQ(node.value()))
+            return edit;
+    }
+    return nullptr;
+}
+
+PopupList* VisiblePopup(QWidget& parent) {
+    for (PopupList* popup : parent.findChildren<PopupList*>()) {
+        if (popup->isVisible())
+            return popup;
+    }
+    return nullptr;
+}
+
+QTreeWidgetItem* ItemForPayload(PopupList& popup, const QString& payload) {
+    auto* list = popup.ListForTest();
+    if (!list)
+        return nullptr;
+    for (int i = 0; i < list->topLevelItemCount(); ++i) {
+        auto* item = list->topLevelItem(i);
+        if (item && item->data(0, PopupList::PayloadRole).toString() == payload)
+            return item;
+    }
+    return nullptr;
+}
+
+int VisiblePayloadRows(PopupList& popup) {
+    auto* list = popup.ListForTest();
+    int count = 0;
+    for (int i = 0; list && i < list->topLevelItemCount(); ++i) {
+        if (list->topLevelItem(i)->data(0, PopupList::PayloadRole).toString() != QString())
+            ++count;
+    }
+    return count;
+}
+
+} // namespace
+
+PF_TEST(NarrativeCitationModeSurvivesLoadAndReplace) {
+    EnsureQApplication();
+    InlineEditor editor;
+    editor.SetCitationNumbers(ResolverFor({"smith2024"}, {"smith2024", "jones2020"}));
+    editor.SetContent(InlineFromText("As "));
+    editor.InsertCitationObject({QStringLiteral("smith2024")}, CitationMode::Narrative);
+
+    // 1. 提交给 document 的 Citation 保留 mode。
+    InlineContent content = editor.Content();
+    int citations = 0;
+    for (const auto& node : content) {
+        if (const auto* citation = std::get_if<Citation>(&node)) {
+            ++citations;
+            PF_CHECK(citation->mode == CitationMode::Narrative);
+            PF_CHECK(citation->keys == std::vector<std::string>{"smith2024"});
+        }
+    }
+    PF_CHECK(citations == 1);
+
+    // 2. token payload 显式编码 Narrative，而不是旧的裸 key 列表。
+    const int position = editor.toPlainText().indexOf(QChar(0xFFFC));
+    PF_CHECK(position >= 0);
+    const auto at = editor.CitationAt(position);
+    PF_CHECK(at.has_value());
+    if (at) {
+        PF_CHECK(at->mode == CitationMode::Narrative);
+        PF_CHECK(at->keys == QStringList{"smith2024"});
+    }
+    const QTextCharFormat format = FormatAt(editor, position);
+    const auto payload =
+        DecodeCitationToken(format.property(inline_object_format::kPayloadProperty).toString().toStdString());
+    PF_CHECK(payload.has_value());
+    if (payload)
+        PF_CHECK(payload->mode == CitationMode::Narrative);
+
+    // 3. SetContent(Content()) 是编辑器保存/恢复路径：mode 不得丢失。
+    editor.SetContent(content);
+    for (const auto& node : editor.Content()) {
+        if (const auto* citation = std::get_if<Citation>(&node))
+            PF_CHECK(citation->mode == CitationMode::Narrative);
+    }
+
+    // 4. 重编辑：替换同一个 token 的 keys/mode，token 数量不增加。
+    const int reloaded_position = editor.toPlainText().indexOf(QChar(0xFFFC));
+    PF_CHECK(editor.ReplaceCitationAt(reloaded_position, {QStringLiteral("jones2020")}, CitationMode::Parenthetical));
+    PF_CHECK(editor.toPlainText().count(QChar(0xFFFC)) == 1);
+    const auto replaced = editor.CitationAt(reloaded_position);
+    PF_CHECK(replaced.has_value());
+    if (replaced) {
+        PF_CHECK(replaced->keys == QStringList{"jones2020"});
+        PF_CHECK(replaced->mode == CitationMode::Parenthetical);
+    }
+    // 错误的 kind/position 不得改写任何 token。
+    PF_CHECK(!editor.ReplaceCitationAt(reloaded_position, {}, CitationMode::Narrative));
+    PF_CHECK(!editor.ReplaceCitationAt(0, {QStringLiteral("smith2024")}, CitationMode::Narrative));
+}
+
+PF_TEST(AtSignRequestsReferenceMenuOnlyAtWhitespaceBoundary) {
+    EnsureQApplication();
+    InlineEditor editor;
+    int requests = 0;
+    QPoint last_position;
+    QObject::connect(&editor, &InlineEditor::ReferenceMenuRequested, [&](const QPoint& position) {
+        ++requests;
+        last_position = position;
+    });
+
+    editor.setFocus(Qt::OtherFocusReason);
+    QTextCursor cursor(editor.document());
+    cursor.setPosition(0);
+    editor.setTextCursor(cursor);
+    SendKey(&editor, Qt::Key_At);
+    PF_CHECK(requests == 1);
+    Q_UNUSED(last_position);
+    // 触发器被消费，取消选择器后不会留下孤立的 '@'。
+    PF_CHECK(editor.toPlainText().isEmpty());
+
+    // 邮箱/用户名中的 '@'：前一个字符不是空白，绝不触发。
+    editor.SetContent(InlineFromText("mail"));
+    QTextCursor end(editor.document());
+    end.setPosition(editor.document()->characterCount() - 1);
+    editor.setTextCursor(end);
+    SendKey(&editor, Qt::Key_At);
+    PF_CHECK(requests == 1);
+
+    // 空白之后重新触发。
+    QTextCursor after_space(editor.document());
+    after_space.setPosition(4);
+    editor.setTextCursor(after_space);
+    editor.insertPlainText(" ");
+    QTextCursor space_end(editor.document());
+    space_end.setPosition(editor.document()->characterCount() - 1);
+    editor.setTextCursor(space_end);
+    SendKey(&editor, Qt::Key_At);
+    PF_CHECK(requests == 2);
+}
+
+PF_TEST(PopupListV2ShowsTwoLinesFiltersAndConfirmsMultiSelect) {
+    EnsureQApplication();
+    auto* popup = new PopupList;
+    QPointer<PopupList> guard(popup);
+
+    std::vector<PopupList::Item> items;
+    PopupList::Item cited;
+    cited.label = QStringLiteral("Smith et al. · 2024");
+    cited.title = QStringLiteral("Attention Is All You Need");
+    cited.detail = QStringLiteral("NeurIPS");
+    cited.badge = QStringLiteral("[1]");
+    cited.group = QStringLiteral("Cited in this paper");
+    cited.payload = QStringLiteral("smith2024");
+    cited.search = QStringLiteral("smith attention neurips 2024 smith2024");
+    cited.checkable = true;
+    cited.checked = true;
+    items.push_back(cited);
+
+    PopupList::Item uncited;
+    uncited.label = QStringLiteral("Jones · 2020");
+    uncited.title = QStringLiteral("Follow Up");
+    uncited.detail = QStringLiteral("ICML");
+    uncited.group = QStringLiteral("Not cited");
+    uncited.payload = QStringLiteral("jones2020");
+    uncited.search = QStringLiteral("jones follow up icml 2020 jones2020");
+    uncited.checkable = true;
+    items.push_back(uncited);
+
+    PopupList::Options options;
+    options.multi_select = true;
+    options.show_toggle = true;
+    options.toggle_label = QStringLiteral("Narrative");
+    options.toggle_initial = true;
+    options.width_px = 620;
+    options.empty_title = QStringLiteral("No references imported");
+
+    bool confirmed = false;
+    QStringList chosen;
+    bool narrative = false;
+    QObject::connect(popup, &PopupList::chosenMany, [&](const QStringList& payloads, bool toggle) {
+        confirmed = true;
+        chosen = payloads;
+        narrative = toggle;
+    });
+    popup->popup(QPoint(40, 40), items, options);
+    PF_CHECK(popup->isVisible());
+    auto* list = popup->ListForTest();
+    PF_CHECK(list != nullptr);
+    if (!list)
+        return;
+
+    // 分组标题 + 两行数据（delegate 画的标题与 detail 存放在 data role 中）。
+    QStringList group_headers;
+    for (int i = 0; i < list->topLevelItemCount(); ++i) {
+        if (list->topLevelItem(i)->data(0, PopupList::GroupHeaderRole).toBool())
+            group_headers << list->topLevelItem(i)->text(0).toUpper();
+    }
+    PF_CHECK(group_headers.contains(QStringLiteral("CITED IN THIS PAPER")));
+    PF_CHECK(group_headers.contains(QStringLiteral("NOT CITED")));
+
+    auto* smith = ItemForPayload(*popup, QStringLiteral("smith2024"));
+    auto* jones = ItemForPayload(*popup, QStringLiteral("jones2020"));
+    PF_CHECK(smith != nullptr && jones != nullptr);
+    if (!smith || !jones)
+        return;
+    PF_CHECK(smith->data(0, PopupList::TitleRole).toString() == QStringLiteral("Attention Is All You Need"));
+    PF_CHECK(smith->data(0, PopupList::BadgeRole).toString() == QStringLiteral("[1]"));
+    PF_CHECK(!smith->data(0, PopupList::DetailRole).toString().contains(QStringLiteral("[1]")));
+    PF_CHECK(smith->checkState(0) == Qt::Checked);
+    PF_CHECK(popup->ToggleForTest()->isChecked());
+
+    // 搜索覆盖 title（旧 picker 只搜 label）。
+    popup->SearchForTest()->setText(QStringLiteral("attention"));
+    PF_CHECK(VisiblePayloadRows(*popup) == 1);
+    PF_CHECK(ItemForPayload(*popup, QStringLiteral("smith2024")) != nullptr);
+    PF_CHECK(ItemForPayload(*popup, QStringLiteral("jones2020")) == nullptr);
+    popup->SearchForTest()->clear();
+    PF_CHECK(VisiblePayloadRows(*popup) == 2);
+
+    smith = ItemForPayload(*popup, QStringLiteral("smith2024"));
+    jones = ItemForPayload(*popup, QStringLiteral("jones2020"));
+    PF_CHECK(smith != nullptr && jones != nullptr);
+    if (!smith || !jones)
+        return;
+    smith->setCheckState(0, Qt::Checked);
+    jones->setCheckState(0, Qt::Checked);
+    PF_CHECK(popup->SelectedPayloadsForTest() == (QStringList{"smith2024", "jones2020"}));
+    // 开关本身必须能用键盘操作（Space 不能被弹层当成“切换当前行”）。
+    popup->ToggleForTest()->setFocus();
+    auto send_space = [&]() {
+        QKeyEvent press(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier, QStringLiteral(" "));
+        QApplication::sendEvent(popup->ToggleForTest(), &press);
+        QKeyEvent release(QEvent::KeyRelease, Qt::Key_Space, Qt::NoModifier, QStringLiteral(" "));
+        QApplication::sendEvent(popup->ToggleForTest(), &release);
+    };
+    send_space();
+    PF_CHECK(!popup->ToggleForTest()->isChecked());
+    send_space();
+    PF_CHECK(popup->ToggleForTest()->isChecked());
+    PF_CHECK(popup->InsertButtonForTest()->isEnabled());
+    popup->InsertButtonForTest()->click();
+    PF_CHECK(confirmed);
+    PF_CHECK(chosen == (QStringList{"smith2024", "jones2020"}));
+    PF_CHECK(narrative);
+    QCoreApplication::processEvents();
+    Q_UNUSED(guard);
+}
+
+PF_TEST(CitationPickerV2GroupsCitedEntriesAndInsertsOneCitation) {
+    EnsureQApplication();
+    auto db = PickerBibliography();
+    // 已引状态来自另一份文档：编号与 cited 分组必须是 resolver 的投影。
+    auto cited_doc = MakeParagraphDocument([] {
+        InlineContent content;
+        Citation citation;
+        citation.keys = {"smith2024"};
+        content.push_back(std::move(citation));
+        return content;
+    }());
+    const auto resolver =
+        std::make_shared<const CitationNumberResolver>(CitationNumberResolver::Build(cited_doc.doc, db));
+    PF_CHECK(resolver->Views().size() == 2);
+
+    auto target = MakeParagraphDocument(InlineFromText("before after"));
+    PF_CHECK(!target.paragraph.value().empty());
+    BlockEditor editor;
+    editor.resize(900, 600);
+    editor.show();
+    editor.SetCitationNumbers(resolver);
+    editor.SetCitationCatalog(resolver->Views());
+    editor.RebuildFromDocument(target.doc);
+    Spin(50);
+
+    InlineEditor* row = RowForNode(editor, target.paragraph);
+    PF_CHECK(row != nullptr);
+    if (!row)
+        return;
+    row->setFocus(Qt::OtherFocusReason);
+    QTextCursor caret(row->document());
+    caret.setPosition(7);
+    row->setTextCursor(caret);
+
+    InlineContent emitted;
+    bool committed = false;
+    QObject::connect(&editor, &BlockEditor::ParagraphContentEdited, [&](const QString&, const InlineContent& content) {
+        emitted = content;
+        committed = true;
+    });
+
+    editor.ShowCitationPicker(row);
+    Spin(30);
+    PopupList* popup = VisiblePopup(editor);
+    PF_CHECK(popup != nullptr);
+    if (!popup)
+        return;
+
+    auto* smith = ItemForPayload(*popup, QStringLiteral("smith2024"));
+    auto* jones = ItemForPayload(*popup, QStringLiteral("jones2020"));
+    PF_CHECK(smith != nullptr && jones != nullptr);
+    if (!smith || !jones)
+        return;
+    // 已引条目的编号位于独立 badge，不会被 venue 长度截断。
+    PF_CHECK(smith->data(0, PopupList::TitleRole).toString() == QStringLiteral("Attention Is All You Need"));
+    PF_CHECK(smith->data(0, PopupList::BadgeRole).toString() == QStringLiteral("[1]"));
+    PF_CHECK(smith->data(0, PopupList::DetailRole).toString() == QStringLiteral("NeurIPS"));
+    PF_CHECK(jones->data(0, PopupList::BadgeRole).toString().isEmpty());
+    PF_CHECK(jones->data(0, PopupList::TitleRole).toString() == QStringLiteral("Follow Up"));
+
+    popup->SearchForTest()->setText(QStringLiteral("attention"));
+    PF_CHECK(VisiblePayloadRows(*popup) == 1);
+    popup->SearchForTest()->clear();
+
+    smith = ItemForPayload(*popup, QStringLiteral("smith2024"));
+    jones = ItemForPayload(*popup, QStringLiteral("jones2020"));
+    PF_CHECK(smith != nullptr && jones != nullptr);
+    if (!smith || !jones)
+        return;
+    smith->setCheckState(0, Qt::Checked);
+    jones->setCheckState(0, Qt::Checked);
+    popup->ToggleForTest()->setChecked(false);
+    popup->InsertButtonForTest()->click();
+    Spin(80);
+
+    PF_CHECK(committed);
+    int citations = 0;
+    QStringList keys;
+    for (const auto& node : emitted) {
+        if (const auto* citation = std::get_if<Citation>(&node)) {
+            ++citations;
+            PF_CHECK(citation->mode == CitationMode::Parenthetical);
+            for (const auto& key : citation->keys)
+                keys << QString::fromStdString(key);
+        }
+    }
+    PF_CHECK(citations == 1);
+    PF_CHECK(keys == (QStringList{"smith2024", "jones2020"}));
+}
+
+PF_TEST(CitationPickerV2ReeditPreselectsAndReplacesTheToken) {
+    EnsureQApplication();
+    auto db = PickerBibliography();
+    auto target = MakeParagraphDocument([] {
+        InlineContent content;
+        content.push_back(TextRun{"As ", 0});
+        Citation citation;
+        citation.keys = {"smith2024"};
+        citation.mode = CitationMode::Narrative;
+        content.push_back(std::move(citation));
+        content.push_back(TextRun{" showed.", 0});
+        return content;
+    }());
+    const auto resolver = std::make_shared<const CitationNumberResolver>(CitationNumberResolver::Build(target.doc, db));
+
+    BlockEditor editor;
+    editor.resize(900, 600);
+    editor.show();
+    editor.SetCitationNumbers(resolver);
+    editor.SetCitationCatalog(resolver->Views());
+    editor.RebuildFromDocument(target.doc);
+    Spin(50);
+
+    InlineEditor* row = RowForNode(editor, target.paragraph);
+    PF_CHECK(row != nullptr);
+    if (!row)
+        return;
+    const int pill = row->toPlainText().indexOf(QChar(0xFFFC));
+    PF_CHECK(pill >= 0);
+    const auto at = row->CitationAt(pill);
+    PF_CHECK(at.has_value());
+    if (at) {
+        PF_CHECK(at->mode == CitationMode::Narrative);
+        PF_CHECK(at->keys == QStringList{"smith2024"});
+    }
+
+    InlineContent emitted;
+    bool committed = false;
+    QObject::connect(&editor, &BlockEditor::ParagraphContentEdited, [&](const QString&, const InlineContent& content) {
+        emitted = content;
+        committed = true;
+    });
+
+    // 模拟点击 pill：BlockEditor 连接了这个信号并打开同一个 picker。
+    row->CitationTokenActivated(QStringList{"smith2024"}, pill, static_cast<int>(CitationMode::Narrative));
+    Spin(30);
+    PopupList* popup = VisiblePopup(editor);
+    PF_CHECK(popup != nullptr);
+    if (!popup)
+        return;
+    // 预选当前 token 的 key 与 Narrative 开关。
+    PF_CHECK(popup->ToggleForTest()->isChecked());
+    auto* smith = ItemForPayload(*popup, QStringLiteral("smith2024"));
+    auto* jones = ItemForPayload(*popup, QStringLiteral("jones2020"));
+    PF_CHECK(smith != nullptr && jones != nullptr);
+    if (!smith || !jones)
+        return;
+    PF_CHECK(smith->checkState(0) == Qt::Checked);
+    PF_CHECK(jones->checkState(0) != Qt::Checked);
+
+    // 改选 jones，并把 Narrative 关掉：确认后必须替换同一个 token。
+    smith->setCheckState(0, Qt::Unchecked);
+    jones->setCheckState(0, Qt::Checked);
+    popup->ToggleForTest()->setChecked(false);
+    popup->InsertButtonForTest()->click();
+    Spin(80);
+
+    PF_CHECK(committed);
+    int citations = 0;
+    for (const auto& node : emitted) {
+        if (const auto* citation = std::get_if<Citation>(&node)) {
+            ++citations;
+            PF_CHECK(citation->mode == CitationMode::Parenthetical);
+            PF_CHECK(citation->keys == std::vector<std::string>{"jones2020"});
+        }
+    }
+    PF_CHECK(citations == 1);
+    // token 数量保持不变（替换而不是插入）。
+    const QString plain = row->toPlainText();
+    PF_CHECK(plain.count(QChar(0xFFFC)) == 1);
+    const auto replaced = row->CitationAt(plain.indexOf(QChar(0xFFFC)));
+    PF_CHECK(replaced.has_value());
+    if (replaced) {
+        PF_CHECK(replaced->keys == QStringList{"jones2020"});
+        PF_CHECK(replaced->mode == CitationMode::Parenthetical);
+    }
+}
+
+PF_TEST(PopupListV2EmptyStateIsTwoLines) {
+    EnsureQApplication();
+    auto* popup = new PopupList;
+    PopupList::Options options;
+    options.empty_title = QStringLiteral("No references imported");
+    options.empty_hint = QStringLiteral("Import a .bib file or add a reference first");
+    popup->popup(QPoint(0, 0), {}, options);
+    auto* list = popup->ListForTest();
+    PF_CHECK(list != nullptr && list->topLevelItemCount() == 1);
+    if (list && list->topLevelItemCount() == 1) {
+        PF_CHECK(list->topLevelItem(0)->text(0) == QStringLiteral("No references imported"));
+        PF_CHECK(list->topLevelItem(0)->data(0, PopupList::TitleRole).toString() ==
+                 QStringLiteral("Import a .bib file or add a reference first"));
+        PF_CHECK((list->topLevelItem(0)->flags() & Qt::ItemIsEnabled) == 0);
+    }
+    popup->close();
+}
+
+PF_TEST(ReferencesPanelShowsNumberTitleAndCitedState) {
+    EnsureQApplication();
+    Fixture fixture("pf-references-panel");
+    MainWindow& window = fixture.window;
+    BlockEditor* editor = window.findChild<BlockEditor*>();
+    PF_CHECK(editor != nullptr);
+    if (!editor)
+        return;
+    PF_CHECK(editor->InsertCitationIntoParagraph(fixture.node_id, QStringLiteral("smith2024")));
+    Spin(200);
+
+    auto* panel = window.findChild<OutlinePanel*>();
+    PF_CHECK(panel != nullptr);
+    auto* list = panel ? panel->findChild<QListWidget*>() : nullptr;
+    PF_CHECK(list != nullptr);
+    if (!list)
+        return;
+    QString smith_text;
+    QString smith_tooltip;
+    QString jones_text;
+    for (int i = 0; i < list->count(); ++i) {
+        const QString key = list->item(i)->data(Qt::UserRole).toString();
+        if (key == QStringLiteral("smith2024")) {
+            smith_text = list->item(i)->text();
+            smith_tooltip = list->item(i)->toolTip();
+        } else if (key == QStringLiteral("jones2020")) {
+            jones_text = list->item(i)->text();
+        }
+    }
+    PF_CHECK(!smith_text.isEmpty());
+    PF_CHECK(smith_text.startsWith(QStringLiteral("[1] ")));
+    PF_CHECK(smith_text.contains(QStringLiteral("Seminal")));
+    PF_CHECK(smith_tooltip.contains(QStringLiteral("Cited as [1]")));
+    PF_CHECK(!jones_text.isEmpty());
+    PF_CHECK(jones_text.contains(QStringLiteral("Later")));
+    // 未引用条目不显示编号前缀。
+    PF_CHECK(!jones_text.startsWith(QStringLiteral("[")));
+}
+
+PF_TEST(AtSignOpensReferencePickerInBlockEditor) {
+    EnsureQApplication();
+    auto target = MakeParagraphDocument(InlineFromText("body"));
+    BlockEditor editor;
+    editor.resize(900, 600);
+    editor.show();
+    std::vector<PopupList::Item> references;
+    PopupList::Item section;
+    section.label = QStringLiteral("Section 1");
+    section.detail = QStringLiteral("Section");
+    section.group = QStringLiteral("Sections");
+    section.payload = QStringLiteral("xref:n42");
+    section.search = QStringLiteral("section 1");
+    references.push_back(section);
+    editor.SetReferenceItems(references);
+    editor.RebuildFromDocument(target.doc);
+    Spin(50);
+
+    InlineEditor* row = RowForNode(editor, target.paragraph);
+    PF_CHECK(row != nullptr);
+    if (!row)
+        return;
+    row->setFocus(Qt::OtherFocusReason);
+    QTextCursor cursor(row->document());
+    cursor.setPosition(0);
+    row->setTextCursor(cursor);
+    SendKey(row, Qt::Key_At);
+    Spin(30);
+
+    PopupList* popup = VisiblePopup(editor);
+    PF_CHECK(popup != nullptr);
+    if (!popup)
+        return;
+    PF_CHECK(ItemForPayload(*popup, QStringLiteral("n42")) != nullptr);
+    // 触发器被消费，不会留下孤立的 '@'。
+    PF_CHECK(!row->toPlainText().contains(QChar('@')));
+    popup->close();
+}
+
+
+namespace {
+
+struct CrossReferenceDocument {
+    Document doc;
+    NodeId section;
+    NodeId subsection;
+    NodeId figure;
+    NodeId table;
+    NodeId equation;
+    NodeId unnumbered;
+    NodeId paragraph;
+};
+
+CrossReferenceDocument MakeCrossReferenceDocument(bool paragraph_cites_figure) {
+    CrossReferenceDocument result;
+    DocumentEditor editor(result.doc);
+    auto section = editor.InsertSection(0, InlineFromText("Results"));
+    result.section = section.value();
+    auto subsection = editor.InsertSubsection(0, 0, InlineFromText("Details"));
+    result.subsection = subsection.value();
+
+    Figure figure;
+    figure.asset_id = AssetId("asset-1");
+    figure.caption = InlineFromText("System overview");
+    result.figure = editor.InsertBlock(result.section, std::nullopt, std::move(figure)).value();
+
+    Table table;
+    table.columns = {TableColumn{ColumnAlignment::Left}};
+    table.cells = {{{TableCell{InlineFromText("value")}}}};
+    table.caption = InlineFromText("Dataset statistics");
+    result.table = editor.InsertBlock(result.section, std::nullopt, std::move(table)).value();
+
+    EquationBlock equation;
+    equation.expression.latex = "x^2";
+    equation.numbered = true;
+    result.equation = editor.InsertBlock(result.section, std::nullopt, std::move(equation)).value();
+
+    EquationBlock unnumbered;
+    unnumbered.expression.latex = "y";
+    unnumbered.numbered = false;
+    result.unnumbered = editor.InsertBlock(result.section, std::nullopt, std::move(unnumbered)).value();
+
+    InlineContent content;
+    if (paragraph_cites_figure) {
+        CrossReference reference;
+        reference.target = result.figure;
+        content.push_back(std::move(reference));
+        content.push_back(TextRun{" is the architecture.", 0});
+    }
+    Paragraph paragraph;
+    paragraph.content = std::move(content);
+    result.paragraph = editor.InsertBlock(result.section, std::nullopt, std::move(paragraph)).value();
+    return result;
+}
+
+} // namespace
+
+PF_TEST(CrossReferencePickerShowsNumberedTargetsAcrossKinds) {
+    EnsureQApplication();
+    auto source = MakeCrossReferenceDocument(false);
+    const auto numbering = std::make_shared<const DocumentNumberer>(DocumentNumberer::Build(source.doc));
+    PF_CHECK(numbering->Find(source.figure)->display == "Figure 1");
+    PF_CHECK(numbering->Find(source.table)->display == "Table 1");
+    PF_CHECK(numbering->Find(source.equation)->display == "Eq. (1)");
+    PF_CHECK(numbering->Find(source.subsection)->display == "Section 1.1");
+
+    BlockEditor editor;
+    editor.resize(900, 600);
+    editor.show();
+    editor.SetNumbering(numbering);
+    editor.SetCrossReferences(CollectCrossReferences(source.doc, *numbering));
+    editor.RebuildFromDocument(source.doc);
+    Spin(50);
+
+    // 卡片标题也读取同一份编号：Figure 1 / Table 1 / Eq. (1) / Section 1.1。
+    QStringList card_labels;
+    for (QLabel* label : editor.findChildren<QLabel*>())
+        card_labels << label->text();
+    PF_CHECK(card_labels.contains(QStringLiteral("Figure 1")));
+    PF_CHECK(card_labels.contains(QStringLiteral("Table 1")));
+    PF_CHECK(card_labels.contains(QStringLiteral("Eq. (1)")));
+    PF_CHECK(card_labels.contains(QStringLiteral("Section 1.1")));
+
+    InlineEditor* row = RowForNode(editor, source.paragraph);
+    PF_CHECK(row != nullptr);
+    if (!row)
+        return;
+    row->setFocus(Qt::OtherFocusReason);
+    editor.ShowReferencePicker(row);
+    Spin(30);
+    PopupList* popup = VisiblePopup(editor);
+    PF_CHECK(popup != nullptr);
+    if (!popup)
+        return;
+
+    auto* section = ItemForPayload(*popup, ToQ(source.section.value()));
+    auto* subsection = ItemForPayload(*popup, ToQ(source.subsection.value()));
+    auto* figure = ItemForPayload(*popup, ToQ(source.figure.value()));
+    auto* table = ItemForPayload(*popup, ToQ(source.table.value()));
+    auto* equation = ItemForPayload(*popup, ToQ(source.equation.value()));
+    PF_CHECK(section && section->text(0) == QStringLiteral("Section 1"));
+    PF_CHECK(subsection && subsection->text(0) == QStringLiteral("Section 1.1"));
+    PF_CHECK(figure && figure->text(0) == QStringLiteral("Figure 1"));
+    PF_CHECK(table && table->text(0) == QStringLiteral("Table 1"));
+    PF_CHECK(equation && equation->text(0) == QStringLiteral("Eq. (1)"));
+    PF_CHECK(figure && figure->data(0, PopupList::TitleRole).toString() == QStringLiteral("System overview"));
+    PF_CHECK(table && table->data(0, PopupList::TitleRole).toString() == QStringLiteral("Dataset statistics"));
+    // 未编号公式不能进入交叉引用目录。
+    PF_CHECK(ItemForPayload(*popup, ToQ(source.unnumbered.value())) == nullptr);
+
+    auto* list = popup->ListForTest();
+    QStringList groups;
+    for (int i = 0; list && i < list->topLevelItemCount(); ++i) {
+        if (list->topLevelItem(i)->data(0, PopupList::GroupHeaderRole).toBool())
+            groups << list->topLevelItem(i)->text(0).toUpper();
+    }
+    PF_CHECK(groups.contains(QStringLiteral("SECTIONS")));
+    PF_CHECK(groups.contains(QStringLiteral("MATH")));
+    PF_CHECK(groups.contains(QStringLiteral("FIGURES")));
+    PF_CHECK(groups.contains(QStringLiteral("TABLES")));
+
+    // 搜索标题（旧实现只搜 label / 标题文字）。
+    popup->SearchForTest()->setText(QStringLiteral("dataset"));
+    PF_CHECK(VisiblePayloadRows(*popup) == 1);
+    PF_CHECK(ItemForPayload(*popup, ToQ(source.table.value())) != nullptr);
+    popup->close();
+}
+
+PF_TEST(CrossReferenceCapsuleUsesPdfNumberingAndReeditReplacesTarget) {
+    EnsureQApplication();
+    auto source = MakeCrossReferenceDocument(true);
+    const auto numbering = std::make_shared<const DocumentNumberer>(DocumentNumberer::Build(source.doc));
+
+    BlockEditor editor;
+    editor.resize(900, 600);
+    editor.show();
+    editor.SetNumbering(numbering);
+    editor.SetCrossReferences(CollectCrossReferences(source.doc, *numbering));
+    editor.RebuildFromDocument(source.doc);
+    Spin(50);
+
+    InlineEditor* row = RowForNode(editor, source.paragraph);
+    PF_CHECK(row != nullptr);
+    if (!row)
+        return;
+    const int pill = row->toPlainText().indexOf(QChar(0xFFFC));
+    PF_CHECK(pill >= 0);
+    const QTextCharFormat format = FormatAt(*row, pill);
+    PF_CHECK(format.property(citation_format::kDisplayTextProperty).toString() == QStringLiteral("Figure 1"));
+    const auto reference = row->CrossReferenceAt(pill);
+    PF_CHECK(reference.has_value());
+    if (reference)
+        PF_CHECK(reference->target == ToQ(source.figure.value()));
+
+    InlineContent emitted;
+    bool committed = false;
+    QObject::connect(&editor, &BlockEditor::ParagraphContentEdited,
+                     [&](const QString&, const InlineContent& content) {
+                         emitted = content;
+                         committed = true;
+                     });
+
+    editor.ShowReferencePicker(row, BlockEditor::ReferencePickerSeed{ToQ(source.figure.value()), pill});
+    Spin(30);
+    PopupList* popup = VisiblePopup(editor);
+    PF_CHECK(popup != nullptr);
+    if (!popup)
+        return;
+    auto* table = ItemForPayload(*popup, ToQ(source.table.value()));
+    PF_CHECK(table != nullptr);
+    if (!table)
+        return;
+    // 当前目标在 detail 中标记，便于用户确认正在重选哪一个。
+    auto* current = ItemForPayload(*popup, ToQ(source.figure.value()));
+    PF_CHECK(current != nullptr && current->data(0, PopupList::DetailRole).toString().contains(
+                                       QStringLiteral("current")));
+    popup->ListForTest()->setCurrentItem(table);
+    SendKey(popup->SearchForTest(), Qt::Key_Return);
+    Spin(80);
+
+    PF_CHECK(committed);
+    int refs = 0;
+    for (const auto& node : emitted) {
+        if (const auto* ref = std::get_if<CrossReference>(&node)) {
+            ++refs;
+            PF_CHECK(ref->target == source.table);
+        }
+    }
+    PF_CHECK(refs == 1);
+    PF_CHECK(row->toPlainText().count(QChar(0xFFFC)) == 1);
+    const int replaced_pill = row->toPlainText().indexOf(QChar(0xFFFC));
+    const auto replaced = row->CrossReferenceAt(replaced_pill);
+    PF_CHECK(replaced.has_value());
+    if (replaced)
+        PF_CHECK(replaced->target == ToQ(source.table.value()));
+    PF_CHECK(FormatAt(*row, replaced_pill).property(citation_format::kDisplayTextProperty).toString() ==
+             QStringLiteral("Table 1"));
+}
+
+PF_TEST(FigureAndTableLabelEditorsCommitToDocument) {
+    EnsureQApplication();
+    Fixture fixture("pf-block-labels");
+    MainWindow& window = fixture.window;
+    auto* editor = window.findChild<BlockEditor*>();
+    PF_CHECK(editor != nullptr);
+    if (!editor)
+        return;
+
+    const auto image_path = std::filesystem::temp_directory_path() / "pf-block-label.png";
+    QImage image(2, 2, QImage::Format_RGB32);
+    image.fill(Qt::white);
+    PF_CHECK(image.save(QString::fromStdString(image_path.string())));
+    auto figure = window.controller()->InsertFigureAfter(NodeId(fixture.node_id.toStdString()),
+                                                         QString::fromStdString(image_path.string()));
+    auto table = window.controller()->InsertTableAfter(NodeId(fixture.node_id.toStdString()));
+    std::filesystem::remove(image_path);
+    PF_CHECK(figure.status == EditStatus::Applied);
+    PF_CHECK(table.status == EditStatus::Applied);
+    Spin(250);
+
+    auto find_label_editor = [&](const QString& placeholder) -> QLineEdit* {
+        for (QLineEdit* line : editor->findChildren<QLineEdit*>()) {
+            if (line->placeholderText() == placeholder)
+                return line;
+        }
+        return nullptr;
+    };
+    QLineEdit* figure_label = find_label_editor(QStringLiteral("fig:architecture"));
+    QLineEdit* table_label = find_label_editor(QStringLiteral("tab:results"));
+    PF_CHECK(figure_label != nullptr);
+    PF_CHECK(table_label != nullptr);
+    if (!figure_label || !table_label)
+        return;
+
+    auto commit_label = [](QLineEdit* line, const QString& text) {
+        line->setFocus(Qt::OtherFocusReason);
+        line->setText(text);
+        QFocusEvent out(QEvent::FocusOut);
+        QApplication::sendEvent(line, &out);
+    };
+    commit_label(figure_label, QStringLiteral("fig:architecture"));
+    commit_label(table_label, QStringLiteral("tab:results"));
+    Spin(150);
+
+    bool figure_label_stored = false;
+    bool table_label_stored = false;
+    VisitBlocks(window.controller()->session().state().document(), [&](const Block& block, const NodeAddress&) {
+        if (const auto* fig = std::get_if<Figure>(&block)) {
+            if (fig->id == figure.created_node && fig->label == "fig:architecture")
+                figure_label_stored = true;
+        }
+        if (const auto* tab = std::get_if<Table>(&block)) {
+            if (tab->id == table.created_node && tab->label == "tab:results")
+                table_label_stored = true;
+        }
+    });
+    PF_CHECK(figure_label_stored);
+    PF_CHECK(table_label_stored);
+
+    // 空 label 回退到 node id，并且通过 Undo 可撤销。
+    commit_label(figure_label, QString());
+    Spin(120);
+    window.controller()->Undo();
+    Spin(120);
+    bool restored = false;
+    VisitBlocks(window.controller()->session().state().document(), [&](const Block& block, const NodeAddress&) {
+        if (const auto* fig = std::get_if<Figure>(&block))
+            if (fig->id == figure.created_node && fig->label == "fig:architecture")
+                restored = true;
+    });
+    PF_CHECK(restored);
+}
+
+PF_TEST(AtSignUsesNumberedCrossReferencesInMainWindow) {
+    EnsureQApplication();
+    Fixture fixture("pf-at-crossref");
+    MainWindow& window = fixture.window;
+    InlineEditor* row = FindRow(window, fixture.node_id);
+    PF_CHECK(row != nullptr);
+    if (!row)
+        return;
+    row->setFocus(Qt::OtherFocusReason);
+    QTextCursor cursor(row->document());
+    cursor.setPosition(0);
+    row->setTextCursor(cursor);
+    SendKey(row, Qt::Key_At);
+    Spin(40);
+
+    PopupList* popup = nullptr;
+    for (PopupList* candidate : window.findChildren<PopupList*>()) {
+        if (candidate->isVisible())
+            popup = candidate;
+    }
+    PF_CHECK(popup != nullptr);
+    if (!popup)
+        return;
+    const auto& section = window.controller()->session().state().document().body().sections.front();
+    auto* item = ItemForPayload(*popup, ToQ(section.id.value()));
+    PF_CHECK(item != nullptr);
+    if (item)
+        PF_CHECK(item->text(0) == QStringLiteral("Section 1"));
+    popup->close();
+}
+
+PF_TEST(PopupBadgeLayoutIsIndependentOfDetailLength) {
+    EnsureQApplication();
+    QFont font = QApplication::font();
+    const QFontMetrics metrics(font);
+    const QRect content(0, 0, 620, 24);
+    const auto short_detail =
+        PopupList::LayoutFirstLine(content, 20, metrics, metrics, QStringLiteral("NeurIPS"), QStringLiteral("[12]"));
+    const auto long_detail = PopupList::LayoutFirstLine(
+        content, 20, metrics, metrics, QString(400, QLatin1Char('W')), QStringLiteral("[12]"));
+
+    // 期刊名长度只影响 detail 的可用宽度，badge 的位置与尺寸完全不变。
+    PF_CHECK(short_detail.badge == long_detail.badge);
+    PF_CHECK(long_detail.badge.right() == content.right());
+    PF_CHECK(long_detail.badge.width() >= metrics.horizontalAdvance(QStringLiteral("[12]")));
+    PF_CHECK(long_detail.detail.right() < long_detail.badge.left());
+    PF_CHECK(long_detail.label.right() < long_detail.detail.left());
+    PF_CHECK(long_detail.label.width() > 0);
+
+    // 没有 badge 时不会留下空白区域。
+    const auto no_badge =
+        PopupList::LayoutFirstLine(content, 20, metrics, metrics, QString(), QString());
+    PF_CHECK(no_badge.badge.isNull());
+    PF_CHECK(no_badge.label.right() == content.right());
 }

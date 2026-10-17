@@ -105,7 +105,11 @@ class MainWindow : public QMainWindow {
     // 最近项目列表（QSettings）的唯一写入路径。
     void RememberRecentProject(const QString& dir);
     void UpdateRequiredHints();
-    void RefreshReferenceItems();
+    // 把 controller 的共享 resolver + CitationView 目录注入编辑器。
+    // 缓存命中时 SetCitationNumbers/SetCitationCatalog 都是廉价操作。
+    void RefreshCitationCatalog();
+    // WP-03：把编号与交叉引用目标注入编辑器（卡片标题、picker、胶囊共用）。
+    void RefreshCrossReferences();
     int CountWords() const;
     // 专注编辑模式（UI 方案 §11）：折叠大纲 + 预览，让编辑器
     // 在长时间写作时独占整个窗口；再次点击恢复先前的分隔条尺寸。

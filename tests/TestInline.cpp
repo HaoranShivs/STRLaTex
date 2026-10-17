@@ -129,6 +129,23 @@ PF_TEST(RichTextSerializationKeepsSemanticTokens) {
     PF_CHECK(InlineIsRich(content));
 }
 
+PF_TEST(RichTextSerializationKeepsNarrativeCitationMode) {
+    InlineContent content;
+    content.push_back(TextRun{"As ", 0});
+    Citation narrative;
+    narrative.keys = {"smith2024"};
+    narrative.mode = CitationMode::Narrative;
+    content.push_back(narrative);
+    content.push_back(TextRun{" showed.", 0});
+
+    const std::string text = InlineToRichText(content);
+    PF_CHECK(text.find("[citet:smith2024]") != std::string::npos);
+    // 旧的 Parenthetical token 仍使用 [cite:]，可读性不变。
+    PF_CHECK(InlineFromRichText(text) == content);
+    // 纯文本投影也携带模式，避免搜索/大纲把叙述式压成括号式。
+    PF_CHECK(InlineToPlainText(content).find("[citet:smith2024]") != std::string::npos);
+}
+
 PF_TEST(RichTextSerializationOfPlainTextStaysPlainText) {
     const InlineContent content = InlineFromText("nothing special here");
     PF_CHECK(!InlineIsRich(content));

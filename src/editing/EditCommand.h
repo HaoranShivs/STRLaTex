@@ -198,6 +198,17 @@ struct EditFigureSpanPayload {
     FigureSpan span = FigureSpan::SingleColumn;
 };
 
+// 图表自定义 label（WP-03）。空字符串表示回退到 node id。
+struct EditFigureLabelPayload {
+    NodeId figure;
+    std::string label;
+};
+
+struct EditTableLabelPayload {
+    NodeId table;
+    std::string label;
+};
+
 struct InsertCitationPayload {
     NodeId paragraph;
     std::vector<std::string> keys;
@@ -227,7 +238,8 @@ using EditPayload = std::variant<
     DeleteSubsectionPayload, InsertSubsubsectionPayload, RenameSubsubsectionPayload, MoveSubsubsectionPayload,
     DeleteSubsubsectionPayload, InsertSubsubsectionAfterPayload, InsertParagraphPayload, InsertFigurePayload,
     InsertTablePayload, InsertEquationPayload, DeleteBlockPayload, MoveBlockPayload, EditParagraphPayload,
-    EditCaptionPayload, EditEquationPayload, EditFigureSpanPayload, InsertCitationPayload, InsertCrossReferencePayload>;
+    EditCaptionPayload, EditEquationPayload, EditFigureSpanPayload, InsertCitationPayload, InsertCrossReferencePayload,
+    EditFigureLabelPayload, EditTableLabelPayload>;
 
 using FullEditPayload =
     std::variant<SetTitlePayload, SetAbstractPayload, SetKeywordsPayload, AddAuthorPayload, RemoveAuthorPayload,
@@ -238,7 +250,8 @@ using FullEditPayload =
                  DeleteSubsubsectionPayload, InsertSubsubsectionAfterPayload, InsertParagraphPayload,
                  InsertFigurePayload, InsertTablePayload, InsertEquationPayload, DeleteBlockPayload, MoveBlockPayload,
                  EditParagraphPayload, EditCaptionPayload, EditEquationPayload, EditFigureSpanPayload,
-                 InsertCitationPayload, InsertCrossReferencePayload, ChangeTemplatePayload>;
+                 InsertCitationPayload, InsertCrossReferencePayload, EditFigureLabelPayload, EditTableLabelPayload,
+                 ChangeTemplatePayload>;
 
 // ---------------- 信封 ----------------
 

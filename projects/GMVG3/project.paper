@@ -175,6 +175,64 @@
             "type": "paragraph"
           },
           {
+            "content": [
+              {
+                "text": "To address these challenges, numerous IRSTD methods have been proposed. Existing approaches fall broadly into two categories ",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "shen2023survey"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": ": model-driven methods and data-driven methods. Model-driven methods ",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "ahn2019weakly",
+                  "bearman2016s",
+                  "chen2013local",
+                  "chen2023designing",
+                  "cui2025weakly",
+                  "dai2015boxsup",
+                  "dai2017reweighted"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": " explicitly incorporate prior knowledge specific to the IRSTD task, offering high interpretability. However, they exhibit limited robustness in diverse real-world scenarios and often require manual parameter tuning to achieve satisfactory performance. In recent years",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "shen2023survey",
+                  "dai2021asymmetric",
+                  "dai2021attentional",
+                  "deshpande1999max",
+                  "gao2013infrared",
+                  "han2014robust",
+                  "han2019local",
+                  "HE2025131688",
+                  "wsss2024review",
+                  "kou2023detection"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": ", data-driven methods , particularly deep learning approaches, have attracted widespread attention because of their superior performance and robustness. Nevertheless, most of these methods depend on pixel-level annotations for network training, underscoring the demand for large-scale, high-quality mask labels [23–25]. In practice, however, acquiring pixel-level annotations for infrared small targets is extremely costly in terms of human labor and time [26]. Moreover, the tiny scale and poor visibility of infrared small targets render manual pixel-level labeling highly subjective and error-prone, often yielding low-quality annotations.",
+                "type": "text"
+              }
+            ],
+            "id": "n21",
+            "type": "paragraph"
+          },
+          {
             "alt": "",
             "assetId": "a1",
             "caption": [
@@ -184,6 +242,7 @@
               }
             ],
             "id": "n15",
+            "label": "",
             "span": "single",
             "type": "figure",
             "width": "100"
@@ -193,6 +252,7 @@
             "assetId": "a11",
             "caption": [],
             "id": "n19",
+            "label": "",
             "span": "single",
             "type": "figure",
             "width": "100"
@@ -202,6 +262,7 @@
             "assetId": "a13",
             "caption": [],
             "id": "n20",
+            "label": "",
             "span": "single",
             "type": "figure",
             "width": "100"
@@ -267,14 +328,14 @@
     ]
   },
   "projectId": "p1",
-  "revision": 132,
-  "schemaVersion": "3",
-  "template": "ieee-conference",
+  "revision": 139,
+  "schemaVersion": "4",
+  "template": "elsevier-cas-dc@e166edadc97a",
   "templateBinding": {
-    "digest": "2fe5cd487eb00cee03b397b0544dafe4e6a4550d50e2d186e6d7390079a74e81",
-    "id": "ieee-conference",
+    "digest": "e166edadc97a7a61142f3fe62d50a14ad4d20e6f2b1c0eabfa8c657e44cc8ed9",
+    "id": "elsevier-cas-dc@e166edadc97a",
     "options": {},
-    "profile": "ieee-conference",
-    "version": "1"
+    "profile": "elsevier-cas-dc",
+    "version": "2.4"
   }
 }

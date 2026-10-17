@@ -144,6 +144,79 @@ PF_TEST(CitationUnknownKeyShowsQuestionMarkWithoutConsumingNumber) {
 }
 
 // ---------------------------------------------------------------------------
+// Citation picker v2（WP-01）：Narrative 输出与条目视图
+// ---------------------------------------------------------------------------
+
+PF_TEST(CitationNarrativeFormattingUsesAuthorAndNumber) {
+    BibliographyDatabase db;
+    BibliographyService service(db);
+    service.ImportText("@inproceedings{vaswani2017, author={Ashish Vaswani and Noam Shazeer}, "
+                       "title={Attention Is All You Need}, year={2017}, booktitle={NeurIPS}}\n"
+                       "@article{jones2020, author={A. Jones}, title={Later}, year={2020}}\n");
+    auto doc = MakeCitingDoc({{"vaswani2017"}, {"jones2020"}});
+    auto resolver = CitationNumberResolver::Build(doc, db);
+
+    // 数字样式下 \citet 输出 "Author [n]"；\citep 保持 [n]。
+    PF_CHECK(resolver.FormatPill({"vaswani2017"}, CitationMode::Narrative) == "Vaswani et al. [1]");
+    PF_CHECK(resolver.FormatPill({"vaswani2017"}, CitationMode::Parenthetical) == "[1]");
+    // 旧接口等价于 Parenthetical，必须保持兼容。
+    PF_CHECK(resolver.FormatPill({"vaswani2017"}) == "[1]");
+    // 多 key 的叙述式保留每个作者与编号，而不是压缩成区间。
+    PF_CHECK(resolver.FormatPill({"vaswani2017", "jones2020"}, CitationMode::Narrative) ==
+             "Vaswani et al. [1]; Jones [2]");
+}
+
+PF_TEST(CitationResolverViewsExposePickerMetadata) {
+    BibliographyDatabase db;
+    BibliographyService service(db);
+    service.ImportText("@inproceedings{vaswani2017, author={Ashish Vaswani and Noam Shazeer}, "
+                       "title={Attention Is All You Need}, year={2017}, booktitle={NeurIPS}}\n"
+                       "@article{jones2020, author={A. Jones}, title={Follow Up}, "
+                       "year={2020}}\n");
+    auto doc = MakeCitingDoc({{"vaswani2017"}});
+    auto resolver = CitationNumberResolver::Build(doc, db);
+
+    const auto views = resolver.Views();
+    PF_CHECK(views.size() == 2);
+    bool saw_cited = false;
+    bool saw_uncited = false;
+    for (const auto& view : views) {
+        if (view.key == "vaswani2017") {
+            saw_cited = true;
+            PF_CHECK(view.cited);
+            PF_CHECK(view.number == 1);
+            PF_CHECK(view.author_label == "Vaswani et al.");
+            PF_CHECK(view.title == "Attention Is All You Need");
+            PF_CHECK(view.venue == "NeurIPS");
+            PF_CHECK(view.year == "2017");
+            PF_CHECK(view.entry_type == "inproceedings");
+            PF_CHECK(view.known);
+        } else if (view.key == "jones2020") {
+            saw_uncited = true;
+            PF_CHECK(!view.cited);
+            PF_CHECK(view.number == 0);
+            PF_CHECK(view.known);
+        }
+    }
+    PF_CHECK(saw_cited && saw_uncited);
+    PF_CHECK(resolver.IsCited("vaswani2017"));
+    PF_CHECK(!resolver.IsCited("jones2020"));
+    PF_CHECK(resolver.Find("vaswani2017")->author_label == "Vaswani et al.");
+    PF_CHECK(resolver.Find("vaswani2017")->cited);
+}
+
+PF_TEST(CitationAuthorYearStyleFormatsBothModes) {
+    BibliographyDatabase db;
+    BibliographyService service(db);
+    service.ImportText("@article{smith2020, author={J. Smith}, title={T}, year={2020}}\n");
+    auto doc = MakeCitingDoc({{"smith2020"}});
+    auto resolver = CitationNumberResolver::Build(doc, db, CitationStyle::AuthorYear);
+    PF_CHECK(resolver.style() == CitationStyle::AuthorYear);
+    PF_CHECK(resolver.FormatPill({"smith2020"}, CitationMode::Parenthetical) == "(Smith, 2020)");
+    PF_CHECK(resolver.FormatPill({"smith2020"}, CitationMode::Narrative) == "Smith (2020)");
+}
+
+// ---------------------------------------------------------------------------
 // 校验（每次 build 之前；引用方案 §9）
 // ---------------------------------------------------------------------------
 
@@ -256,7 +329,8 @@ PF_TEST(BibliographyImportedAtomicallyAndReloaded) {
 
         // 引用方案 §7：*成功*导入会立即持久化 references.bib
         // —— 而非仅在保存时。
-        auto ok = session.ImportBibliography("@article{smith2024, author={J. Smith}, title={Seminal}, year={2024}}\n");
+        auto ok = session.ImportBibliography("@article{smith2024, author={J. Smith}, "
+                                             "title={Seminal}, year={2024}}\n");
         PF_CHECK(ok.status == BibliographyImportResult::Status::Ok);
         PF_CHECK(std::filesystem::exists(dir / "references.bib"));
         PF_CHECK(session.state().settings().bibliography_path == "references.bib");
