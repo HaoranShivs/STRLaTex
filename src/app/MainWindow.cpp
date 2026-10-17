@@ -31,6 +31,7 @@
 #include "app/OutlinePanel.h"
 #include "app/PdfPreview.h"
 #include "app/ProblemsPanel.h"
+#include "app/QtConvert.h"
 #include "app/TemplateImportDialog.h"
 #include "app/Theme.h"
 #include "app/WelcomePage.h"
@@ -40,9 +41,6 @@
 namespace pf::gui {
 
 namespace {
-QString ToQ(const std::string& s) {
-    return QString::fromStdString(s);
-}
 constexpr const char* kSettingsKey = "recent_projects";
 
 } // namespace
@@ -58,15 +56,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     QSettings settings;
     recent_projects_ = settings.value(kSettingsKey).toStringList();
 
-    if (!qEnvironmentVariable("PF_TRACE").isEmpty())
-        fprintf(stderr, "TRACE: before BuildUi\n");
     BuildUi();
-    if (!qEnvironmentVariable("PF_TRACE").isEmpty())
-        fprintf(stderr, "TRACE: after BuildUi\n");
     BuildMenus();
     WireEditor();
-    if (!qEnvironmentVariable("PF_TRACE").isEmpty())
-        fprintf(stderr, "TRACE: after WireEditor\n");
 
     connect(controller_, &ProjectController::projectChanged, this, &MainWindow::OnProjectChanged);
     connect(controller_, &ProjectController::documentChanged, this, &MainWindow::RefreshDocumentView);
@@ -97,12 +89,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
 void MainWindow::BuildUi() {
     central_stack_ = new QStackedWidget(this);
-    if (!qEnvironmentVariable("PF_TRACE").isEmpty())
-        fprintf(stderr, "TRACE: stack created\n");
-
     welcome_ = new WelcomePage(central_stack_);
-    if (!qEnvironmentVariable("PF_TRACE").isEmpty())
-        fprintf(stderr, "TRACE: welcome created\n");
     connect(welcome_, &WelcomePage::NewProjectRequested, this, &MainWindow::OnNewProject);
     connect(welcome_, &WelcomePage::OpenProjectRequested, this, &MainWindow::OnOpenProject);
     connect(welcome_, &WelcomePage::RecentActivated, this, [this](QString path) {
@@ -115,20 +102,14 @@ void MainWindow::BuildUi() {
     }
     central_stack_->addWidget(welcome_);
 
-    if (!qEnvironmentVariable("PF_TRACE").isEmpty())
-        fprintf(stderr, "TRACE: welcome wired\n");
     workspace_ = new QWidget(central_stack_);
     auto* workspace_layout = new QVBoxLayout(workspace_);
     workspace_layout->setContentsMargins(0, 0, 0, 0);
     workspace_layout->setSpacing(0);
     workspace_layout->addWidget(BuildHeader());
 
-    if (!qEnvironmentVariable("PF_TRACE").isEmpty())
-        fprintf(stderr, "TRACE: workspace created\n");
     main_splitter_ = new QSplitter(Qt::Horizontal, workspace_);
     outline_ = new OutlinePanel(main_splitter_);
-    if (!qEnvironmentVariable("PF_TRACE").isEmpty())
-        fprintf(stderr, "TRACE: outline created\n");
     editor_ = new BlockEditor(main_splitter_);
     editor_->SetAssetPathResolver([this](const AssetId& id) {
         if (!controller_->has_project())
@@ -144,18 +125,11 @@ void MainWindow::BuildUi() {
             return QString();
         return ToQ(resolved.value().string());
     });
-    if (!qEnvironmentVariable("PF_TRACE").isEmpty())
-        fprintf(stderr, "TRACE: editor created\n");
 
     vertical_splitter_ = new QSplitter(Qt::Vertical, main_splitter_);
     preview_ = new PdfPreview(vertical_splitter_);
-    preview_container_ = preview_;
-    if (!qEnvironmentVariable("PF_TRACE").isEmpty())
-        fprintf(stderr, "TRACE: preview created\n");
     problems_ = new ProblemsPanel(vertical_splitter_);
-    if (!qEnvironmentVariable("PF_TRACE").isEmpty())
-        fprintf(stderr, "TRACE: problems created\n");
-    vertical_splitter_->addWidget(preview_container_);
+    vertical_splitter_->addWidget(preview_);
     vertical_splitter_->addWidget(problems_);
     vertical_splitter_->setStretchFactor(0, 3);
     vertical_splitter_->setStretchFactor(1, 1);
@@ -246,7 +220,6 @@ QWidget* MainWindow::BuildHeader() {
 void MainWindow::OnToggleFocusMode(bool on) {
     if (!main_splitter_)
         return;
-    focus_mode_ = on;
     if (on) {
         pre_focus_sizes_ = main_splitter_->sizes();
         // 隐藏大纲与 preview+problems 列；编辑器占据整个宽度
@@ -425,8 +398,7 @@ void MainWindow::WireEditor() {
         }
         // 与工具栏选择器相同的 rich 路径：在该行光标处插入
         // Citation 对象并立即提交。
-        if (editor_->InsertCitationIntoParagraph(*focused, key)) {
-        } else {
+        if (!editor_->InsertCitationIntoParagraph(*focused, key)) {
             statusBar()->showMessage("The focused block is not a text row - citations attach to "
                                      "paragraphs",
                                      4000);
@@ -542,13 +514,7 @@ void MainWindow::OnNewProject() {
                                   (error.empty() ? QString("unknown error") : QString::fromStdString(error)));
         return;
     }
-    QSettings settings;
-    if (!recent_projects_.contains(dir)) {
-        recent_projects_.prepend(dir);
-        while (recent_projects_.size() > 8)
-            recent_projects_.removeLast();
-        settings.setValue(kSettingsKey, recent_projects_);
-    }
+    RememberRecentProject(dir);
     controller_->StartAutosave();
     ShowWorkspace(true);
     RenderProjectState(); // P0-06：新项目从一开始就是 Dirty。
@@ -588,13 +554,7 @@ bool MainWindow::OpenProjectDir(const QString& dir) {
     if (!controller_->OpenProjectWithRecovery(dir, &recovered)) {
         return false;
     }
-    QSettings settings;
-    if (!recent_projects_.contains(dir)) {
-        recent_projects_.prepend(dir);
-        while (recent_projects_.size() > 8)
-            recent_projects_.removeLast();
-        settings.setValue(kSettingsKey, recent_projects_);
-    }
+    RememberRecentProject(dir);
     controller_->StartAutosave();
     if (recovered) {
         QMessageBox::information(this, "PaperForge", "Recovered unsaved changes from the autosave snapshot.");
@@ -607,6 +567,16 @@ bool MainWindow::OpenProjectDir(const QString& dir) {
 
 // ---------------- P0-01：未保存更改守卫 ----------------
 
+// 最近项目列表的唯一写入口：新建与打开项目共用同一套去重与容量规则。
+void MainWindow::RememberRecentProject(const QString& dir) {
+    if (recent_projects_.contains(dir))
+        return;
+    recent_projects_.prepend(dir);
+    while (recent_projects_.size() > 8)
+        recent_projects_.removeLast();
+    QSettings settings;
+    settings.setValue(kSettingsKey, recent_projects_);
+}
 bool MainWindow::WaitForUserSaveCompletion(int timeout_ms) {
     if (!controller_->has_project())
         return true;
@@ -994,7 +964,6 @@ void MainWindow::RefreshSidePanels() {
 void MainWindow::OnProjectChanged() {
     RefreshTemplateChoices();
     current_pdf_path_.clear();
-    last_build_revision_ = -1;
     last_built_revision_ = {};
     last_outcome_ = BuildResult::Outcome::Failure;
     has_built_ = false;
@@ -1033,7 +1002,6 @@ void MainWindow::OnPreviewUpdated(const pf::PreviewUpdate& update) {
                                          .arg(theme::kOk));
         build_state_label_->setText(QString("Build: ✓ Revision %1").arg(revision));
         current_pdf_path_ = ToQ(update.pdf.path.string());
-        last_build_revision_ = revision;
         RefreshPreview();
     } else if (last_outcome_ == BuildResult::Outcome::Cancelled) {
         // 被取消的尝试不属于文档失败（方案 §34）：preview 继续显示

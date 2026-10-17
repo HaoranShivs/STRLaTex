@@ -1,7 +1,5 @@
 #include "document/DocumentEditor.h"
 
-#include <stdexcept>
-
 #include "core/IdGenerator.h"
 #include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
@@ -21,10 +19,6 @@ const char* ToString(EditError error) {
 }
 
 DocumentEditor::DocumentEditor(Document& document) : document_(document) {}
-
-void DocumentEditor::Throw(EditError e) const {
-    throw std::runtime_error(ToString(e));
-}
 
 // ---------------- FrontMatter（前置信息） ----------------
 
@@ -467,26 +461,6 @@ std::optional<DocumentEditor::BlockPosition> DocumentEditor::FindBlockPosition(c
     return position;
 }
 
-std::vector<NodeId> DocumentEditor::BlockParents(const NodeId& id) {
-    std::vector<NodeId> parents;
-    auto address = LocateNode(document_, id);
-    if (!address || !address->block)
-        return parents;
-    auto& sections = document_.body().sections;
-    if (!address->section || *address->section >= sections.size())
-        return parents;
-    const Section& section = sections[*address->section];
-    parents.push_back(section.id);
-    if (!address->subsection)
-        return parents;
-    const Subsection& sub = section.subsections[*address->subsection];
-    parents.push_back(sub.id);
-    if (!address->subsubsection)
-        return parents;
-    parents.push_back(sub.subsubsections[*address->subsubsection].id);
-    return parents;
-}
-
 Result<NodeId, EditError> DocumentEditor::InsertBlock(const NodeId& parent, std::optional<size_t> index, Block block,
                                                       NodeId id) {
     // 块可以位于 section、subsection 或 subsubsection 中；
@@ -606,19 +580,6 @@ Result<void, EditError> DocumentEditor::SetFigureAsset(const NodeId& id, const A
         fig->asset_id = asset_id;
         if (width)
             fig->width = *width;
-    } else {
-        return Unexpected(ToString(EditError::InvalidTarget));
-    }
-    document_.BumpVersion();
-    return {};
-}
-
-Result<void, EditError> DocumentEditor::SetFigureAltText(const NodeId& id, const std::string& alt) {
-    Block* block = FindBlock(id);
-    if (!block)
-        return Unexpected(ToString(EditError::NotFound));
-    if (auto* fig = std::get_if<Figure>(block)) {
-        fig->alt_text = alt;
     } else {
         return Unexpected(ToString(EditError::InvalidTarget));
     }

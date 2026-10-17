@@ -247,10 +247,6 @@ void PdfPreview::Clear() {
     ShowMessage(QStringLiteral("No preview yet — press Build."));
 }
 
-void PdfPreview::SetMessage(const QString& text) {
-    ShowMessage(text);
-}
-
 QLabel* PdfPreview::MakePageLabel(int index) {
     auto* label = new QLabel(column_);
     label->setObjectName("pdfPageSheet");
@@ -382,7 +378,6 @@ void PdfPreview::ApplyZoom(bool rerender_now) {
     }
     UpdateColumnSize();
     UpdateZoomLabel();
-    emit zoomChanged(zoom_);
     if (rerender_now) {
         RenderAtCurrentZoom();
     } else {
@@ -417,29 +412,18 @@ void PdfPreview::ResetZoom() {
 }
 
 namespace {
-double FitZoomFor(const QSize& viewport, double page_w_pt, double page_h_pt, bool whole_page) {
+double FitZoomFor(const QSize& viewport, double page_w_pt) {
     const double base_w = page_w_pt / kPointsPerInch * kBaselineDpi;
-    const double base_h = page_h_pt / kPointsPerInch * kBaselineDpi;
-    if (base_w <= 0.0 || base_h <= 0.0)
+    if (base_w <= 0.0)
         return 1.0;
-    const double by_width = viewport.width() / base_w;
-    if (!whole_page)
-        return by_width;
-    return std::min(by_width, viewport.height() / base_h);
+    return viewport.width() / base_w;
 }
 } // namespace
 
 void PdfPreview::FitWidth() {
-    const double fit = FitZoomFor(scroll_->viewport()->size(), page_width_pt_, page_height_pt_, false);
+    const double fit = FitZoomFor(scroll_->viewport()->size(), page_width_pt_);
     zoom_ = std::clamp(fit, kMinZoom, kMaxZoom);
     fit_width_ = true;
-    ApplyZoom(true);
-}
-
-void PdfPreview::FitPage() {
-    const double fit = FitZoomFor(scroll_->viewport()->size(), page_width_pt_, page_height_pt_, true);
-    zoom_ = std::clamp(fit, kMinZoom, kMaxZoom);
-    fit_width_ = false;
     ApplyZoom(true);
 }
 
@@ -555,7 +539,7 @@ void PdfPreview::ScheduleViewportUpdate() {
         if (message_label_)
             message_label_->setFixedWidth(std::max(200, scroll_->viewport()->width()));
         if (fit_width_ && !pages_.empty()) {
-            const double fit = FitZoomFor(scroll_->viewport()->size(), page_width_pt_, page_height_pt_, false);
+            const double fit = FitZoomFor(scroll_->viewport()->size(), page_width_pt_);
             const double clamped = std::clamp(fit, kMinZoom, kMaxZoom);
             if (!qFuzzyCompare(clamped, zoom_)) {
                 zoom_ = clamped;

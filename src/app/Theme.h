@@ -34,7 +34,6 @@ constexpr const char* kAccentSoft = "#EAF1FB"; // 悬停背景
 constexpr const char* kError = "#D64545";
 constexpr const char* kErrorSoft = "#FDF0F0";
 constexpr const char* kWarning = "#B7791F";
-constexpr const char* kWarningSoft = "#FBF5E9";
 constexpr const char* kOk = "#2F855A";
 constexpr const char* kBlockHover = "#FAFBFC"; // 块悬停背景
 

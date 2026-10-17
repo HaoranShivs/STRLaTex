@@ -62,9 +62,6 @@ void VisitBlocks(const Document& document, const std::function<void(const Block&
 // 仅遍历标题（Section/Subsection/Subsubsection），按文档顺序。
 void VisitHeadings(const Document& document, const std::function<void(const NodeAddress&)>& visit);
 
-// 便捷接口：按顺序遍历每个 Section。
-void VisitSections(const Document& document, const std::function<void(const Section&, size_t index)>& visit);
-
 // document 中的所有内联内容（front matter 的标题/摘要/图表标题以及段落
 // 正文），按文档顺序。供交叉引用/引文搜索使用。
 void VisitInlineContent(const Document& document,

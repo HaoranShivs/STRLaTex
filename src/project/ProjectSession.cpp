@@ -79,10 +79,6 @@ ProjectSession::ProjectSession(Config config)
         state_.SetTemplateBinding(def->binding);
         return true;
     };
-    ehost.on_document_changed = [this](const DocumentChangedEvent& e) {
-        if (document_changed_handler_)
-            document_changed_handler_(e);
-    };
     editing_.SetHost(std::move(ehost));
 
     // 编译器：使用注入的工厂（测试）或位于配置路径的 tectonic。
@@ -356,13 +352,17 @@ Result<void, IoError> ProjectSession::EnsureDirectories() {
     return {};
 }
 
-bool ProjectSession::NewProject(const std::filesystem::path& project_dir, std::string* error) {
-    CloseProject();
+void ProjectSession::SetProjectPaths(const std::filesystem::path& project_dir) {
     paths_.project_dir = project_dir;
     paths_.project_file = project_dir / "project.paper";
     paths_.assets_dir = project_dir / "assets";
     paths_.build_dir = project_dir / ".paperforge" / "build";
     paths_.autosave_dir = project_dir / ".paperforge" / "autosave";
+}
+
+bool ProjectSession::NewProject(const std::filesystem::path& project_dir, std::string* error) {
+    CloseProject();
+    SetProjectPaths(project_dir);
     // P0-03：只有在每个目录都真实存在之后才进入 Open。
     if (auto created = EnsureDirectories(); !created.ok()) {
         if (error)
@@ -382,11 +382,7 @@ bool ProjectSession::NewProject(const std::filesystem::path& project_dir, std::s
 
 bool ProjectSession::OpenProject(const std::filesystem::path& project_dir, std::string* error) {
     CloseProject();
-    paths_.project_dir = project_dir;
-    paths_.project_file = project_dir / "project.paper";
-    paths_.assets_dir = project_dir / "assets";
-    paths_.build_dir = project_dir / ".paperforge" / "build";
-    paths_.autosave_dir = project_dir / ".paperforge" / "autosave";
+    SetProjectPaths(project_dir);
     if (auto created = EnsureDirectories(); !created.ok()) {
         if (error)
             *error = created.error().ToString();
@@ -450,7 +446,6 @@ void ProjectSession::CloseProject() {
     ProcessApplicationEvents();
     state_.Reset();
     editing_.history().Clear();
-    editing_.index().Rebuild(state_.document());
     bibliography_db_.Clear();
     imported_templates_.clear();
     template_catalog_error_.clear();
@@ -503,11 +498,7 @@ bool ProjectSession::OpenProjectWithRecovery(const std::filesystem::path& projec
     // 情况 B：只有 autosave 幸存。像项目已打开那样初始化路径和 state，再把
     // autosave snapshot 载入其中。
     CloseProject();
-    paths_.project_dir = project_dir;
-    paths_.project_file = project_dir / "project.paper";
-    paths_.assets_dir = project_dir / "assets";
-    paths_.build_dir = project_dir / ".paperforge" / "build";
-    paths_.autosave_dir = project_dir / ".paperforge" / "autosave";
+    SetProjectPaths(project_dir);
     if (auto created = EnsureDirectories(); !created.ok()) {
         if (error)
             *error = created.error().ToString();
@@ -617,32 +608,25 @@ void ProjectSession::MarkDirty() {
 
 // ---------------- 编辑 ----------------
 
-EditResult ProjectSession::Execute(const EditCommand& command) {
-    NoteOwnerThreadUse();
-    auto result = editing_.Apply(command);
+EditResult ProjectSession::FinalizeEdit(EditResult result) {
     if (result.status == EditStatus::Applied) {
         MarkDirty();
         RequestBuild(false);
     }
     return result;
+}
+
+EditResult ProjectSession::Execute(const EditCommand& command) {
+    NoteOwnerThreadUse();
+    return FinalizeEdit(editing_.Apply(command));
 }
 
 EditResult ProjectSession::Undo() {
-    auto result = editing_.Undo();
-    if (result.status == EditStatus::Applied) {
-        MarkDirty();
-        RequestBuild(false);
-    }
-    return result;
+    return FinalizeEdit(editing_.Undo());
 }
 
 EditResult ProjectSession::Redo() {
-    auto result = editing_.Redo();
-    if (result.status == EditStatus::Applied) {
-        MarkDirty();
-        RequestBuild(false);
-    }
-    return result;
+    return FinalizeEdit(editing_.Redo());
 }
 
 // ---------------- Build ----------------
@@ -829,12 +813,9 @@ AssetImportResult ProjectSession::ImportAsset(const std::filesystem::path& sourc
     AssetImportRequest request;
     request.source_path = source;
     request.project_id = state_.id();
-    auto result = assets_->Stage(request);
-    if (result.status == AssetImportResult::Status::Ok) {
-        // 只有在 asset 真正被使用时才注册（架构补充规则 3）——
-        // InsertFigureFromSource 负责注册。
-    }
-    return result;
+    // 暂存但不注册：只有 asset 真正被插入文档时才由
+    // InsertFigureFromSource 注册（架构补充规则 3）。
+    return assets_->Stage(request);
 }
 
 EditResult ProjectSession::InsertFigureFromSource(const std::filesystem::path& source, const NodeId& parent,

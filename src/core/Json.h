@@ -31,9 +31,6 @@ class JsonValue {
     Type type() const noexcept {
         return type_;
     }
-    bool is_null() const noexcept {
-        return type_ == Type::Null;
-    }
     bool is_bool() const noexcept {
         return type_ == Type::Bool;
     }

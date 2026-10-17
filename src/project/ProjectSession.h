@@ -212,9 +212,6 @@ class ProjectSession {
     // Append one entry to the current project bibliography; existing keys are never replaced.
     BibliographyImportResult AddBibliographyEntry(const BibEntry& entry);
     CitationSearchResult SearchCitations(const std::string& query);
-    bool HasBibliography() const {
-        return !bibliography_bibtex_.empty();
-    }
 
     // ---- 状态访问（仅限应用线程）----
     ProjectState& state() noexcept {
@@ -235,9 +232,6 @@ class ProjectSession {
     }
     UndoHistory& history() noexcept {
         return editing_.history();
-    }
-    DocumentIndex& index() noexcept {
-        return editing_.index();
     }
     AssetManager& assets() noexcept {
         return *assets_;
@@ -300,9 +294,6 @@ class ProjectSession {
     void SetPhaseHandler(std::function<void(BuildPhase, BuildPhase)> handler) {
         phase_handler_ = std::move(handler);
     }
-    void SetDocumentChangedHandler(std::function<void(const DocumentChangedEvent&)> handler) {
-        document_changed_handler_ = std::move(handler);
-    }
 
   private:
     // P0-03：结构化结果；只有当所有目录都创建成功时，
@@ -311,6 +302,10 @@ class ProjectSession {
     void RestoreProjectPreview();
     BibliographyImportResult StoreBibliography(const std::string& bibtex_text, const std::string& relative_path);
     void MarkDirty();
+    // 编辑成功后的统一收尾：置 Dirty 并请求一次异步 build。
+    EditResult FinalizeEdit(EditResult result);
+    // 打开/新建项目时唯一的路径推导入口。
+    void SetProjectPaths(const std::filesystem::path& project_dir);
     void LoadTemplateCatalog();
     // 单一所有者规则的烟雾探测器：当从外部线程进入仅限所有者的入口时
     // 递增计数器。
@@ -382,7 +377,6 @@ class ProjectSession {
     std::function<void(const PreviewUpdate&)> preview_update_handler_;
     std::function<void(const SaveResult&, SaveKind)> save_result_handler_;
     std::function<void(BuildPhase, BuildPhase)> phase_handler_;
-    std::function<void(const DocumentChangedEvent&)> document_changed_handler_;
 };
 
 } // namespace pf

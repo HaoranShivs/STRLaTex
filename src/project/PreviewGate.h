@@ -34,8 +34,6 @@ enum class PreviewGateDecision : std::uint8_t {
     StaleBuild,     // 更新的 build 请求取代了这一个
 };
 
-const char* ToString(PreviewGateDecision decision);
-
 // 只接受 project、revision 与 build 身份都与当前应用状态一致的结果；
 // 其余结果按定义均属陈旧。
 PreviewGateDecision EvaluatePreviewGate(const PreviewGateInput& current, const BuildResult& result);

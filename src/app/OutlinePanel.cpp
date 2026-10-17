@@ -8,16 +8,13 @@
 #include <QTreeWidgetItemIterator>
 #include <QVBoxLayout>
 
+#include "app/QtConvert.h"
 #include "app/Theme.h"
 #include "document/InlineText.h"
 
 namespace pf::gui {
 
 namespace {
-QString ToQ(const std::string& s) {
-    return QString::fromStdString(s);
-}
-
 // 返回节点 key 匹配的树项，没有则返回空。key 存储在 UserRole 中。
 QTreeWidgetItem* FindOutlineItem(QTreeWidget* tree, const QString& key) {
     if (key.isEmpty())

@@ -30,10 +30,6 @@ class PopupList : public QFrame {
     void SetFilter(const QString& text);
     bool eventFilter(QObject* watched, QEvent* event) override;
 
-    bool is_active() const {
-        return isVisible();
-    }
-
   signals:
     void chosen(const QString& payload);
     void dismissed();

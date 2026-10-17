@@ -25,15 +25,25 @@ User → Qt6 GUI / CLI
 [docs/template-render-plan.md](docs/template-render-plan.md)。
 导入模板的操作、manifest 格式和平台依赖见
 [docs/template-import.md](docs/template-import.md)。
+运行时调用链路与关键接口说明见
+[docs/runtime-call-chain.md](docs/runtime-call-chain.md)；代码审查总报告、冗余
+清理记录与编辑器设计改进建议见
+[docs/code-review-2026-10.md](docs/code-review-2026-10.md)、
+[docs/redundancy-cleanup.md](docs/redundancy-cleanup.md)、
+[docs/editor-design-review.md](docs/editor-design-review.md)。
+面向科研论文/技术文档的功能缺口与交互改进清单（引用选择器、数学面板、
+图表编辑、交叉引用等）见
+[docs/feature-gaps.md](docs/feature-gaps.md)；对应的接口级实现方案见
+[docs/feature-implementation-design.md](docs/feature-implementation-design.md)。
 
 ## 模块结构
 
 ```
 src/
 ├── core/          StrongId / ProjectRevision / Result / Diagnostic / Json / IdGenerator
-├── document/      Document / DocumentEditor / DocumentIndex / InlineText
+├── document/      Document / DocumentEditor / InlineText
 │                  / DocumentTraversal（NodeAddress + LocateNode + Visit*）
-├── editing/       EditCommand / EditingSystem / UndoHistory / AnchorResolver
+├── editing/       EditCommand / EditingSystem / UndoHistory
 ├── project/       ProjectState / SnapshotFactory / ProjectSession
 │                  / ApplicationEvent / PreviewGate / PreviewUpdate
 ├── template/      TemplateRegistry / TemplatePackage / TemplateBinding
@@ -83,7 +93,7 @@ tools/
 | 真实 PDF 回归 | `IeeeMarksReachPdfLatex`（IEEEtran 四种标记组合经 pdfLaTeX 真实构建）、`FontTestBuildsWithoutSubstitution`、`BoldAndItalicReachTheBuiltPdf`（端到端 + `pdffonts` 字型断言） |
 | 粘贴规则 | `Ctrl+V` 保留 Bold/Italic、丢弃字体/字号/颜色/背景；`Ctrl+Shift+V` 只留文本；PDF 硬换行继续重排 |
 | Document Tree 永远 structurally valid | 闭式 schema：`Section/Subsection/Subsubsection` + `Paragraph/Figure/Table/DisplayEquation` 为固定 `struct` + `std::variant`；Table 由 `MakeTable` 工厂保证矩形 |
-| 遍历逻辑只写一份 | `DocumentTraversal` 提供 `NodeAddress` + `LocateNode/VisitNodes/VisitBlocks/VisitHeadings/VisitInlineContent`；Renderer、Validator、DocumentIndex、Outline、删除/移动定位全部复用，不再各自维护嵌套循环 |
+| 遍历逻辑只写一份 | `DocumentTraversal` 提供 `NodeAddress` + `LocateNode/VisitNodes/VisitBlocks/VisitHeadings/VisitInlineContent`；Renderer、Validator、Outline、删除/移动/插入定位全部复用，不再各自维护嵌套循环 |
 | 三级标题层级 | `Subsubsection` 挂在 `Subsection` 下，Insert/Rename/Delete/Move/Undo/Redo 全链路可用；Renderer 产出 `\subsubsection{...}\label{node-id}` |
 | 模板能力约束 | `TemplateCapabilities::max_heading_depth`：GUI 依此过滤插入菜单与 `/` 菜单，Validator 对超深标题报 `W-HEADING-DEPTH` |
 | Schema migration | `ProjectMigrator`：加载时探测版本并**在内存里**迁移（V1→V2），磁盘文件不动，保存时写入当前版本 |
@@ -101,7 +111,7 @@ tools/
 | 保存串行 + 旧不覆盖新 | `SaveCoordinator` 单 worker FIFO + revision 比较；原子写 = 临时文件 → 校验 → rename |
 | 保存期间继续编辑仍是 Dirty | save 完成事件带回被写 revision，只有等于当前 revision 才置 `Clean`（测试验证） |
 | Asset 导入与注册分离 | `AssetManager::Stage` 只暂存；真正插入文档时才 `Register` |
-| 异步插入用 Stable Anchor | `AnchorResolver` 按当前 Revision 重新解析插入点 |
+| 插入锚点按当前文档解析 | `ProjectController::ResolveInsertionPoint` 基于 `LocateNode` 把任意块/标题锚点解析为「父容器 + 索引」，不再手写三级嵌套查找 |
 | 全操作可撤销 | Undo 历史存储操作前后的**全文快照**（before/after），删除 Section 等结构性操作也能完整恢复，NodeId 跨 Undo 保持稳定 |
 | 自动保存不干扰状态机 | 定时器线程只发 `AutosaveTickEvent`；快照在应用线程抓取，仅在 Dirty 时写 `.paperforge/autosave/autosave.paper`，不改变 Clean/Dirty；重开项目时若 autosave 比 project.paper 新则提示恢复 |
 
@@ -241,10 +251,10 @@ MyPaper/
 ## 测试
 
 ```bash
-./build/tests/pf_tests                      # 100 个测试
+./build/tests/pf_tests                      # 185 个测试
 QT_QPA_PLATFORM=offscreen \
-  ./build/src/app/paperforge-inline-editor-test   # +10 个富文本/widget 测试
-ctest --test-dir build          # 或通过 CTest（pf_tests + gui_input_persistence）
+  ./build/src/app/paperforge-inline-editor-test   # +78 个富文本/widget 测试
+ctest --test-dir build          # 或通过 CTest（6 个目标：核心 2 + GUI 4）
 ```
 
 覆盖：Document schema/编辑器约束/Table 矩形性、Editing 协议（stale 拒绝、
@@ -279,7 +289,7 @@ Renderer 嵌套 `\textbf{\emph{}}`、富内容经编辑协议与保存/重开保
 **结构语义回归**（`tests/TestStructure.cpp`）：`NodeAddress`/`LocateNode` 对每个
 节点给出完整坐标、遍历顺序与文档顺序一致、`Subsubsection` 的
 Insert/Rename/Delete/Move/Undo/Redo、块在三级容器间移动后文档仍有效、
-Renderer 产出 `\subsubsection` + `\label`、DocumentIndex 覆盖第三层、
+Renderer 产出 `\subsubsection` + `\label`、
 Schema V1→V2 迁移幂等且不改动磁盘文件。
 
 ```bash

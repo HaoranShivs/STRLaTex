@@ -22,15 +22,10 @@ enum class RuntimeStatus {
     UnsupportedVersion,
 };
 
+// 供测试/诊断输出使用的人类可读状态名。
 const char* ToString(RuntimeStatus status);
 
-struct RuntimeProblem {
-    std::string detail;
-};
-
 struct RuntimeInfo {
-    int runtime_version = 0;
-    std::string texlive_version;
     std::filesystem::path texlive_root;
     RuntimeStatus status = RuntimeStatus::Missing;
     std::vector<std::string> problems; // 人类可读的诊断信息
@@ -47,10 +42,6 @@ class RuntimeManager {
     // 定位 runtime，并校验其结构与版本文件。
     RuntimeInfo Initialize();
 
-    std::filesystem::path TexLiveRoot() const {
-        return texlive_root_;
-    }
-
     // 校验关键可执行文件是否存在且可运行（方案 §18）。
     // `problems` 会为每项发现累积一条人类可读的说明。
     bool VerifyExecutables(const std::filesystem::path& bin_dir, std::vector<std::string>* problems) const;
@@ -58,13 +49,6 @@ class RuntimeManager {
     // 真正的最小编译测试（方案 §18、§19）：用模板所用的引擎
     // 构建一个小文档，以验证粗体/斜体。
     bool VerifyCompile(const std::filesystem::path& texlive_root, std::vector<std::string>* problems) const;
-
-    RuntimeStatus status() const {
-        return info_.status;
-    }
-    const RuntimeInfo& info() const {
-        return info_;
-    }
 
   private:
     std::filesystem::path install_root_;

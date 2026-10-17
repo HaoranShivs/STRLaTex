@@ -20,20 +20,6 @@ enum class EditError {
 
 const char* ToString(EditError error);
 
-struct InsertBlockSpec {
-    NodeId parent_section;       // Section 或 Subsection 的 id
-    std::optional<size_t> index; // nullopt 表示追加
-};
-
-// section/subsection/subsubsection 在文档中的位置。
-struct SectionPath {
-    size_t section_index = 0;
-    bool in_subsection = false;
-    size_t subsection_index = 0;
-    bool in_subsubsection = false;
-    size_t subsubsection_index = 0;
-};
-
 class DocumentEditor {
   public:
     explicit DocumentEditor(Document& document);
@@ -103,7 +89,6 @@ class DocumentEditor {
                                               std::optional<std::string> label = std::nullopt);
     Result<void, EditError> SetFigureAsset(const NodeId& id, const AssetId& asset_id,
                                            std::optional<FigureWidth> width = std::nullopt);
-    Result<void, EditError> SetFigureAltText(const NodeId& id, const std::string& alt);
     // 单栏与双栏 figure。该值会被无条件存储，仅在双栏模板中才会产生
     // 可见效果（对于 DoubleColumn，renderer 会输出带星号的 float）。
     Result<void, EditError> SetFigureSpan(const NodeId& id, FigureSpan span);
@@ -135,12 +120,8 @@ class DocumentEditor {
         size_t block_index;
     };
     std::optional<BlockPosition> FindBlockPosition(const NodeId& id);
-    // 某个 block 的各级容器 id，按插入顺序排列（section、subsection、
-    // subsubsection）。move 逻辑用它来拒绝跨容器移动。
-    std::vector<NodeId> BlockParents(const NodeId& id);
 
   private:
-    [[noreturn]] void Throw(EditError e) const;
     static std::vector<std::vector<TableCell>> MakeCells(size_t rows, size_t cols);
     // section/subsection/subsubsection id 对应的 blocks vector。
     std::vector<Block>* FindBlockListForParent(const NodeId& parent);

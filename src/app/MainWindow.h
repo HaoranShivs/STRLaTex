@@ -102,6 +102,8 @@ class MainWindow : public QMainWindow {
     void WireEditor();
     void ShowWorkspace(bool show);
     void RefreshPreview();
+    // 最近项目列表（QSettings）的唯一写入路径。
+    void RememberRecentProject(const QString& dir);
     void UpdateRequiredHints();
     void RefreshReferenceItems();
     int CountWords() const;
@@ -125,19 +127,16 @@ class MainWindow : public QMainWindow {
     QWidget* workspace_;
     QSplitter* main_splitter_ = nullptr;
     QList<int> pre_focus_sizes_;
-    bool focus_mode_ = false;
     QSplitter* vertical_splitter_ = nullptr;
     OutlinePanel* outline_;
     BlockEditor* editor_;
     PdfPreview* preview_;
-    QWidget* preview_container_;
     ProblemsPanel* problems_;
     // 状态栏
     QLabel* save_state_label_;
     QLabel* build_state_label_;
     QLabel* word_count_label_;
     QString current_pdf_path_;
-    int last_build_revision_ = -1;
     // 最近一次完成 build 的 revision，用于过期标记（方案 §49）。
     pf::ProjectRevision last_built_revision_;
     // 最近一次 build 的结果：OnPreviewUpdated 读取它，使 Cancelled

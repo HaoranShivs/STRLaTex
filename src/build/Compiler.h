@@ -20,7 +20,6 @@ struct CompilerConfig {
     LatexEngine engine = LatexEngine::PdfLatex;
     BibliographyEngine bibliography_engine = BibliographyEngine::None;
     std::filesystem::path texlive_root;
-    bool keep_logs = true;
 };
 
 // 编译失败原因的归类（方案 §37）。运行时问题与文档问题彼此区分，

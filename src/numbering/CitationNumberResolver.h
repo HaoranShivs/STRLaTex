@@ -47,9 +47,6 @@ class CitationNumberResolver {
     // （绝不会悄然消失）。
     std::optional<CitationDisplayInfo> Find(const std::string& key) const;
 
-    // 当 bibliography 包含 `key` 时返回 true（无论是否已被引用）。
-    bool IsKnown(const std::string& key) const;
-
     // 单 key 或多 key 引用的 pill 文本：key 去重、编号升序排序、三个及以上
     // 的连续串压缩为 "a-c"（即 natbib 的 sort&compress 结果）、未解析的
     // key 显示为 "?"。输出示例："[1]"、"[1, 3]"、"[1-3]"、"[2, ?]"。

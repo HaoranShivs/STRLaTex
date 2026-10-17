@@ -1,9 +1,9 @@
-// Document 模型测试：schema、编辑器约束、索引。
+// Document 模型测试：schema、编辑器约束。
 #include "TestMain.hpp"
 
 #include "core/IdGenerator.h"
 #include "document/DocumentEditor.h"
-#include "document/DocumentIndex.h"
+#include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
 
 using namespace pf;
@@ -232,28 +232,6 @@ PF_TEST(DocumentEditorSubsectionStructure) {
     q.content = InlineFromText("bad");
     auto r = editor.InsertBlock(NodeId("nope"), std::nullopt, q);
     PF_CHECK(!r.ok());
-}
-
-PF_TEST(DocumentIndexRebuild) {
-    const Document doc = MakeSampleDoc();
-    DocumentIndex index;
-    index.Rebuild(doc);
-    PF_CHECK(index.Size() == 4); // section 0 中的 2 个 section + 2 个 block
-    size_t expected = doc.CollectNodeIds().size();
-    PF_CHECK(index.Size() == expected);
-
-    NodeId sid = doc.body().sections[0].id;
-    auto loc = index.Find(sid);
-    PF_CHECK(loc.has_value());
-    PF_CHECK(loc->kind == NodeKind::Section);
-
-    // block 位置
-    for (const auto& block : doc.body().sections[0].blocks) {
-        NodeId bid = std::visit([](const auto& b) { return b.id; }, block);
-        auto bloc = index.Find(bid);
-        PF_CHECK(bloc.has_value());
-        PF_CHECK(bloc->parent == sid);
-    }
 }
 
 PF_TEST(InlineTextHelpers) {

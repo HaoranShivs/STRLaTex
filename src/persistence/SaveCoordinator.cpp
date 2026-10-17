@@ -4,16 +4,6 @@
 
 namespace pf {
 
-const char* ToString(SaveKind kind) {
-    switch (kind) {
-    case SaveKind::User:
-        return "User";
-    case SaveKind::Autosave:
-        return "Autosave";
-    }
-    return "?";
-}
-
 SaveOutcome OutcomeFromResult(const SaveResult& result, bool superseded) {
     if (superseded)
         return SaveOutcome::Superseded;
@@ -28,22 +18,6 @@ SaveOutcome OutcomeFromResult(const SaveResult& result, bool superseded) {
         return SaveOutcome::SerializeError;
     }
     return SaveOutcome::IoError;
-}
-
-const char* ToString(SaveOutcome outcome) {
-    switch (outcome) {
-    case SaveOutcome::Saved:
-        return "Saved";
-    case SaveOutcome::Superseded:
-        return "Superseded";
-    case SaveOutcome::IoError:
-        return "IoError";
-    case SaveOutcome::SerializeError:
-        return "SerializeError";
-    case SaveOutcome::Stopping:
-        return "Stopping";
-    }
-    return "?";
 }
 
 SaveCoordinator::SaveCoordinator(std::function<void(const SaveCompletion&)> on_completed)

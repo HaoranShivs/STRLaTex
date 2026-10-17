@@ -60,14 +60,10 @@ class MathRenderService : public QObject {
     // GUI线程：把id关联到一个存活的widget。指针以QPointer方式持有，
     // 因此已销毁的widget会静默丢弃其回复。
     void RegisterClient(const QString& editor_id, QObject* client);
-    void UnregisterClient(const QString& editor_id);
 
     // GUI线程：将一次渲染入队；返回为其分配的generation。
     std::uint64_t Request(const QString& editor_id, const QString& formula_id, const QString& latex,
                           const MathRenderStyle& style);
-
-    // GUI线程：为该formula签发的最新generation（0表示无）。
-    std::uint64_t Generation(const QString& editor_id, const QString& formula_id) const;
 
   signals:
     // 当回复对应的editor仍然存活且其generation仍然最新时，在GUI线程上发出。
@@ -116,7 +112,6 @@ class MathRenderCache {
     std::size_t size() const {
         return entries_.size();
     }
-    void ClearForTest();
 
   private:
     struct Entry {

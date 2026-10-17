@@ -51,10 +51,6 @@ void MathRenderCache::Insert(const QString& key, MathRenderResult value) {
     entries_.emplace(key, entry);
 }
 
-void MathRenderCache::ClearForTest() {
-    entries_.clear();
-}
-
 QPixmap PixmapFromMathResult(const MathRenderResult& result) {
     // 仅限GUI线程：QPixmap的构造不是线程安全的。
     if (!result.pixmap.isNull())
@@ -141,10 +137,6 @@ void MathRenderService::RegisterClient(const QString& editor_id, QObject* client
     impl_->clients[editor_id] = client;
 }
 
-void MathRenderService::UnregisterClient(const QString& editor_id) {
-    impl_->clients.erase(editor_id);
-}
-
 std::uint64_t MathRenderService::Request(const QString& editor_id, const QString& formula_id, const QString& latex,
                                          const MathRenderStyle& style) {
     // GUI线程：先递增generation，这样一旦出现更新的请求，已在途的回复
@@ -164,11 +156,6 @@ std::uint64_t MathRenderService::Request(const QString& editor_id, const QString
     }
     impl_->condition.notify_one();
     return generation;
-}
-
-std::uint64_t MathRenderService::Generation(const QString& editor_id, const QString& formula_id) const {
-    auto it = impl_->issued_generation.find(FormulaKey(editor_id, formula_id));
-    return it == impl_->issued_generation.end() ? 0 : it->second;
 }
 
 void MathRenderService::RenderJob(const MathRenderRequest& job) {

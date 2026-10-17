@@ -157,11 +157,6 @@ std::string InlineToRichText(const InlineContent& content) {
             if (NeedsSpaceBeforeFence(out))
                 out += ' ';
             out += fence + run->text + fence;
-            // 带围栏的 run 后紧跟字母时，解析会吞掉下一个单词，
-            // 因此同样要以边界收尾。
-            if (!out.empty() && out.back() == fence.back()) {
-                // 无需额外处理：闭合围栏已经终止了该 run
-            }
         } else if (const auto* eq = std::get_if<InlineMath>(&node)) {
             // 采用 GenerateInlineMath 的分隔符，使可读的编辑器写法
             // 与生成器输出的 LaTeX 一致。

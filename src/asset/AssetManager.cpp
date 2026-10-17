@@ -151,10 +151,6 @@ void AssetRegistry::Register(AssetMetadata metadata) {
     assets_[metadata.id] = std::move(metadata);
 }
 
-bool AssetRegistry::Unregister(const AssetId& id) {
-    return assets_.erase(id) > 0;
-}
-
 AssetImportResult AssetManager::Stage(const AssetImportRequest& request) {
     AssetImportResult result;
     const auto& src = request.source_path;
@@ -215,7 +211,6 @@ ImportedAssetCandidate AssetManager::ToCandidate(const AssetImportResult& result
     ImportedAssetCandidate candidate;
     candidate.id = result.metadata.id;
     candidate.metadata = result.metadata;
-    candidate.staged_path = assets_dir_ / result.metadata.relative_path;
     return candidate;
 }
 

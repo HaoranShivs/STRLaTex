@@ -8,107 +8,6 @@
 
 namespace pf {
 
-const char* ToString(EditOrigin origin) {
-    switch (origin) {
-    case EditOrigin::User:
-        return "User";
-    case EditOrigin::Undo:
-        return "Undo";
-    case EditOrigin::Redo:
-        return "Redo";
-    case EditOrigin::Recovery:
-        return "Recovery";
-    case EditOrigin::System:
-        return "System";
-    }
-    return "Unknown";
-}
-
-const char* EditCommand::PayloadName() const {
-    return std::visit(
-        [](const auto& p) -> const char* {
-            using T = std::decay_t<decltype(p)>;
-            if constexpr (std::is_same_v<T, SetTitlePayload>)
-                return "SetTitle";
-            if constexpr (std::is_same_v<T, SetAbstractPayload>)
-                return "SetAbstract";
-            if constexpr (std::is_same_v<T, SetKeywordsPayload>)
-                return "SetKeywords";
-            if constexpr (std::is_same_v<T, AddAuthorPayload>)
-                return "AddAuthor";
-            if constexpr (std::is_same_v<T, SetAffiliationsPayload>)
-                return "SetAffiliations";
-            if constexpr (std::is_same_v<T, RemoveAuthorPayload>)
-                return "RemoveAuthor";
-            if constexpr (std::is_same_v<T, UpdateAuthorPayload>)
-                return "UpdateAuthor";
-            if constexpr (std::is_same_v<T, InsertSectionPayload>)
-                return "InsertSection";
-            if constexpr (std::is_same_v<T, DeleteSectionPayload>)
-                return "DeleteSection";
-            if constexpr (std::is_same_v<T, MoveSectionPayload>)
-                return "MoveSection";
-            if constexpr (std::is_same_v<T, RenameSectionPayload>)
-                return "RenameSection";
-            if constexpr (std::is_same_v<T, RenameSubsectionPayload>)
-                return "RenameSubsection";
-            if constexpr (std::is_same_v<T, MoveSubsectionPayload>)
-                return "MoveSubsection";
-            if constexpr (std::is_same_v<T, InsertSubsectionPayload>)
-                return "InsertSubsection";
-            if constexpr (std::is_same_v<T, InsertSubsectionAfterPayload>)
-                return "InsertSubsectionAfter";
-            if constexpr (std::is_same_v<T, DeleteSubsectionPayload>)
-                return "DeleteSubsection";
-            if constexpr (std::is_same_v<T, InsertSubsubsectionPayload>)
-                return "InsertSubsubsection";
-            if constexpr (std::is_same_v<T, RenameSubsubsectionPayload>)
-                return "RenameSubsubsection";
-            if constexpr (std::is_same_v<T, MoveSubsubsectionPayload>)
-                return "MoveSubsubsection";
-            if constexpr (std::is_same_v<T, DeleteSubsubsectionPayload>)
-                return "DeleteSubsubsection";
-            if constexpr (std::is_same_v<T, InsertSubsubsectionAfterPayload>)
-                return "InsertSubsubsectionAfter";
-            if constexpr (std::is_same_v<T, InsertParagraphPayload>)
-                return "InsertParagraph";
-            if constexpr (std::is_same_v<T, InsertFigurePayload>)
-                return "InsertFigure";
-            if constexpr (std::is_same_v<T, InsertTablePayload>)
-                return "InsertTable";
-            if constexpr (std::is_same_v<T, InsertEquationPayload>)
-                return "InsertEquation";
-            if constexpr (std::is_same_v<T, DeleteBlockPayload>)
-                return "DeleteBlock";
-            if constexpr (std::is_same_v<T, MoveBlockPayload>)
-                return "MoveBlock";
-            if constexpr (std::is_same_v<T, EditParagraphPayload>)
-                return "EditParagraph";
-            if constexpr (std::is_same_v<T, EditCaptionPayload>)
-                return "EditCaption";
-            if constexpr (std::is_same_v<T, EditEquationPayload>)
-                return "EditEquation";
-            if constexpr (std::is_same_v<T, EditFigureSpanPayload>)
-                return "EditFigureSpan";
-            if constexpr (std::is_same_v<T, InsertCitationPayload>)
-                return "InsertCitation";
-            if constexpr (std::is_same_v<T, InsertCrossReferencePayload>)
-                return "InsertCrossReference";
-            if constexpr (std::is_same_v<T, ChangeTemplatePayload>)
-                return "ChangeTemplate";
-            return "Unknown";
-        },
-        payload);
-}
-
-void EditingSystem::BeginTypingTransaction(const NodeId& paragraph) {
-    history_.BeginTransaction("typing:" + paragraph.value());
-}
-
-void EditingSystem::EndTypingTransaction() {
-    history_.EndTransaction();
-}
-
 EditResult EditingSystem::Apply(const EditCommand& command) {
     if (command.project_id != host_.project_id()) {
         return EditResult::Fail(FailureReason::WrongProject, "project id mismatch");
@@ -177,7 +76,6 @@ EditResult EditingSystem::ApplyFullPayload(const EditCommand& cmd) {
         entry.operation_id = cmd.operation_id;
         entry.resulting_revision = result.new_revision;
         history_.Push(std::move(entry));
-        index_.Rebuild(doc);
     }
     return result;
 }
@@ -401,67 +299,44 @@ EditResult EditingSystem::Undo() {
     auto entry = history_.PopUndo();
     if (!entry)
         return EditResult::Fail(FailureReason::InvalidTarget, "nothing to undo");
-    if (const auto* snap = std::get_if<SnapshotHistoryAction>(&entry->action)) {
-        // 恢复变更前的文档状态：host 层级的变更会递增 revision、
-        // 发出通知并重建索引。
-        Document& doc = host_.document();
-        Document before_copy = *snap->before;
-        doc = std::move(before_copy);
-        EditCommand cmd;
-        cmd.operation_id = OperationId(IdGenerator::NewOperationId());
-        cmd.project_id = host_.project_id();
-        cmd.base_revision = host_.revision();
-        cmd.origin = EditOrigin::Undo;
-        ProjectRevision old_rev = host_.revision();
-        ProjectRevision new_rev = host_.bump_revision();
-        index_.Rebuild(doc);
-        Notify(cmd, old_rev, new_rev, {}, {ChangeKind::StructureChanged, ChangeKind::TextChanged});
-        return EditResult::Ok(new_rev);
-    }
-    if (const auto* tpl = std::get_if<TemplateHistoryAction>(&entry->action)) {
-        ChangeTemplatePayload p;
-        p.template_id = tpl->old_template;
-        p.binding = tpl->old_binding;
-        EditCommand cmd;
-        cmd.operation_id = OperationId(IdGenerator::NewOperationId());
-        cmd.project_id = host_.project_id();
-        cmd.base_revision = host_.revision();
-        cmd.origin = EditOrigin::Undo;
-        cmd.payload = p;
-        return ApplyFullPayload(cmd);
-    }
-    return EditResult::Fail(FailureReason::UnknownPayload, "unknown history entry");
+    return ApplyHistoryEntry(*entry, EditOrigin::Undo);
 }
 
 EditResult EditingSystem::Redo() {
     auto entry = history_.PopRedo();
     if (!entry)
         return EditResult::Fail(FailureReason::InvalidTarget, "nothing to redo");
-    if (const auto* snap = std::get_if<SnapshotHistoryAction>(&entry->action)) {
+    return ApplyHistoryEntry(*entry, EditOrigin::Redo);
+}
+
+EditResult EditingSystem::ApplyHistoryEntry(const HistoryEntry& entry, EditOrigin origin) {
+    const bool undo = origin == EditOrigin::Undo;
+    if (const auto* snap = std::get_if<SnapshotHistoryAction>(&entry.action)) {
+        // 恢复整篇文档 snapshot：host 层级的变更会递增 revision 并发出通知。
         Document& doc = host_.document();
-        Document after_copy = *snap->after;
-        doc = std::move(after_copy);
+        // 先复制再移动，避免原地赋值读到被覆盖的 buffer。
+        Document restored = undo ? *snap->before : *snap->after;
+        doc = std::move(restored);
         EditCommand cmd;
         cmd.operation_id = OperationId(IdGenerator::NewOperationId());
         cmd.project_id = host_.project_id();
         cmd.base_revision = host_.revision();
-        cmd.origin = EditOrigin::Redo;
-        ProjectRevision old_rev = host_.revision();
-        ProjectRevision new_rev = host_.bump_revision();
-        index_.Rebuild(doc);
+        cmd.origin = origin;
+        const ProjectRevision old_rev = host_.revision();
+        const ProjectRevision new_rev = host_.bump_revision();
         Notify(cmd, old_rev, new_rev, {}, {ChangeKind::StructureChanged, ChangeKind::TextChanged});
         return EditResult::Ok(new_rev);
     }
-    if (const auto* tpl = std::get_if<TemplateHistoryAction>(&entry->action)) {
+    if (const auto* tpl = std::get_if<TemplateHistoryAction>(&entry.action)) {
         ChangeTemplatePayload p;
-        p.template_id = tpl->new_template;
-        p.binding = tpl->new_binding;
+        p.template_id = undo ? tpl->old_template : tpl->new_template;
+        p.binding = undo ? tpl->old_binding : tpl->new_binding;
         EditCommand cmd;
         cmd.operation_id = OperationId(IdGenerator::NewOperationId());
         cmd.project_id = host_.project_id();
         cmd.base_revision = host_.revision();
-        cmd.origin = EditOrigin::Redo;
-        cmd.payload = p;
+        cmd.origin = origin;
+        cmd.payload = std::move(p);
         return ApplyFullPayload(cmd);
     }
     return EditResult::Fail(FailureReason::UnknownPayload, "unknown history entry");

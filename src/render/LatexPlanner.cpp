@@ -499,7 +499,6 @@ PlanResult LatexPlanner::Plan(const RenderRequest& request,
             Line(nodes, Cmd("bibliography", {Id("references")}));
             package.files.push_back(
                 {"references.bib", request.bibliography_bibtex, false});
-            package.bibliography_files.push_back("references.bib");
         }
         nodes.push_back(Lit("\n\\end{document}\n"));
         VisitBlocks(*request.document,
@@ -517,7 +516,6 @@ PlanResult LatexPlanner::Plan(const RenderRequest& request,
                     "Template resource collides with a generated file: " +
                     path);
             package.files.push_back({path, bytes, false});
-            package.template_files.push_back(path);
             resources[path] = Sha256(bytes);
         }
         package.toolchain = {def.toolchain.engine,
@@ -543,7 +541,6 @@ PlanResult LatexPlanner::Plan(const RenderRequest& request,
                         ToString(package.toolchain.bibliography_engine)},
                        {"packages", package_audit},
                        {"files", files},
-                       {"requiredAssets", JsonArray{}},
                        {"nodes", ir}};
         JsonArray assets;
         for (const auto& asset : package.required_assets)

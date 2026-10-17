@@ -143,7 +143,16 @@ void BuildCoordinator::WorkerLoop() {
         }
 
         SetPhase(BuildPhase::Rendering);
-        BuildResult result = BuildOne(snapshot);
+        BuildResult result;
+        // 渲染器/规划器对不安全输入会抛异常；异常绝不能穿透 worker 线程
+        // （那会直接终止进程），而是转成可展示的 InternalError 结果。
+        try {
+            result = BuildOne(snapshot);
+        } catch (const std::exception& e) {
+            result = InternalFailure(snapshot, e.what());
+        } catch (...) {
+            result = InternalFailure(snapshot, "unknown exception");
+        }
         bool superseded = false;
         {
             std::lock_guard lock(mutex_);
@@ -172,6 +181,31 @@ void BuildCoordinator::EmitEvent(const BuildId& build_id, BuildEventType type, s
     host_.on_build_event(event);
 }
 
+BuildResult BuildCoordinator::InternalFailure(const BuildSnapshot& snapshot, const std::string& what) const {
+    BuildResult result;
+    result.project_id = snapshot.project_id;
+    result.snapshot_id = snapshot.snapshot_id;
+    result.build_id = snapshot.build_id;
+    result.revision = snapshot.revision;
+    result.outcome = BuildResult::Outcome::Failure;
+    result.failure_kind = CompileFailureKind::InternalError;
+    result.started_ms = BuildEventNowMs();
+    result.finished_ms = result.started_ms;
+    result.exit_code = -1;
+    result.log = "internal error: " + what;
+    Diagnostic diagnostic;
+    diagnostic.build_id = result.build_id;
+    diagnostic.revision = result.revision;
+    diagnostic.source = DiagnosticSource::Renderer;
+    diagnostic.severity = DiagnosticSeverity::Error;
+    diagnostic.location = DiagnosticLocation::ForProject();
+    diagnostic.code = "E-BUILD-INTERNAL";
+    diagnostic.message = "The build pipeline failed internally: " + what;
+    result.diagnostics.push_back(std::move(diagnostic));
+    EmitEvent(result.build_id, BuildEventType::BuildFailed, result.log);
+    return result;
+}
+
 BuildResult BuildCoordinator::BuildOne(const BuildSnapshot& snapshot) {
     BuildResult result;
     result.project_id = snapshot.project_id;
@@ -193,12 +227,7 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot& snapshot) {
     validation_input.template_id = snapshot.template_id;
     validation_input.resolved_template = snapshot.resolved_template;
     validation_input.template_error = snapshot.template_error;
-    validation_input.has_bibliography = !snapshot.bibliography_bibtex.empty();
     validation_input.bibliography_keys = ExtractBibliographyKeys(snapshot.bibliography_bibtex);
-    for (const auto& [destination, source] : snapshot.asset_sources) {
-        (void)source;
-        validation_input.asset_paths.push_back(destination);
-    }
     auto validation = Validator().Validate(validation_input);
     result.diagnostics = validation.diagnostics;
     if (!validation.can_render) {
@@ -249,13 +278,11 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot& snapshot) {
         // \includegraphics 路径能解析到真实文件（assets/<name>.<ext>），
         // 而不是悬空的名称。
         const auto dump_root = *snapshot.debug_dump_dir;
-        if (!dump_root.empty()) {
-            for (const auto& [destination_name, source] : snapshot.asset_sources) {
-                const auto dump_asset = std::filesystem::path(dump_root) / destination_name;
-                std::filesystem::create_directories(dump_asset.parent_path(), dump_ec);
-                std::filesystem::copy_file(source, dump_asset, std::filesystem::copy_options::overwrite_existing,
-                                           dump_ec);
-            }
+        for (const auto& [destination_name, source] : snapshot.asset_sources) {
+            const auto dump_asset = std::filesystem::path(dump_root) / destination_name;
+            std::filesystem::create_directories(dump_asset.parent_path(), dump_ec);
+            std::filesystem::copy_file(source, dump_asset, std::filesystem::copy_options::overwrite_existing,
+                                       dump_ec);
         }
     }
 

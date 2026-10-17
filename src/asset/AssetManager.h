@@ -41,7 +41,6 @@ struct AssetImportResult {
 struct ImportedAssetCandidate {
     AssetId id;
     AssetMetadata metadata;
-    std::filesystem::path staged_path; // 文件已在 assets/ 目录内
 };
 
 class AssetRegistry {
@@ -52,7 +51,6 @@ class AssetRegistry {
     }
 
     void Register(AssetMetadata metadata);
-    bool Unregister(const AssetId& id);
 
   private:
     std::unordered_map<AssetId, AssetMetadata> assets_;

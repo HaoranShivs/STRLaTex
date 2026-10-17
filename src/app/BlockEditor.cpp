@@ -39,6 +39,7 @@
 #include <initializer_list>
 
 #include "app/MathPreviewRenderer.h"
+#include "app/QtConvert.h"
 #include "app/Theme.h"
 #include "app/math/MathRenderService.h"
 #include "document/InlineText.h"
@@ -48,13 +49,6 @@ namespace pf::gui {
 
 namespace {
 using theme::kAccent;
-
-QString ToQ(const std::string& s) {
-    return QString::fromStdString(s);
-}
-std::string ToStd(const QString& s) {
-    return s.toStdString();
-}
 
 // QTextEdit::cursorRect() 使用 viewport 坐标；按当前排版行的实际高度
 // 在光标下方留出两行，再转换为屏幕坐标供浮动列表使用。
@@ -249,7 +243,6 @@ std::vector<InsertOption> InsertOptionsFor(bool body_empty, NodeKind container_k
     std::vector<InsertOption> options;
     // 标题只能插入到容器能够承载的层级，
     // 且仅当模板支持该深度时。
-    const int container_depth = HeadingDepth(container_kind);
     if (!in_subsubsection && 1 <= max_heading_depth) {
         options.push_back({"Section Title", "section", "Structure"});
     }
@@ -259,7 +252,6 @@ std::vector<InsertOption> InsertOptionsFor(bool body_empty, NodeKind container_k
     if ((in_section || in_subsection) && 3 <= max_heading_depth) {
         options.push_back({"Subsubsection Title", "subsubsection", "Structure"});
     }
-    (void)container_depth;
     options.push_back({"Text", "text", "Content"});
     options.push_back({"Equation", "equation", "Content"});
     options.push_back({"Figure", "figure", "Content"});
@@ -860,24 +852,15 @@ void BlockEditor::ShowReferencePicker(InlineEditor* editor) {
 }
 
 // 立即提交一个富文本行：选择器不得依赖稍后的 focusOut。文档通过
-// ParagraphContentEdited 同步更新。
+// ParagraphContentEdited 同步更新。提交语义与 CommitBlock 完全一致。
 void BlockEditor::CommitInlineRow(InlineEditor* editor) {
     if (!editor)
         return;
     for (auto& block : blocks_) {
-        if (block.inline_editor != editor)
-            continue;
-        const InlineContent content = editor->Content();
-        if (content == block.committed_content) {
-            editor->MarkClean();
+        if (block.inline_editor == editor) {
+            CommitBlock(block);
             return;
         }
-        block.committed_content = content;
-        block.committed_text = ToQ(pf::InlineToPlainText(content));
-        editor->MarkClean();
-        emit ParagraphContentEdited(block.node_id, content);
-        emit RowCommitted();
-        return;
     }
 }
 
@@ -1282,7 +1265,6 @@ QWidget* BlockEditor::MakeCard(const QString& node_id, const QString& kind, cons
     card->setObjectName("blockCard");
     card->setProperty("row_node", node_id);
     card->setProperty("row_kind", kind);
-    card->setProperty("commit_role", commit_role);
 
     auto* card_layout = new QVBoxLayout(card);
     // 纤细外观（UI 方案 §2）：卡片内边距来自主题，并按角色保留留白，
@@ -1319,7 +1301,6 @@ QWidget* BlockEditor::MakeCard(const QString& node_id, const QString& kind, cons
                             .arg(theme::kSecondaryText, theme::kAccentSoft));
     const bool can_restructure = !node_id.isEmpty();
     const bool can_reflow = IsProseRole(commit_role);
-    more->setVisible(false);
     connect(more, &QToolButton::clicked, this, [this, more, card, node_id, can_restructure, can_reflow]() {
         if (!can_restructure && !can_reflow)
             return;
@@ -1756,7 +1737,6 @@ void BlockEditor::OpenSlashMenu(QPlainTextEdit* origin) {
     const int max_depth = max_heading_depth_ > 0 ? max_heading_depth_ : 3;
 
     std::vector<PopupList::Item> items;
-    const char* current_group = nullptr;
     for (const auto& entry : InsertOptionsFor(row_node.isEmpty(), container, max_depth)) {
         PopupList::Item item;
         item.label = QString::fromUtf8(entry.label);
@@ -1764,22 +1744,12 @@ void BlockEditor::OpenSlashMenu(QPlainTextEdit* origin) {
         item.group = QString::fromUtf8(entry.group);
         item.payload = QString::fromUtf8(entry.kind);
         item.search = item.label.toLower();
-        if (current_group == nullptr || std::strcmp(current_group, entry.group) != 0) {
-            current_group = entry.group;
-        }
         items.push_back(std::move(item));
     }
 
-    QString after;
-    for (const auto& block : blocks_) {
-        if (block.editor == origin) {
-            after = block.node_id;
-            break;
-        }
-    }
     auto* popup = new PopupList(this);
     connect(popup, &PopupList::chosen, this,
-            [this, after](QString payload) { emit InsertBlockRequested(payload, after); });
+            [this, row_node](QString payload) { emit InsertBlockRequested(payload, row_node); });
     QPoint anchor = origin->mapToGlobal(QPoint(60, origin->height() + 4));
     popup->popup(anchor, items);
 }

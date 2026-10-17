@@ -8,8 +8,6 @@
 #include <string>
 #include <vector>
 
-#include "document/DocumentIndex.h"
-#include "editing/AnchorResolver.h"
 #include "editing/EditCommand.h"
 #include "editing/UndoHistory.h"
 
@@ -63,28 +61,18 @@ class EditingSystem {
     UndoHistory& history() noexcept {
         return history_;
     }
-    DocumentIndex& index() noexcept {
-        return index_;
-    }
-    const DocumentIndex& index() const noexcept {
-        return index_;
-    }
-
-    // 用于把连续输入合并为一条 undo 记录的 transaction key。
-    void BeginTypingTransaction(const NodeId& paragraph);
-    void EndTypingTransaction();
 
   private:
     EditResult ApplyDocumentPayload(const EditCommand& cmd, const EditPayload& payload);
     EditResult ApplyFullPayload(const EditCommand& cmd);
+    // Undo 与 Redo 的唯一实现：恢复 snapshot 或重放模板变更。
+    EditResult ApplyHistoryEntry(const HistoryEntry& entry, EditOrigin origin);
 
     void Notify(const EditCommand& cmd, ProjectRevision old_rev, ProjectRevision new_rev, std::vector<NodeId> affected,
                 std::vector<ChangeKind> kinds);
 
     Host host_;
     UndoHistory history_;
-    AnchorResolver anchor_resolver_;
-    DocumentIndex index_;
 };
 
 } // namespace pf

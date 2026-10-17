@@ -259,14 +259,6 @@ void VisitHeadings(const Document& document, const std::function<void(const Node
     });
 }
 
-void VisitSections(const Document& document, const std::function<void(const Section&, size_t index)>& visit) {
-    if (!visit)
-        return;
-    const auto& sections = BodyOf(document).sections;
-    for (size_t si = 0; si < sections.size(); ++si)
-        visit(sections[si], si);
-}
-
 void VisitInlineContent(const Document& document,
                         const std::function<void(const InlineContent&, const NodeAddress&)>& visit) {
     if (!visit)

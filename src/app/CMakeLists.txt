@@ -1,11 +1,13 @@
 # Qt6 GUI — PaperForge desktop editor.
+#
+# The GUI components are compiled once into an OBJECT library and linked into
+# every GUI executable (app, smoke test, screenshot tool and the four widget
+# regression tests). Before this, the same 16-file list was repeated per
+# target, which meant 85 compilations where 16 suffice.
 set(CMAKE_AUTOMOC ON)
 
-add_executable(paperforge-gui
-    main.cpp
-    EditorItemKind.cpp
+add_library(pf_gui_objects OBJECT
     InlineEditor.cpp
-    MainWindow.cpp
     AddReferenceDialog.cpp
     TemplateImportDialog.cpp
     ProjectController.cpp
@@ -15,92 +17,61 @@ add_executable(paperforge-gui
     OutlinePanel.cpp
     ProblemsPanel.cpp
     WelcomePage.cpp
+    MainWindow.cpp
     MathPreviewRenderer.cpp
     math/MathRenderService.cpp
     InlineMathObjectRenderer.cpp
     CitationObjectRenderer.cpp
     MathEditorDialog.cpp
 )
-
-target_include_directories(paperforge-gui PRIVATE
+set_target_properties(pf_gui_objects PROPERTIES AUTOMOC ON)
+target_include_directories(pf_gui_objects PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/src
 )
-target_link_libraries(paperforge-gui PRIVATE
+target_link_libraries(pf_gui_objects PUBLIC
     pf_app
     Qt6::Widgets
 )
-target_compile_definitions(paperforge-gui PRIVATE PF_INSTALL_ROOT="${CMAKE_SOURCE_DIR}")
+target_compile_definitions(pf_gui_objects PUBLIC PF_INSTALL_ROOT="${CMAKE_SOURCE_DIR}")
+
+# The Q_OBJECT classes all live in pf_gui_objects. Consumers only add their own
+# main/test translation units, so AUTOMOC is switched off there to avoid
+# generating duplicate meta-object definitions for those same classes.
+function(paperforge_gui_executable target)
+    add_executable(${target} ${ARGN})
+    set_target_properties(${target} PROPERTIES AUTOMOC OFF)
+    target_link_libraries(${target} PRIVATE pf_gui_objects)
+endfunction()
+
+# Desktop application.
+paperforge_gui_executable(paperforge-gui main.cpp)
 
 # GUI end-to-end smoke test (offscreen-capable).
-add_executable(paperforge-gui-smoke
-    EditorItemKind.cpp
-    InlineEditor.cpp
-    GuiSmokeTest.cpp
-    ProjectController.cpp
-    MathPreviewRenderer.cpp
-    math/MathRenderService.cpp
-    InlineMathObjectRenderer.cpp
-    CitationObjectRenderer.cpp
-    MathEditorDialog.cpp
-)
-set_property(TARGET paperforge-gui-smoke PROPERTY AUTOMOC ON)
-target_link_libraries(paperforge-gui-smoke PRIVATE pf_app Qt6::Core Qt6::Widgets)
-target_compile_definitions(paperforge-gui-smoke PRIVATE PF_INSTALL_ROOT="${CMAKE_SOURCE_DIR}")
+paperforge_gui_executable(paperforge-gui-smoke GuiSmokeTest.cpp)
+add_test(NAME gui_smoke COMMAND paperforge-gui-smoke)
+set_tests_properties(gui_smoke PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    LABELS "gui")
 
 # UI verification tool (screenshots of real window states).
-add_executable(paperforge-ui-verify
-    EditorItemKind.cpp
-    InlineEditor.cpp
-    UiVerify.cpp
-    MainWindow.cpp
-    AddReferenceDialog.cpp
-    TemplateImportDialog.cpp
-    ProjectController.cpp
-    BlockEditor.cpp
-    PopupList.cpp
-    PdfPreview.cpp
-    OutlinePanel.cpp
-    ProblemsPanel.cpp
-    WelcomePage.cpp
-    MathPreviewRenderer.cpp
-    math/MathRenderService.cpp
-    InlineMathObjectRenderer.cpp
-    CitationObjectRenderer.cpp
-    MathEditorDialog.cpp
-)
-set_property(TARGET paperforge-ui-verify PROPERTY AUTOMOC ON)
-target_include_directories(paperforge-ui-verify PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(paperforge-ui-verify PRIVATE pf_app Qt6::Widgets)
-target_compile_definitions(paperforge-ui-verify PRIVATE PF_INSTALL_ROOT="${CMAKE_SOURCE_DIR}")
+paperforge_gui_executable(paperforge-ui-verify UiVerify.cpp)
+set_target_properties(paperforge-ui-verify PROPERTIES
+    PROJECT_LABEL "tool: screenshot verification")
 
 # Regression test: input typed into a row must survive idle time (no periodic
 # rebuild wiping the editor).
-add_executable(paperforge-gui-persistence-test
-    EditorItemKind.cpp
-    InlineEditor.cpp
-    EditorPersistenceTest.cpp
-    MainWindow.cpp
-    AddReferenceDialog.cpp
-    TemplateImportDialog.cpp
-    ProjectController.cpp
-    BlockEditor.cpp
-    PopupList.cpp
-    PdfPreview.cpp
-    OutlinePanel.cpp
-    ProblemsPanel.cpp
-    WelcomePage.cpp
-    MathPreviewRenderer.cpp
-    math/MathRenderService.cpp
-    InlineMathObjectRenderer.cpp
-    CitationObjectRenderer.cpp
-    MathEditorDialog.cpp
-)
-set_property(TARGET paperforge-gui-persistence-test PROPERTY AUTOMOC ON)
+paperforge_gui_executable(paperforge-gui-persistence-test EditorPersistenceTest.cpp)
+target_include_directories(paperforge-gui-persistence-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/tests)
+target_link_libraries(paperforge-gui-persistence-test PRIVATE Qt6::Test)
+add_test(NAME gui_input_persistence COMMAND paperforge-gui-persistence-test)
+set_tests_properties(gui_input_persistence PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    LABELS "gui;integration")
 
 # Rich inline editor tests (widget level, so they need a QApplication).
-add_executable(paperforge-inline-editor-test
+paperforge_gui_executable(paperforge-inline-editor-test
     InlineEditorEditorTest.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestInlineEditor.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestInlinePdf.cpp
@@ -113,92 +84,21 @@ add_executable(paperforge-inline-editor-test
     ${CMAKE_SOURCE_DIR}/tests/TestProjectPreviewGui.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestReferenceEntryGui.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestTemplateImportGui.cpp
-    EditorItemKind.cpp
-    InlineEditor.cpp
-    MainWindow.cpp
-    AddReferenceDialog.cpp
-    TemplateImportDialog.cpp
-    ProjectController.cpp
-    BlockEditor.cpp
-    PopupList.cpp
-    PdfPreview.cpp
-    OutlinePanel.cpp
-    ProblemsPanel.cpp
-    WelcomePage.cpp
-    MathPreviewRenderer.cpp
-    math/MathRenderService.cpp
-    InlineMathObjectRenderer.cpp
-    CitationObjectRenderer.cpp
-    MathEditorDialog.cpp
 )
-set_property(TARGET paperforge-inline-editor-test PROPERTY AUTOMOC ON)
 target_include_directories(paperforge-inline-editor-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/tests)
-target_link_libraries(paperforge-inline-editor-test PRIVATE
-    pf_app Qt6::Widgets Qt6::Test)
-target_compile_definitions(paperforge-inline-editor-test
-    PRIVATE PF_INSTALL_ROOT="${CMAKE_SOURCE_DIR}")
-add_test(NAME inline_editor
-         COMMAND paperforge-inline-editor-test)
+target_link_libraries(paperforge-inline-editor-test PRIVATE Qt6::Test)
+add_test(NAME inline_editor COMMAND paperforge-inline-editor-test)
 set_tests_properties(inline_editor PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     LABELS "gui;sanitizer")
-target_include_directories(paperforge-gui-persistence-test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(paperforge-gui-persistence-test PRIVATE
-    pf_app Qt6::Widgets Qt6::Test)
-target_compile_definitions(paperforge-gui-persistence-test
-    PRIVATE PF_INSTALL_ROOT="${CMAKE_SOURCE_DIR}")
-add_test(NAME gui_input_persistence
-         COMMAND paperforge-gui-persistence-test)
-set_tests_properties(gui_input_persistence PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-    LABELS "gui;integration")
 
 # P0-05 regression: every block kind must have a GUI projection at every
 # heading level (figures/tables below a Section used to render nowhere).
-add_executable(paperforge-block-projection-test
-    EditorItemKind.cpp
-    InlineEditor.cpp
-    MainWindow.cpp
-    AddReferenceDialog.cpp
-    TemplateImportDialog.cpp
-    ProjectController.cpp
-    BlockEditor.cpp
-    PopupList.cpp
-    PdfPreview.cpp
-    OutlinePanel.cpp
-    ProblemsPanel.cpp
-    WelcomePage.cpp
-    MathPreviewRenderer.cpp
-    math/MathRenderService.cpp
-    InlineMathObjectRenderer.cpp
-    CitationObjectRenderer.cpp
-    MathEditorDialog.cpp
-    BlockProjectionTest.cpp
-)
-set_property(TARGET paperforge-block-projection-test PROPERTY AUTOMOC ON)
+paperforge_gui_executable(paperforge-block-projection-test BlockProjectionTest.cpp)
 target_include_directories(paperforge-block-projection-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/tests)
-target_link_libraries(paperforge-block-projection-test PRIVATE
-    pf_app Qt6::Widgets)
-target_compile_definitions(paperforge-block-projection-test
-    PRIVATE PF_INSTALL_ROOT="${CMAKE_SOURCE_DIR}")
-add_test(NAME block_projection
-         COMMAND paperforge-block-projection-test)
+add_test(NAME block_projection COMMAND paperforge-block-projection-test)
 set_tests_properties(block_projection PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     LABELS "gui")
-
-# E-05: paperforge-gui-smoke existed but was registered with CTest nowhere, so
-# its checks never ran in CI. It is a real test, not a tool.
-add_test(NAME gui_smoke COMMAND paperforge-gui-smoke)
-set_tests_properties(gui_smoke PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-    LABELS "gui")
-
-# E-05: paperforge-ui-verify is a screenshot tool, not a test. It is marked as
-# such instead of silently sitting in "built but never executed" limbo.
-set_property(TARGET paperforge-ui-verify PROPERTY EXCLUDE_FROM_ALL FALSE)
-set_target_properties(paperforge-ui-verify PROPERTIES
-    PROJECT_LABEL "tool: screenshot verification")

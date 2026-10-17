@@ -14,8 +14,7 @@ Structure Node            Block
                           └── DisplayEquation
 ```
 
-* 领域模型保持这套区分不变；GUI 用 `EditorItemKind`（`src/app/EditorItemKind.h`）
-  重新命名表达层：
+* 领域模型保持这套区分不变；GUI 在 `BlockEditor` 的卡片表里重新命名表达层：
 
 | GUI 名称 | 领域类型 | 说明 |
 | --- | --- | --- |
@@ -26,13 +25,13 @@ Structure Node            Block
 | Text | `Paragraph` | 领域模型名不变，只改 GUI 表达 |
 | Equation / Figure / Table | `DisplayEquation` / `Figure` / `Table` | |
 
-* `EditorItemKind` 同时提供人读标签（`EditorItemLabel`）和稳定机器名
-  （`EditorItemKindName`，如 `"text"`、`"subsubsection"`）。插入菜单与 `/`
-  命令菜单的 payload 都用机器名，`MainWindow` 再映射到具体 EditCommand。
+* GUI 行类型的人读标签由 `BlockEditor` 内部的 kind 字符串表提供（如 `"text"`、
+  `"subsubsection"`）；插入菜单与 `/` 命令菜单的 payload 直接用这些机器名，
+  `MainWindow` 再映射到具体 EditCommand。
 
 ## 2. DocumentTraversal：遍历只写一份
 
-之前 Renderer、Validator、DocumentIndex、Outline、删除/移动定位各自维护一套
+之前 Renderer、Validator、Outline、删除/移动定位各自维护一套
 `for section / for subsection`，块类型的 switch 被手抄了三遍。加入第三层标题
 意味着要同时改五处。现在嵌套关系只存在于
 `src/document/DocumentTraversal.{h,cpp}`：
@@ -65,10 +64,10 @@ std::vector<NodeId> CollectAllNodeIds(const Document&);
 
 已迁移到 Traversal 的模块：`Document`（ContainsNode/GetNodeKind/
 CollectNodeIds）、`DocumentEditor`（Find*/FindBlockPosition/InsertBlock/
-DeleteBlock/MoveBlock）、`DocumentIndex`、`Validator`（语义 + 悬空交叉引用 +
+DeleteBlock/MoveBlock）、`Validator`（语义 + 悬空交叉引用 +
 标题深度）、`LatexRenderer`（正文与资源收集）、`ProjectController`
-（DeleteNode / MoveNodeAfter / DeleteSubsubsection）、`BlockEditor`
-（插入菜单容器判定）、`OutlinePanel`。
+（DeleteNode / MoveNodeAfter / ResolveInsertionPoint / InsertSectionAfter）、
+`BlockEditor`（插入菜单容器判定）、`OutlinePanel`。
 
 ## 3. Subsubsection（第三级标题）
 
@@ -133,7 +132,6 @@ Load project → detect schema version → migrate (in memory) → current Docum
 | `SubsubsectionSurvivesUndoAndRedo` | 快照式 Undo/Redo 保留 id |
 | `SubsubsectionBlocksMoveAndValidate` | 块在三级容器间移动后文档仍有效 |
 | `RendererEmitsSubsubsectionWithLabel` | `\subsubsection` + `\label` |
-| `DocumentIndexCoversThirdLevel` | 第三层坐标与 parent 指向 |
 | `TemplateCapabilityLimitsHeadingDepth` / `ValidatorWarnsWhenHeadingExceedsTemplateDepth` | 模板能力 |
 | `SchemaMigrationV1ToV2…` / `SchemaMigrationIsIdempotent…` / `LoadMigratesOldProjectFileInMemory` | migration |
 | `SubsubsectionRoundTripsThroughProjectFile` | 序列化 id 稳定 |

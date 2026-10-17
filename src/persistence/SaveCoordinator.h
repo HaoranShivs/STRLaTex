@@ -30,8 +30,6 @@ enum class SaveKind : std::uint8_t {
     Autosave, // 崩溃恢复 snapshot，绝不清除 Dirty
 };
 
-const char* ToString(SaveKind kind);
-
 // P0-03：单个保存任务的结果。Superseded 与 IoError 不同——
 // 旧 snapshot 被更新的保存取代属于正常的「最新者胜」行为，
 // 并非磁盘故障，UI 不得为此显示吓人的错误。
@@ -44,7 +42,6 @@ enum class SaveOutcome : std::uint8_t {
 };
 
 SaveOutcome OutcomeFromResult(const SaveResult& result, bool superseded);
-const char* ToString(SaveOutcome outcome);
 
 // 不可变、自包含的保存作业。入队后由 worker 持有。
 struct SaveTask {

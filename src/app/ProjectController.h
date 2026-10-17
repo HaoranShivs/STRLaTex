@@ -86,7 +86,6 @@ class ProjectController : public QObject {
                               const QString& label = QString());
     EditResult InsertEquationAfter(const NodeId& anchor, const QString& math, bool numbered,
                                    const QString& label = QString());
-    EditResult InsertFigure(const NodeId& parent, const QString& image_path);
     EditResult InsertFigureAfter(const NodeId& anchor, const QString& image_path);
     EditResult InsertTableAfter(const NodeId& anchor);
     // InlineEditor 使用的结构化提交：粗体／斜体片段、引文、
@@ -167,11 +166,12 @@ class ProjectController : public QObject {
     EditCommand MakeCmd(FullEditPayload payload) const;
     std::optional<InsertionPoint> ResolveInsertionPoint(const NodeId& anchor) const;
     EditResult ExecuteAndNotify(FullEditPayload payload);
+    // Undo/Redo 共用：执行历史动作、同步模板选择并发出状态变化。
+    void ApplyHistory(bool redo);
 
     std::unique_ptr<ProjectSession> session_;
     QTimer* pump_timer_ = nullptr;
     bool shutting_down_ = false;
-    bool build_in_flight_ = false;
 };
 
 } // namespace pf::gui

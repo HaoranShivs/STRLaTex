@@ -457,8 +457,6 @@ TectonicCompiler::TectonicCompiler(std::string executable, std::string cache_dir
     if (!executable_.empty() && std::filesystem::exists(executable_, ec)) {
         executable_ = std::filesystem::absolute(executable_, ec).string();
     }
-    (void)cache_dir_; // bundle 缓存解析保持原样；见下文
-    cache_dir_ = std::move(cache_dir);
     std::error_code ec2;
     if (!cache_dir_.empty() && std::filesystem::exists(cache_dir_, ec2)) {
         cache_dir_ = std::filesystem::absolute(cache_dir_, ec2).string();

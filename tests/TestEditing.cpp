@@ -1,9 +1,9 @@
-// 编辑协议测试：revision、撤销/重做、锚点。
+// 编辑协议测试：revision、撤销/重做。
 #include "TestMain.hpp"
 
 #include "core/IdGenerator.h"
 #include "document/InlineText.h"
-#include "editing/AnchorResolver.h"
+#include "editing/EditCommand.h"
 #include "editing/EditingSystem.h"
 #include "project/ProjectState.h"
 #include <memory>
@@ -132,30 +132,6 @@ PF_TEST(EditingSystemEvents) {
     PF_CHECK(h.events[0].old_revision.value == 0);
     PF_CHECK(h.events[0].new_revision.value == 1);
     PF_CHECK(h.events[0].origin == EditOrigin::User);
-}
-
-PF_TEST(AnchorResolverAfterBlock) {
-    TestHost h;
-    auto sec = h.editing->Apply(h.Cmd(InsertSectionPayload{0, InlineFromText("S")}));
-    NodeId sid = sec.created_node;
-    auto p1 = h.editing->Apply(h.Cmd(InsertParagraphPayload{sid, std::nullopt, InlineFromText("first")}));
-
-    AnchorResolver resolver;
-    StableNodeAnchor anchor;
-    anchor.reference_node = p1.created_node;
-    anchor.bias = AnchorBias::After;
-    auto resolved = resolver.Resolve(h.state.document(), anchor);
-    PF_CHECK(resolved.ok());
-    PF_CHECK(resolved.value().parent == sid);
-    PF_CHECK(resolved.value().index.has_value());
-    // 插入到 first 之后 => 索引 1
-    PF_CHECK(*resolved.value().index == 1);
-
-    // 引用节点缺失
-    StableNodeAnchor bad;
-    bad.reference_node = NodeId("ghost");
-    auto failed = resolver.Resolve(h.state.document(), bad);
-    PF_CHECK(!failed.ok());
 }
 
 PF_TEST(UndoHistoryCanRedo) {

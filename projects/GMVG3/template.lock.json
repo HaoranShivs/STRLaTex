@@ -1,0 +1,11 @@
+{
+  "derivedFrom": "project.paper",
+  "projectRevision": 132,
+  "template": {
+    "digest": "2fe5cd487eb00cee03b397b0544dafe4e6a4550d50e2d186e6d7390079a74e81",
+    "id": "ieee-conference",
+    "options": {},
+    "profile": "ieee-conference",
+    "version": "1"
+  }
+}

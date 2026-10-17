@@ -11,13 +11,6 @@
 
 namespace pf {
 
-// Validation profile 选择运行哪些层。
-struct ValidationProfile {
-    bool structural = true;
-    bool semantic = true;
-    bool template_check = true;
-};
-
 // 注意：真实请求会携带 snapshot 数据；定义于 SnapshotFactory 的类型中。
 struct ValidationInput {
     std::string snapshot_id;
@@ -26,9 +19,7 @@ struct ValidationInput {
     std::string template_id;
     std::shared_ptr<const TemplateDefinition> resolved_template;
     std::string template_error;
-    bool has_bibliography = false;
     std::vector<std::string> bibliography_keys;
-    std::vector<std::string> asset_paths; // 已存在资源的相对路径
 };
 
 struct ValidationResult {

@@ -82,8 +82,6 @@ RuntimeInfo RuntimeManager::Initialize() {
         return info_;
     }
 
-    info_.runtime_version = 1;
-    info_.texlive_version = "2026";
     info_.status = RuntimeStatus::Healthy;
     return info_;
 }

@@ -16,15 +16,12 @@
 #include <QVBoxLayout>
 #include <algorithm>
 
+#include "app/QtConvert.h"
 #include "app/Theme.h"
 
 namespace pf::gui {
 
 namespace {
-QString ToQ(const std::string& s) {
-    return QString::fromStdString(s);
-}
-
 // 严重级别排序（方案 §21）：Error 在前，其次是 Warning，最后是 Info；同级
 // 保持到达顺序——对校验器输出而言即文档顺序，对编译器消息而言即行顺序。
 int SeverityRank(DiagnosticSeverity severity) {

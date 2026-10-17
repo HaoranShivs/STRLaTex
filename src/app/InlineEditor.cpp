@@ -310,12 +310,6 @@ void InlineEditor::ResizeToContent() {
     ResizeToWidth(width());
 }
 
-void InlineEditor::SetReferenceItems(std::vector<ReferenceItem> items) {
-    reference_items_ = std::move(items);
-}
-
-// ---------------- 模型 -> 编辑器 ----------------
-
 void InlineEditor::SetBodyTypography(const QFont& font, int line_height_percent) {
     line_height_percent_ = line_height_percent;
     // 程序化设置样式：绝不算作用户编辑，绝不置为 dirty。
@@ -478,10 +472,6 @@ InlineContent InlineEditor::ContentInRange(int begin, int end) const {
     return content;
 }
 
-QString InlineEditor::PlainText() const {
-    return toPlainText();
-}
-
 // ---------------- 标记 ----------------
 
 void InlineEditor::ToggleBold() {
@@ -639,7 +629,6 @@ void InlineEditor::RequestMathRender(const QString& formula_id, const QString& l
     style.color = QColor(theme::kPrimaryText);
     style.font_family = text_font.family();
     style.template_id = property("template_id").toString();
-    ++math_generation_;
     MathRenderService::Shared()->Request(objectName(), formula_id, latex, style);
 }
 

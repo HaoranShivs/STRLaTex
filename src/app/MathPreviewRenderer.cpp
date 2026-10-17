@@ -10,8 +10,6 @@
 #include <QHash>
 #include <QImage>
 #include <QImageReader>
-#include <QMutex>
-#include <QMutexLocker>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPen>
@@ -22,6 +20,7 @@
 #include <QSet>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QVector>
 
 #include <algorithm>
@@ -46,7 +45,6 @@ constexpr qreal kFracScale = 0.85;  // 分子 / 分母的缩放系数
 constexpr qreal kMinScale = 0.45;   // 缩放下限，保证字形清晰可读
 constexpr int kTexTimeoutMs = 12000;
 constexpr int kRasterTimeoutMs = 8000;
-constexpr int kMaxCacheEntries = 256;
 constexpr qreal kTexBasePointSize = 10.0;
 // Give the PDF rasterizer room for glyph overhang, then remove the transparent
 // page margin from the final bitmap. The GUI scales the complete bitmap.
@@ -1903,22 +1901,6 @@ MathRenderResult RenderWithTex(const QString& latex, const MathRenderStyle& styl
     return result;
 }
 
-QString CacheKey(const QString& latex, const MathRenderStyle& style) {
-    return latex + QChar(0x1f) + QString::number(style.font_px) + QChar(0x1f) + style.color.name(QColor::HexArgb) +
-           QChar(0x1f) + QString::number(style.device_pixel_ratio, 'f', 2) + QChar(0x1f) + style.font_family +
-           QChar(0x1f) + style.template_id + QChar(0x1f) + QString::number(static_cast<int>(style.backend));
-}
-
-QHash<QString, MathRenderResult>& RenderCache() {
-    static QHash<QString, MathRenderResult> cache;
-    return cache;
-}
-
-QMutex& RenderCacheMutex() {
-    static QMutex mutex;
-    return mutex;
-}
-
 void TrimTransparentMargins(MathRenderResult& result) {
     if (result.image.isNull())
         return;
@@ -1963,8 +1945,8 @@ void TrimTransparentMargins(MathRenderResult& result) {
 
 } // namespace
 
-// P0-07：共享缓存只存储纯图像结果，因此可以在 math worker 线程中安全访问
-// （QPixmap 绝不能跨越该边界）。
+// P0-07：本函数只做渲染，不缓存。缓存由 MathRenderService 的
+// MathRenderCache（LRU）统一负责，避免同一份公式在两层缓存里各存一份位图。
 MathRenderResult RenderMathPreviewImage(const QString& latex, const MathRenderStyle& style) {
     MathRenderResult empty;
     if (latex.trimmed().isEmpty())
@@ -1974,13 +1956,6 @@ MathRenderResult RenderMathPreviewImage(const QString& latex, const MathRenderSt
         res.exact = false;
         res.note = QStringLiteral("no QGuiApplication: cannot render");
         return res;
-    }
-    const QString cache_key = CacheKey(latex, style);
-    {
-        QMutexLocker lock(&RenderCacheMutex());
-        const auto found = RenderCache().constFind(cache_key);
-        if (found != RenderCache().constEnd())
-            return found.value();
     }
 
     MathRenderResult rendered;
@@ -2005,13 +1980,6 @@ MathRenderResult RenderMathPreviewImage(const QString& latex, const MathRenderSt
     }
 
     TrimTransparentMargins(rendered);
-
-    {
-        QMutexLocker lock(&RenderCacheMutex());
-        if (RenderCache().size() >= kMaxCacheEntries)
-            RenderCache().clear();
-        RenderCache().insert(cache_key, rendered);
-    }
     return rendered;
 }
 

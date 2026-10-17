@@ -7,7 +7,6 @@
 
 #include "core/IdGenerator.h"
 #include "document/DocumentEditor.h"
-#include "document/DocumentIndex.h"
 #include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
 #include "editing/EditingSystem.h"
@@ -378,27 +377,6 @@ PF_TEST(RendererEmitsSubsubsectionWithLabel) {
     const auto& subsub = BodyOf(doc).sections[0].subsections[0].subsubsections[0];
     PF_CHECK(tex.find("\\subsubsection{" + InlineToPlainText(subsub.title) + "}\\label{" + subsub.id.value() + "}") !=
              std::string::npos);
-}
-
-PF_TEST(DocumentIndexCoversThirdLevel) {
-    Document doc;
-    SeedThreeLevels(doc);
-    DocumentIndex index;
-    index.Rebuild(doc);
-
-    const auto& subsub = BodyOf(doc).sections[0].subsections[0].subsubsections[0];
-    auto location = index.Find(subsub.id);
-    PF_CHECK(location.has_value());
-    PF_CHECK(location->kind == NodeKind::Subsubsection);
-    PF_CHECK(location->in_subsubsection);
-    PF_CHECK(location->subsubsection_index == 0);
-    PF_CHECK(location->parent == BodyOf(doc).sections[0].subsections[0].id);
-
-    // 它内部的 block 以该 subsubsection 作为其父节点。
-    const NodeId block_id = std::visit([](const auto& b) { return b.id; }, subsub.blocks[0]);
-    auto block_location = index.Find(block_id);
-    PF_CHECK(block_location.has_value());
-    PF_CHECK(block_location->parent == subsub.id);
 }
 
 // ---------------- 模板能力 ----------------

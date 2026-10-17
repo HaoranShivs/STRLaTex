@@ -22,9 +22,6 @@ struct PdfArtifact {
     bool valid() const noexcept {
         return !path.empty();
     }
-    void clear() {
-        path.clear();
-    }
 };
 
 struct PreviewUpdate {

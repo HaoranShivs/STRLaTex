@@ -112,6 +112,8 @@ class BuildCoordinator {
     // 为空操作，因此忽略事件的测试仍可正常工作。
     void EmitEvent(const BuildId& build_id, BuildEventType type, std::string message) const;
     BuildResult BuildOne(const BuildSnapshot& snapshot);
+    // 把流水线内部异常转成结构化的失败结果（worker 线程的异常边界）。
+    BuildResult InternalFailure(const BuildSnapshot& snapshot, const std::string& what) const;
 
     Host host_;
     ICompiler* compiler_ = nullptr;

@@ -8,17 +8,11 @@
 #include "core/IdGenerator.h"
 #include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
+#include "app/QtConvert.h"
 
 namespace pf::gui {
 
 namespace {
-QString ToQ(const std::string& s) {
-    return QString::fromStdString(s);
-}
-std::string ToStd(const QString& s) {
-    return s.toStdString();
-}
-
 const char* ToString(PersistenceState state) {
     switch (state) {
     case PersistenceState::Clean:
@@ -141,34 +135,30 @@ EditResult ProjectController::ExecuteAndNotify(FullEditPayload payload) {
 }
 
 std::optional<ProjectController::InsertionPoint> ProjectController::ResolveInsertionPoint(const NodeId& anchor) const {
-    const auto& sections = session_->state().document().body().sections;
+    const auto& document = session_->state().document();
+    const auto& sections = document.body().sections;
     if (anchor.empty()) {
         if (sections.empty())
             return std::nullopt;
         return InsertionPoint{sections.back().id, std::nullopt};
     }
-    for (const auto& section : sections) {
-        if (section.id == anchor) {
-            return InsertionPoint{section.id, size_t{0}};
-        }
-        for (size_t i = 0; i < section.blocks.size(); ++i) {
-            const NodeId id = std::visit([](const auto& block) { return block.id; }, section.blocks[i]);
-            if (id == anchor)
-                return InsertionPoint{section.id, i + 1};
-        }
-        for (const auto& subsection : section.subsections) {
-            if (subsection.id == anchor) {
-                return InsertionPoint{subsection.id, size_t{0}};
-            }
-            for (size_t i = 0; i < subsection.blocks.size(); ++i) {
-                const NodeId id = std::visit([](const auto& block) { return block.id; }, subsection.blocks[i]);
-                if (id == anchor) {
-                    return InsertionPoint{subsection.id, i + 1};
-                }
-            }
-        }
+    // 一次遍历给出「锚点是什么、在哪个容器里」，不再手写三级嵌套循环。
+    const auto address = LocateNode(document, anchor);
+    if (!address)
+        return std::nullopt;
+    if (address->is_heading())
+        return InsertionPoint{anchor, size_t{0}};
+    if (!address->block || !address->section)
+        return std::nullopt;
+    const Section& section = sections[*address->section];
+    NodeId parent = section.id;
+    if (address->subsection) {
+        const Subsection& sub = section.subsections[*address->subsection];
+        parent = sub.id;
+        if (address->subsubsection)
+            parent = sub.subsubsections[*address->subsubsection].id;
     }
-    return std::nullopt;
+    return InsertionPoint{parent, *address->block + 1};
 }
 
 namespace {
@@ -275,10 +265,7 @@ void ProjectController::EmitProjectStateChanged() {
 EditResult ProjectController::SetTitle(const QString& text) {
     SetTitlePayload p;
     p.title = InlineFromText(ToStd(text));
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::SetAbstract(const QString& text) {
@@ -288,10 +275,7 @@ EditResult ProjectController::SetAbstract(const QString& text) {
     } else {
         p.abstract_text = InlineFromText(ToStd(text));
     }
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::SetAuthorsText(const QString& comma_separated) {
@@ -378,10 +362,8 @@ EditResult ProjectController::SetAuthorAffiliation(size_t author_index, const Af
     UpdateAuthorPayload payload;
     payload.index = author_index;
     payload.author = std::move(updated);
-    auto result = ExecuteAndNotify(std::move(payload));
-    if (result.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return result;
+    // ExecuteAndNotify 已经发出 documentChanged，这里不能再发一次。
+    return ExecuteAndNotify(std::move(payload));
 }
 
 EditResult ProjectController::SetAffiliationsText(const QString& semicolon_separated) {
@@ -406,11 +388,8 @@ EditResult ProjectController::SetAffiliationsText(const QString& semicolon_separ
         p.affiliations.push_back(std::move(aff));
         ++slot;
     }
-    auto r = session_->Execute(MakeCmd(std::move(p)));
     // EditingSystem 会清除不再能解析的作者链接。
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::SetKeywordsText(const QString& comma_separated) {
@@ -421,49 +400,25 @@ EditResult ProjectController::SetKeywordsText(const QString& comma_separated) {
         if (!kw.isEmpty())
             p.keywords.push_back(ToStd(kw));
     }
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::InsertSection(const QString& title) {
     InsertSectionPayload p;
     p.index = session_->state().document().body().sections.size();
     p.title = InlineFromText(ToStd(title));
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::InsertSectionAfter(const NodeId& anchor, const QString& title) {
-    const auto& sections = session_->state().document().body().sections;
-    for (size_t si = 0; si < sections.size(); ++si) {
-        bool belongs = sections[si].id == anchor;
-        for (const auto& block : sections[si].blocks) {
-            if (belongs)
-                break;
-            belongs = std::visit([&](const auto& value) { return value.id == anchor; }, block);
-        }
-        for (const auto& subsection : sections[si].subsections) {
-            if (belongs)
-                break;
-            belongs = subsection.id == anchor;
-            for (const auto& block : subsection.blocks) {
-                if (belongs)
-                    break;
-                belongs = std::visit([&](const auto& value) { return value.id == anchor; }, block);
-            }
-        }
-        if (!belongs)
-            continue;
-        InsertSectionPayload payload;
-        payload.index = si + 1;
-        payload.title = InlineFromText(ToStd(title));
-        return ExecuteAndNotify(std::move(payload));
-    }
-    return InsertSection(title);
+    // 新 section 插到锚点所属 section 之后；锚点不存在时退化为追加。
+    const auto address = LocateNode(session_->state().document(), anchor);
+    if (!address || !address->section)
+        return InsertSection(title);
+    InsertSectionPayload payload;
+    payload.index = *address->section + 1;
+    payload.title = InlineFromText(ToStd(title));
+    return ExecuteAndNotify(std::move(payload));
 }
 
 EditResult ProjectController::InsertSubsection(size_t section_index, const QString& title) {
@@ -471,10 +426,7 @@ EditResult ProjectController::InsertSubsection(size_t section_index, const QStri
     p.section_index = section_index;
     p.index = session_->state().document().body().sections[section_index].subsections.size();
     p.title = InlineFromText(ToStd(title));
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::InsertSubsectionAfter(const NodeId& anchor, const QString& title) {
@@ -495,10 +447,7 @@ EditResult ProjectController::InsertSubsubsection(size_t section_index, size_t s
         session_->state().document().body().sections[section_index].subsections[subsection_index].subsubsections;
     p.index = subsubsections.size();
     p.title = InlineFromText(ToStd(title));
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::InsertSubsubsectionAfter(const NodeId& anchor, const QString& title) {
@@ -512,10 +461,7 @@ EditResult ProjectController::RenameSubsubsection(const NodeId& subsubsection, c
     RenameSubsubsectionPayload p;
     p.subsubsection = subsubsection;
     p.title = InlineFromText(ToStd(title));
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::DeleteSubsubsection(const NodeId& subsubsection) {
@@ -534,10 +480,7 @@ EditResult ProjectController::InsertParagraph(const NodeId& parent, const QStrin
     InsertParagraphPayload p;
     p.parent = parent;
     p.content = InlineFromText(ToStd(text));
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::InsertParagraphAfter(const NodeId& anchor, const QString& text) {
@@ -566,10 +509,7 @@ EditResult ProjectController::InsertEquation(const NodeId& parent, const QString
     p.latex = ToStd(math);
     p.numbered = numbered;
     p.label = ToStd(label);
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::InsertEquationAfter(const NodeId& anchor, const QString& math, bool numbered,
@@ -585,13 +525,6 @@ EditResult ProjectController::InsertEquationAfter(const NodeId& anchor, const QS
     payload.numbered = numbered;
     payload.label = ToStd(label);
     return ExecuteAndNotify(std::move(payload));
-}
-
-EditResult ProjectController::InsertFigure(const NodeId& parent, const QString& image_path) {
-    auto r = session_->InsertFigureFromSource(ToStd(image_path), parent);
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
 }
 
 EditResult ProjectController::InsertFigureAfter(const NodeId& anchor, const QString& image_path) {
@@ -623,10 +556,7 @@ EditResult ProjectController::EditParagraphRich(const NodeId& paragraph, const I
     EditParagraphPayload p;
     p.paragraph = paragraph;
     p.content = content; // 已是结构化数据，无需字符串往返
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::EditEquation(const NodeId& equation, const QString& math, bool numbered,
@@ -636,20 +566,14 @@ EditResult ProjectController::EditEquation(const NodeId& equation, const QString
     p.latex = ToStd(math);
     p.numbered = numbered;
     p.label = ToStd(label);
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::RenameSection(const NodeId& section, const QString& title) {
     RenameSectionPayload p;
     p.section = section;
     p.title = InlineFromText(ToStd(title));
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::RenameSubsection(const NodeId& subsection, const QString& title) {
@@ -657,10 +581,7 @@ EditResult ProjectController::RenameSubsection(const NodeId& subsection, const Q
     RenameSubsectionPayload p;
     p.subsection = subsection;
     p.title = InlineFromText(ToStd(title));
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::EditCaption(const NodeId& block, const QString& caption) {
@@ -680,10 +601,7 @@ EditResult ProjectController::EditFigureSpan(const NodeId& figure, bool double_c
 EditResult ProjectController::DeleteBlock(const NodeId& block) {
     DeleteBlockPayload p;
     p.node = block;
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 EditResult ProjectController::DeleteNode(const NodeId& node) {
@@ -892,10 +810,7 @@ EditResult ProjectController::MoveNode(const NodeId& node, int direction) {
 EditResult ProjectController::DeleteSection(size_t index) {
     DeleteSectionPayload p;
     p.index = index;
-    auto r = session_->Execute(MakeCmd(std::move(p)));
-    if (r.status == EditStatus::Applied)
-        EmitDocumentChanged();
-    return r;
+    return ExecuteAndNotify(std::move(p));
 }
 
 // 旧的 GUI 侧 InsertCitation / InsertCrossReference 辅助函数已移除
@@ -904,23 +819,21 @@ EditResult ProjectController::DeleteSection(size_t index) {
 // EditParagraphRich 进入文档，因此选择器的提交与文档绝不会不一致。
 
 void ProjectController::Undo() {
-    const auto template_before = session_->state().template_selection();
-    auto r = session_->Undo();
-    if (r.status == EditStatus::Applied) {
-        if (template_before != session_->state().template_selection())
-            emit templateChanged(ToQ(session_->state().template_selection()));
-        EmitDocumentChanged();
-    }
+    ApplyHistory(false);
 }
 
 void ProjectController::Redo() {
+    ApplyHistory(true);
+}
+
+void ProjectController::ApplyHistory(bool redo) {
     const auto template_before = session_->state().template_selection();
-    auto r = session_->Redo();
-    if (r.status == EditStatus::Applied) {
-        if (template_before != session_->state().template_selection())
-            emit templateChanged(ToQ(session_->state().template_selection()));
-        EmitDocumentChanged();
-    }
+    const auto r = redo ? session_->Redo() : session_->Undo();
+    if (r.status != EditStatus::Applied)
+        return;
+    if (template_before != session_->state().template_selection())
+        emit templateChanged(ToQ(session_->state().template_selection()));
+    EmitDocumentChanged();
 }
 
 void ProjectController::ChangeTemplate(const QString& template_id) {

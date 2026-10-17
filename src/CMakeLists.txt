@@ -1,7 +1,6 @@
 # Core library: strong ids, revisions, results, diagnostics.
 add_library(pf_core STATIC
     core/Diagnostic.cpp
-    core/IdGenerator.cpp
     core/IoError.cpp
     core/Json.cpp
     core/ProjectPath.cpp
@@ -24,7 +23,6 @@ target_link_libraries(pf_math PUBLIC pf_core)
 add_library(pf_document STATIC
     document/Document.cpp
     document/DocumentEditor.cpp
-    document/DocumentIndex.cpp
     document/DocumentTraversal.cpp
     document/InlineText.cpp
 )
@@ -34,7 +32,6 @@ target_link_libraries(pf_document PUBLIC pf_core pf_math)
 add_library(pf_editing STATIC
     editing/EditingSystem.cpp
     editing/UndoHistory.cpp
-    editing/AnchorResolver.cpp
 )
 target_link_libraries(pf_editing PUBLIC pf_document)
 
@@ -105,9 +102,7 @@ target_link_libraries(pf_persistence PUBLIC pf_document pf_asset pf_bibliography
 
 # Application session
 add_library(pf_app STATIC
-    project/ApplicationEvent.cpp
     project/PreviewGate.cpp
-    project/ProjectState.cpp
     project/SnapshotFactory.cpp
     project/ProjectSession.cpp
     project/ProjectTemplates.cpp

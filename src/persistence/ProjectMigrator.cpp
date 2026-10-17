@@ -4,10 +4,6 @@
 
 namespace pf {
 
-const char* ProjectMigrator::CurrentVersion() {
-    return kSchemaVersion;
-}
-
 bool ProjectMigrator::IsKnownVersion(const std::string& version) {
     return version == kSchemaVersionV1 || version == kSchemaVersionV2 || version == kSchemaVersion;
 }

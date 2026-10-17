@@ -48,10 +48,6 @@ std::optional<CitationDisplayInfo> CitationNumberResolver::Find(const std::strin
     return std::nullopt;
 }
 
-bool CitationNumberResolver::IsKnown(const std::string& key) const {
-    return known_keys_.count(key) != 0;
-}
-
 std::string CitationNumberResolver::FormatPill(const std::vector<std::string>& keys) const {
     // 每个 key 收集一个 token：其编号，无法解析时为 "?"。
     std::vector<int> numbers;

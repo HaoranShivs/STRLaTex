@@ -473,18 +473,6 @@ JsonValue BlocksToJson(const std::vector<Block>& blocks) {
     return JsonValue(std::move(arr));
 }
 
-bool BlocksFromJson(const JsonValue* value, std::vector<Block>* out) {
-    if (!value || !value->is_array())
-        return false;
-    for (const auto& item : value->as_array()) {
-        auto block = BlockFromJson(&item);
-        if (!block)
-            return false;
-        out->push_back(std::move(*block));
-    }
-    return true;
-}
-
 // 带描述的包装：指出出错的 block 类型，使加载错误能说明问题所在，
 // 而不是只给出干巴巴的 "bad block"。
 std::optional<std::string> BlocksFromJsonDetailed(const JsonValue* value, std::vector<Block>* out) {

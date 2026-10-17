@@ -209,7 +209,6 @@ MathValidation ValidateMath(const std::string& latex, MathFlavor /*flavor*/) {
         }
 
         if (c == '\\') {
-            const size_t command_start = i;
             const std::string command = ReadCommand(latex, &i);
             if (command.empty())
                 continue; // 末尾的反斜杠
@@ -263,7 +262,6 @@ MathValidation ValidateMath(const std::string& latex, MathFlavor /*flavor*/) {
                                                            "\\" +
                                                                command);
             }
-            (void)command_start;
             continue;
         }
 

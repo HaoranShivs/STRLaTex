@@ -34,7 +34,6 @@ class PdfPreview : public QWidget {
     // 让预览指向已构建的 PDF（传空则清空窗格）。
     void SetDocument(const QString& pdf_path);
     void Clear();
-    void SetMessage(const QString& text);
 
     // 以显示单位表示的缩放：1.0 表示页面按 100% 显示。
     void SetZoom(double zoom);
@@ -45,7 +44,6 @@ class PdfPreview : public QWidget {
     void ZoomOut();
     void ResetZoom();
     void FitWidth();
-    void FitPage();
     // 滚动到整个文档的指定比例处（0..1）。
     void ScrollTo(double fraction_x, double fraction_y);
 
@@ -57,9 +55,6 @@ class PdfPreview : public QWidget {
 
     static constexpr double kMinZoom = 0.25;
     static constexpr double kMaxZoom = 8.0;
-
-  signals:
-    void zoomChanged(double zoom);
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -82,9 +77,6 @@ class PdfPreview : public QWidget {
     int RenderDpiFor(double zoom) const;
     void ZoomAtPoint(double new_zoom, const QPoint& viewport_pos);
     void UpdateZoomLabel();
-    void RebuildPageWidgets();
-    void UpdatePageSizes();
-    void UpdateViewportExtent();
     void EnsureVisiblePages();
     void UpdateColumnSize();
     void ScheduleViewportUpdate();

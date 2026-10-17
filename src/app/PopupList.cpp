@@ -71,7 +71,6 @@ void PopupList::popup(const QPoint& global_pos, const std::vector<Item>& items, 
     move(position);
     show();
     raise();
-    // search_box_->setFocus(Qt::PopupFocusReason);
     if (!filter.isEmpty()) {
         search_box_->setText(filter);
     }
@@ -84,9 +83,8 @@ void PopupList::Refilter() {
 
 void PopupList::SetFilter(const QString& text) {
     QString needle = text.trimmed().toLower();
-    if (!needle.startsWith('/') && !needle.startsWith('@')) {
-        // 调用方已经去掉了触发字符；此处保持原样
-    } else {
+    if (needle.startsWith('/') || needle.startsWith('@')) {
+        // 触发字符可能仍由调用方保留；两种写法都接受。
         needle.remove(0, 1);
     }
     list_->clear();

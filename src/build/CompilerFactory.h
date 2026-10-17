@@ -26,9 +26,6 @@ class CompilerFactory {
     // 模板请求的 engine 标志。
     std::unique_ptr<ICompiler> Create(const TemplateDefinition& tpl) const;
 
-    // build 请求应当携带的 toolchain（方案 §14）。
-    BuildToolchain ToolchainFor(const TemplateDefinition& tpl) const;
-
   private:
     std::filesystem::path texlive_root_;
 };

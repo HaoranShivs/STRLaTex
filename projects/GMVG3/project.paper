@@ -1,33 +1,63 @@
 {
   "assets": [
     {
-      "fileSize": 123317,
-      "hash": "3b2b7602554cb319",
-      "height": 1042,
-      "id": "a13",
-      "mediaType": "image/jpeg",
-      "originalName": "point_label_examples.jpg",
-      "path": "a12_point_label_examples.jpg",
-      "width": 2100
-    },
-    {
-      "fileSize": 557465,
-      "hash": "49381d252bc76def",
-      "height": 1312,
-      "id": "a9",
+      "fileSize": 9767,
+      "hash": "dc9b265c92ff17d6",
+      "height": 93,
+      "id": "a5",
       "mediaType": "image/png",
-      "originalName": "GMVG_pipeline.png",
-      "path": "a8_GMVG_pipeline.png",
-      "width": 3131
+      "originalName": "弱监督学习范式.png",
+      "path": "_____________________.png",
+      "width": 851
     },
     {
       "fileSize": 149256,
       "hash": "3187bcc5c9da062a",
       "height": 494,
-      "id": "a7",
+      "id": "a11",
       "mediaType": "image/jpeg",
       "originalName": "fa.jpg",
-      "path": "fa.jpg",
+      "path": "a10_fa.jpg",
+      "width": 2100
+    },
+    {
+      "fileSize": 123317,
+      "hash": "3b2b7602554cb319",
+      "height": 1042,
+      "id": "a4",
+      "mediaType": "image/jpeg",
+      "originalName": "point_label_examples.jpg",
+      "path": "a3_point_label_examples.jpg",
+      "width": 2100
+    },
+    {
+      "fileSize": 1259751,
+      "hash": "fd1642b0bf736415",
+      "height": 3205,
+      "id": "a3",
+      "mediaType": "image/png",
+      "originalName": "dir_msg_visulization.png",
+      "path": "dir_msg_visulization.png",
+      "width": 2929
+    },
+    {
+      "fileSize": 1259751,
+      "hash": "fd1642b0bf736415",
+      "height": 3205,
+      "id": "a2",
+      "mediaType": "image/png",
+      "originalName": "dir_msg_visulization.png",
+      "path": "a1_dir_msg_visulization.png",
+      "width": 2929
+    },
+    {
+      "fileSize": 123317,
+      "hash": "3b2b7602554cb319",
+      "height": 1042,
+      "id": "a6",
+      "mediaType": "image/jpeg",
+      "originalName": "point_label_examples.jpg",
+      "path": "a5_point_label_examples.jpg",
       "width": 2100
     },
     {
@@ -41,64 +71,34 @@
       "width": 747
     },
     {
-      "fileSize": 123317,
-      "hash": "3b2b7602554cb319",
-      "height": 1042,
-      "id": "a6",
-      "mediaType": "image/jpeg",
-      "originalName": "point_label_examples.jpg",
-      "path": "a5_point_label_examples.jpg",
-      "width": 2100
-    },
-    {
-      "fileSize": 1259751,
-      "hash": "fd1642b0bf736415",
-      "height": 3205,
-      "id": "a2",
-      "mediaType": "image/png",
-      "originalName": "dir_msg_visulization.png",
-      "path": "a1_dir_msg_visulization.png",
-      "width": 2929
-    },
-    {
-      "fileSize": 1259751,
-      "hash": "fd1642b0bf736415",
-      "height": 3205,
-      "id": "a3",
-      "mediaType": "image/png",
-      "originalName": "dir_msg_visulization.png",
-      "path": "dir_msg_visulization.png",
-      "width": 2929
-    },
-    {
-      "fileSize": 123317,
-      "hash": "3b2b7602554cb319",
-      "height": 1042,
-      "id": "a4",
-      "mediaType": "image/jpeg",
-      "originalName": "point_label_examples.jpg",
-      "path": "a3_point_label_examples.jpg",
-      "width": 2100
-    },
-    {
       "fileSize": 149256,
       "hash": "3187bcc5c9da062a",
       "height": 494,
-      "id": "a11",
+      "id": "a7",
       "mediaType": "image/jpeg",
       "originalName": "fa.jpg",
-      "path": "a10_fa.jpg",
+      "path": "fa.jpg",
       "width": 2100
     },
     {
-      "fileSize": 9767,
-      "hash": "dc9b265c92ff17d6",
-      "height": 93,
-      "id": "a5",
+      "fileSize": 557465,
+      "hash": "49381d252bc76def",
+      "height": 1312,
+      "id": "a9",
       "mediaType": "image/png",
-      "originalName": "弱监督学习范式.png",
-      "path": "_____________________.png",
-      "width": 851
+      "originalName": "GMVG_pipeline.png",
+      "path": "a8_GMVG_pipeline.png",
+      "width": 3131
+    },
+    {
+      "fileSize": 123317,
+      "hash": "3b2b7602554cb319",
+      "height": 1042,
+      "id": "a13",
+      "mediaType": "image/jpeg",
+      "originalName": "point_label_examples.jpg",
+      "path": "a12_point_label_examples.jpg",
+      "width": 2100
     }
   ],
   "bibliographyPath": "references.bib",
@@ -109,7 +109,7 @@
           {
             "content": [
               {
-                "text": "In recent years, infrared small-target detection (IRSTD) has gained increasing impor tance in diverse applications such as ecological and environmental monitoring",
+                "text": "In recent years, infrared small-target detection (IRSTD) has gained increasing impor tance in diverse applications such as ecological and environmental monitoring ",
                 "type": "text"
               },
               {
@@ -120,18 +120,54 @@
                 "type": "citation"
               },
               {
-                "text": ", maritime search and rescue [2,3], and military reconnaissance [4,5]. This is primarily attributed to the superior properties of infrared radiation, its longer effective range and stronger pene tration capability compared to visible light. In IRSTD tasks, typical targets include drones, aerostats, and ships, which generally exhibit the following characteristics [6]: (i) Lowtar get ener gy. ",
+                "text": ", maritime search and rescue ",
                 "type": "text"
               },
               {
                 "keys": [
-                  "2006Random"
+                  "10703135"
                 ],
                 "mode": "parenthetical",
                 "type": "citation"
               },
               {
-                "text": "Duetosevere signal attenuation over long-range propagation, the received infrared signal is very weak, resulting in extremely low contrast between the target and the strong background clutter. Consequently, the target is easily overwhelmed by background noise. (ii) Small target size. Under long-range imaging conditions, targets often span only a handful of pixels, lacking discernible texture, shape, or structural information. (iii) Com plex background. Real-world scenarios frequently involve numerous interfering elements, such as edges, corners, and other salient structures that significantly hinder the accurate separation of small targets from the background.",
+                "keys": [
+                  "10695116"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": ", and military reconnaissance ",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "10508299"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "keys": [
+                  "Philipp2011Efficient"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": ". This is primarily attributed to the superior properties of infrared radiation, its longer effective range and stronger pene tration capability compared to visible light. In IRSTD tasks, typical targets include drones, aerostats, and ships, which generally exhibit the following characteristics ",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "wang2019miss"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": ": (i) Lowtar get energy. Duetosevere signal attenuation over long-range propagation, the received infrared signal is very weak, resulting in extremely low contrast between the target and the strong background clutter. Consequently, the target is easily overwhelmed by background noise. (ii) Small target size. Under long-range imaging conditions, targets often span only a handful of pixels, lacking discernible texture, shape, or structural information. (iii) Complex background. Real-world scenarios frequently involve numerous interfering elements, such as edges, corners, and other salient structures that significantly hinder the accurate separation of small targets from the background.",
                 "type": "text"
               }
             ],
@@ -231,7 +267,14 @@
     ]
   },
   "projectId": "p1",
-  "revision": 121,
+  "revision": 132,
   "schemaVersion": "3",
-  "template": "ieee-conference"
+  "template": "ieee-conference",
+  "templateBinding": {
+    "digest": "2fe5cd487eb00cee03b397b0544dafe4e6a4550d50e2d186e6d7390079a74e81",
+    "id": "ieee-conference",
+    "options": {},
+    "profile": "ieee-conference",
+    "version": "1"
+  }
 }

@@ -161,7 +161,6 @@ PF_TEST(ValidatorReportsUnknownCitationKey) {
     ValidationInput input;
     input.document = &doc;
     input.template_id = "generic-article";
-    input.has_bibliography = true;
     input.bibliography_keys = {"real2024"};
     auto result = validator.Validate(input);
     PF_CHECK(CountDiagnostics(result, "E-CITATION-UNKNOWN-KEY") == 1);
@@ -184,7 +183,6 @@ PF_TEST(ValidatorReportsCitationsWithoutBibliography) {
     ValidationInput input;
     input.document = &doc;
     input.template_id = "generic-article";
-    input.has_bibliography = false; // 空参考文献
     auto result = validator.Validate(input);
     // 只报一条可读的项目级错误，绝不按 key 逐个报噪声错误。
     PF_CHECK(CountDiagnostics(result, "E-CITATION-NO-BIBLIOGRAPHY") == 1);

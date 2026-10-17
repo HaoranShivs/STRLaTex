@@ -62,9 +62,6 @@ class InlineEditor : public QTextEdit {
     // 本次编辑后 document 应当存储的内容。
     InlineContent Content() const;
 
-    // 外围 UI 在 tooltip/outline 中显示的纯文本。
-    QString PlainText() const;
-
     bool IsDirty() const {
         return dirty_;
     }
@@ -89,15 +86,6 @@ class InlineEditor : public QTextEdit {
     void ResizeToWidth(int width);
 
     enum class TokenKind : int { Citation = 1, CrossReference = 2, Math = 3 };
-
-    // 供 citation / cross-reference 选择器使用的引用项。
-    // label、detail、payload = citation key 或 node id。
-    struct ReferenceItem {
-        QString label;
-        QString detail;
-        QString payload;
-    };
-    void SetReferenceItems(std::vector<ReferenceItem> items);
 
     // pill 的 citation 顺序编号（citation 方案 §3）。以 shared_ptr 持有，使每一
     // 行都能基于同一份 document 级映射解析显示编号；重新加载该行会重绘 pill。
@@ -238,7 +226,6 @@ class InlineEditor : public QTextEdit {
     void SanitizeTokens();
     // 从 document 的 [begin, end) 区间中提取结构化内容。
     InlineContent ContentInRange(int begin, int end) const;
-    std::vector<ReferenceItem> reference_items_;
     bool dirty_ = false;
     bool loading_ = false;
     bool refreshing_displays_ = false;
@@ -248,7 +235,6 @@ class InlineEditor : public QTextEdit {
     // P0-07：该行渲染过的每个公式都会获得一个稳定 id，而每次渲染请求都会递增该
     // 行的 generation，从而丢弃针对旧公式的迟到回复。editor id 是创建该行时赋予
     // 的 objectName。
-    std::uint64_t math_generation_ = 0;
     std::uint64_t next_formula_id_ = 0;
     // 正文排版（UI 方案 §5）：每次重新加载都重新应用比例行高，使 150% 在
     // SetContent/clear 之后依然保留。

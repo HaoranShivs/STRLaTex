@@ -19,9 +19,6 @@ namespace pf {
 
 class ProjectMigrator {
   public:
-    // 本 build 写入并理解的 schema 版本。
-    static const char* CurrentVersion();
-
     // 当本 build 能理解 `version` 时返回 true（可能需经 migration）。
     static bool IsKnownVersion(const std::string& version);
 

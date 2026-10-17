@@ -22,8 +22,6 @@ enum class EditOrigin : std::uint8_t {
     System,
 };
 
-const char* ToString(EditOrigin origin);
-
 // ---------------- 载荷 ----------------
 
 struct SetTitlePayload {
@@ -286,8 +284,6 @@ struct EditCommand {
     ProjectRevision base_revision;
     EditOrigin origin = EditOrigin::User;
     FullEditPayload payload;
-
-    const char* PayloadName() const;
 };
 
 // 历史记录项：用于 undo/redo 的逆向信息。两种存储策略：
@@ -312,18 +308,6 @@ struct HistoryEntry {
     HistoryAction action;
     OperationId operation_id;
     ProjectRevision resulting_revision;
-};
-
-// 稳定锚点（架构 十）。
-enum class AnchorBias : std::uint8_t {
-    Before,
-    After,
-    InsideEnd,
-};
-
-struct StableNodeAnchor {
-    NodeId reference_node;
-    AnchorBias bias = AnchorBias::After;
 };
 
 } // namespace pf
