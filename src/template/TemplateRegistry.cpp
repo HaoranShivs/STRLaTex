@@ -1,4 +1,5 @@
 #include "template/TemplateRegistry.h"
+#include "core/ContentHash.h"
 
 namespace pf {
 
@@ -19,17 +20,16 @@ TemplateRegistry::TemplateRegistry() {
         //（CitationNumberResolver）。`plain` 会按字母序排列参考文献，
         //因此编辑器里的 [1] 与 PDF 对不上。`unsrtnat` 按引用顺序编号——
         //正好符合 GUI 的策略——由 natbib 提供（renderer 只要遇到 .bib
-        // 就会加载 natbib）。IEEE 保留 `IEEEtran`，同样是按引用顺序。
+        // 就会加载 natbib）。IEEE 使用官方的 natbib 变体
+        // IEEEtranN，保持引用顺序并支持叙述式引用。
         t.bibliography_style = "unsrtnat";
-        t.preamble_lines = {
-            "\\usepackage{amsmath}",
-            "\\usepackage{amssymb}",
-            "\\usepackage{graphicx}",
-            "\\usepackage{booktabs}",
-            "\\usepackage[margin=1in]{geometry}",
-            "\\usepackage[hidelinks]{hyperref}",
-            "\\usepackage{caption}",
-        };
+        t.packages = {{"amsmath", ""},
+                      {"amssymb", ""},
+                      {"graphicx", ""},
+                      {"booktabs", ""},
+                      {"geometry", "margin=1in"},
+                      {"hyperref", "hidelinks"},
+                      {"caption", ""}};
         // 普通 article 类对引擎无要求，但生产路径同样是 pdfLaTeX + BibTeX（方案 §8）。
         t.toolchain.engine = LatexEngine::PdfLatex;
         t.toolchain.bibliography_engine = BibliographyEngine::BibTex;
@@ -43,14 +43,12 @@ TemplateRegistry::TemplateRegistry() {
         t.document_class = "IEEEtran";
         t.class_options = {"conference"};
         t.two_column = true;
-        t.bibliography_style = "IEEEtran";
-        t.preamble_lines = {
-            "\\usepackage{amsmath}",
-            "\\usepackage{amssymb}",
-            "\\usepackage{graphicx}",
-            "\\usepackage{booktabs}",
-            "\\usepackage[hidelinks]{hyperref}",
-        };
+        t.bibliography_style = "IEEEtranN";
+        t.packages = {{"amsmath", ""},
+                      {"amssymb", ""},
+                      {"graphicx", ""},
+                      {"booktabs", ""},
+                      {"hyperref", "hidelinks"}};
         // IEEE 会议论文必须列出作者的所属机构。
         t.required.authors = true;
         t.required.affiliations = true;
@@ -59,7 +57,21 @@ TemplateRegistry::TemplateRegistry() {
         t.required.keywords = true;
         // IEEEtran 会议模式支持 \\subsubsection，因此三个标题层级都可用。
         t.capabilities.max_heading_depth = 3;
+        t.frontmatter = "ieee-conference-v1";
+        t.toolchain.bibliography_engine = BibliographyEngine::BibTex;
+        t.toolchain.required_packages = {"IEEEtran", "amsmath", "booktabs",
+                                         "natbib", "hyperref"};
         templates_[t.id] = t;
+    }
+    for (auto& [id, def] : templates_) {
+        std::string identity = "paperforge-template-api-1\n" + id + "\n" +
+                               def.frontmatter + "\n" + def.document_class +
+                               "\n" + def.bibliography_style;
+        for (const auto& option : def.class_options)
+            identity += "\n" + option;
+        for (const auto& p : def.packages)
+            identity += "\n" + p.name + "[" + p.options + "]";
+        def.binding = {id, "1", Sha256(identity), id, {}};
     }
 }
 

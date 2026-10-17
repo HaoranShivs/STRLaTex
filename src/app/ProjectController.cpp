@@ -904,21 +904,40 @@ EditResult ProjectController::DeleteSection(size_t index) {
 // EditParagraphRich 进入文档，因此选择器的提交与文档绝不会不一致。
 
 void ProjectController::Undo() {
+    const auto template_before = session_->state().template_selection();
     auto r = session_->Undo();
-    if (r.status == EditStatus::Applied)
+    if (r.status == EditStatus::Applied) {
+        if (template_before != session_->state().template_selection())
+            emit templateChanged(ToQ(session_->state().template_selection()));
         EmitDocumentChanged();
+    }
 }
 
 void ProjectController::Redo() {
+    const auto template_before = session_->state().template_selection();
     auto r = session_->Redo();
-    if (r.status == EditStatus::Applied)
+    if (r.status == EditStatus::Applied) {
+        if (template_before != session_->state().template_selection())
+            emit templateChanged(ToQ(session_->state().template_selection()));
         EmitDocumentChanged();
+    }
 }
 
 void ProjectController::ChangeTemplate(const QString& template_id) {
     session_->ChangeTemplate(ToStd(template_id));
-    emit templateChanged(template_id);
+    emit templateChanged(ToQ(session_->state().template_selection()));
     EmitDocumentChanged();
+}
+
+Result<void>
+ProjectController::InstallTemplate(const VerifiedTemplatePackage& package,
+                                   const QString& profile_id) {
+    auto result = session_->InstallVerifiedTemplate(package, ToStd(profile_id));
+    if (result) {
+        emit templateChanged(ToQ(session_->state().template_selection()));
+        EmitDocumentChanged();
+    }
+    return result;
 }
 
 void ProjectController::RequestBuild(bool manual) {

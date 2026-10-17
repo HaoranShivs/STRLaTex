@@ -513,6 +513,9 @@ std::string ProjectSerializer::Serialize(const SerializedProject& project) {
     root["projectId"] = project.project_id;
     root["revision"] = project.revision.value;
     root["template"] = project.template_id;
+    if (project.template_binding)
+        root["templateBinding"] =
+            TemplateBindingToJson(*project.template_binding);
     root["bibliographyPath"] = project.bibliography_path;
 
     // FrontMatter
@@ -704,6 +707,14 @@ Result<SerializedProject, std::string> ProjectSerializer::Deserialize(const std:
     }
     if (const auto* v = root->find("template")) {
         project.template_id = v->as_string();
+    }
+    if (const auto* v = root->find("templateBinding")) {
+        auto binding = TemplateBindingFromJson(*v);
+        if (!binding)
+            return Unexpected(binding.error());
+        if (binding.value().id != project.template_id)
+            return Unexpected("templateBinding.id disagrees with template");
+        project.template_binding = std::move(binding.value());
     }
     if (const auto* v = root->find("bibliographyPath")) {
         project.bibliography_path = v->as_string();
@@ -925,6 +936,33 @@ SaveResult ProjectPersistence::Save(const SaveRequest& request) {
         return result;
     }
     result.status = SaveResult::Status::Ok;
+    // Derived export/audit view. project.paper is authoritative and was
+    // replaced first. Recovery files do not publish a root lock for an unsaved
+    // project revision.
+    if (dest.filename() == "project.paper" &&
+        request.snapshot.template_binding) {
+        auto lock_path = ResolveUntrustedProjectPath(dest.parent_path(),
+                                                     "template.lock.json");
+        if (lock_path) {
+            const auto pending =
+                lock_path.value().string() + ".tmp-" + request.save_id;
+            std::ofstream lock(pending, std::ios::binary);
+            lock << JsonValue(
+                        JsonObject{{"template",
+                                    TemplateBindingToJson(
+                                        *request.snapshot.template_binding)},
+                                   {"projectRevision", request.revision.value},
+                                   {"derivedFrom", "project.paper"}})
+                        .Dump();
+            lock.close();
+            if (lock)
+                std::filesystem::rename(pending, lock_path.value(), ec);
+            if (!lock || ec) {
+                std::error_code ignored;
+                std::filesystem::remove(pending, ignored);
+            }
+        }
+    }
     return result;
 }
 

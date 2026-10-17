@@ -50,6 +50,8 @@ if(PF_WARNINGS_AS_ERRORS)
 endif()
 
 find_package(Threads REQUIRED)
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+find_package(ZLIB REQUIRED)
 
 # Locate tectonic for the test suite.
 find_program(PF_TECTONIC_EXE tectonic

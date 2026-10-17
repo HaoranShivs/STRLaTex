@@ -109,7 +109,29 @@
           {
             "content": [
               {
-                "text": "In recent years, infrared small-target detection (IRSTD) has gained increasing impor tance in diverse applications such as ecological and environmental monitoring [1], maritime search and rescue [2,3], and military reconnaissance [4,5]. This is primarily attributed to the superior properties of infrared radiation, its longer effective range and stronger pene tration capability compared to visible light. In IRSTD tasks, typical targets include drones, aerostats, and ships, which generally exhibit the following characteristics [6]: (i) Lowtar get ener gy. Duetosevere signal attenuation over long-range propagation, the received infrared signal is very weak, resulting in extremely low contrast between the target and the strong background clutter. Consequently, the target is easily overwhelmed by background noise. (ii) Small target size. Under long-range imaging conditions, targets often span only a handful of pixels, lacking discernible texture, shape, or structural information. (iii) Com plex background. Real-world scenarios frequently involve numerous interfering elements, such as edges, corners, and other salient structures that significantly hinder the accurate separation of small targets from the background.",
+                "text": "In recent years, infrared small-target detection (IRSTD) has gained increasing impor tance in diverse applications such as ecological and environmental monitoring",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "2006Random"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": ", maritime search and rescue [2,3], and military reconnaissance [4,5]. This is primarily attributed to the superior properties of infrared radiation, its longer effective range and stronger pene tration capability compared to visible light. In IRSTD tasks, typical targets include drones, aerostats, and ships, which generally exhibit the following characteristics [6]: (i) Lowtar get ener gy. ",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "2006Random"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": "Duetosevere signal attenuation over long-range propagation, the received infrared signal is very weak, resulting in extremely low contrast between the target and the strong background clutter. Consequently, the target is easily overwhelmed by background noise. (ii) Small target size. Under long-range imaging conditions, targets often span only a handful of pixels, lacking discernible texture, shape, or structural information. (iii) Com plex background. Real-world scenarios frequently involve numerous interfering elements, such as edges, corners, and other salient structures that significantly hinder the accurate separation of small targets from the background.",
                 "type": "text"
               }
             ],
@@ -209,7 +231,7 @@
     ]
   },
   "projectId": "p1",
-  "revision": 112,
+  "revision": 121,
   "schemaVersion": "3",
   "template": "ieee-conference"
 }

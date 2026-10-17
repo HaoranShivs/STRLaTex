@@ -14,12 +14,14 @@
 #include "core/Result.h"
 #include "document/Document.h"
 #include "persistence/SchemaVersions.h"
+#include "template/TemplateBinding.h"
 namespace pf {
 
 struct SerializedProject {
     std::string project_id;
     std::string schema_version = kSchemaVersion;
     std::string template_id;
+    std::optional<TemplateBinding> template_binding;
     Document document;
     std::vector<AssetMetadata> assets;
     std::string bibliography_path = "references.bib"; // 相对路径

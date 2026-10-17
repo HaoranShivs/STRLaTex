@@ -6,6 +6,8 @@
 
 #include "core/Diagnostic.h"
 #include "document/Document.h"
+#include "template/TemplateRegistry.h"
+#include <memory>
 
 namespace pf {
 
@@ -22,6 +24,8 @@ struct ValidationInput {
     ProjectRevision revision;
     const Document* document = nullptr;
     std::string template_id;
+    std::shared_ptr<const TemplateDefinition> resolved_template;
+    std::string template_error;
     bool has_bibliography = false;
     std::vector<std::string> bibliography_keys;
     std::vector<std::string> asset_paths; // 已存在资源的相对路径

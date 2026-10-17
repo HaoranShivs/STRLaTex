@@ -43,6 +43,9 @@ class EditingSystem {
         std::function<ProjectRevision()> bump_revision; // 返回新的 revision
         std::function<Document&()> document;
         std::function<void(const DocumentChangedEvent&)> on_document_changed;
+        std::function<bool(const ChangeTemplatePayload&)> change_template;
+        std::function<std::string()> template_selection;
+        std::function<std::optional<TemplateBinding>()> template_binding;
     };
 
     EditingSystem() = default;

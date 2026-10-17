@@ -76,7 +76,9 @@ while IFS= read -r package; do
   echo "==> tlmgr install ${package}"
   "${BIN_DIR}/tlmgr" --repository "https://mirror.ctan.org/systems/texlive/tlnet" \
     install "${package}" >> "${WORK}/tlmgr.log" 2>&1 || {
-      echo "   (failed: ${package}; see tlmgr.log)"
+      echo "Required runtime package failed: ${package}"
+      tail -40 "${WORK}/tlmgr.log"
+      exit 1
     }
 done < "${PACKAGES}"
 

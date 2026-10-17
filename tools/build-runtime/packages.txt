@@ -42,3 +42,19 @@ url
 tex-gyre
 cm-super
 kpathsea
+
+# Elsevier CAS publisher bundle dependencies (cas-sc/cas-dc + cas-common).
+# The .cls/.sty/.bst publisher resources themselves stay in imported projects.
+preprint
+makecell
+multirow
+sttools
+xstring
+footmisc
+xcolor
+moreverb
+wrapfig
+stix
+inconsolata
+xkeyval
+upquote

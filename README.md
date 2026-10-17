@@ -3,7 +3,7 @@
 基于 C++20 的结构化学术论文编辑器，按《PaperForge V1 架构基线》完成。
 
 用户编辑论文的**语义结构**，系统内部维护结构化 Document Model，通过 LaTeX Renderer
-和 Tectonic 自动生成 PDF，提供实时编译（debounce / latest-wins / cancellation）、
+和自带 TeX Live（latexmk）自动生成 PDF，提供实时编译（debounce / latest-wins / cancellation）、
 引用管理、错误定位（SourceMap → Node）、保存恢复和 Undo/Redo。
 
 ```
@@ -21,6 +21,10 @@ User → Qt6 GUI / CLI
 线程模型（single-owner application state + immutable async pipeline）见
 [docs/architecture-async.md](docs/architecture-async.md)；仓库布局约定见
 [docs/REPOSITORY.md](docs/REPOSITORY.md)。
+多模板切换、模板导入与生成计划的设计及实现范围见
+[docs/template-render-plan.md](docs/template-render-plan.md)。
+导入模板的操作、manifest 格式和平台依赖见
+[docs/template-import.md](docs/template-import.md)。
 
 ## 模块结构
 
@@ -32,17 +36,16 @@ src/
 ├── editing/       EditCommand / EditingSystem / UndoHistory / AnchorResolver
 ├── project/       ProjectState / SnapshotFactory / ProjectSession
 │                  / ApplicationEvent / PreviewGate / PreviewUpdate
-├── template/      TemplateRegistry（Generic Article / IEEE Conference）
-│                  / TemplateCapabilities（max_heading_depth）
+├── template/      TemplateRegistry / TemplatePackage / TemplateBinding
+│                  （内置模板、项目模板目录、安全 ZIP 导入、资源摘要及固定绑定）
 ├── asset/         AssetManager（staging → 注册分离，内容哈希，图片尺寸嗅探）
 ├── bibliography/  BibTeX 解析 / BibliographyService / 搜索
 ├── validation/    Validator（语义 / 模板层 Diagnostic）
-├── render/        LatexRenderer / SourceMap / BuildPackage
+├── render/        LatexRenderer → LatexPlanner → LatexGenerationPlan → LatexEmitter
+│                  / SourceMap / BuildPackage
 ├── build/         ICompiler / TexLiveCompiler（latexmk + 自带 TeX Live）
 │                  / TectonicCompiler / CompilerFactory / RuntimeManager
 │                  / BuildCoordinator（debounce + latest-wins + 两层取消 + 取消/超时）
-├── template/      TemplateRegistry（… + TemplateToolchainRequirement：
-│                  模板声明编译引擎，两模板均 PdfLatex + BibTex）
 ├── persistence/   ProjectSerializer（project.paper JSON）/ 原子保存
 │                  / SaveCoordinator（worker 线程 + 完成事件）
 │                  / ProjectMigrator（schema V1→V2）
@@ -51,7 +54,7 @@ src/app/           Qt6 GUI（paperforge-gui）：结构化编辑器 + Outline + 
 │                  + Build 状态 + PDF 预览（pdftoppm 渲染）
 │                  + InlineEditor（富文本 Text 行：Bold/Italic/行内公式/
 │                    Citation/Reference token + 选区浮动菜单/右键菜单）
-tests/             106 个单元 + 端到端 + 场景回归测试（含真实 Tectonic 构建、
+tests/             单元 + 端到端 + 场景回归测试（含真实 TeX Live / Tectonic 构建、
 │                  自动保存恢复、M1 线程/协议场景、遍历与三级标题、
 │                  Schema migration、GUI 冒烟）
 └── runtime/       font-test.tex / ieee-test.tex（runtime 健康检查与手工复现）
@@ -121,10 +124,11 @@ cmake --build build/asan
 ctest --test-dir build/asan --output-on-failure
 ```
 
-要求：CMake ≥ 3.16，C++20 编译器（GCC 12+ 已验证），Qt6（可选——未安装时自动
+要求：CMake ≥ 3.16，C++20 编译器（GCC 12+ 已验证）、OpenSSL Crypto 和 zlib 开发库，Qt6（可选——未安装时自动
 跳过 GUI，核心库与 CLI 不受影响），poppler-utils（GUI 的 PDF 预览用 `pdftoppm`，
 可选），perl + 网络（仅构建 runtime 时需要）。**编译 PDF 不依赖用户机器上的
 LaTeX**：PaperForge 用自带的 Portable TeX Live。
+Linux 外部模板导入及构建还需要 Bubblewrap、prlimit 和可用的用户命名空间，详见模板导入文档。
 
 ## 使用
 

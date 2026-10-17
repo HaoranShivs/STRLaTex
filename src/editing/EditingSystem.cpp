@@ -123,10 +123,29 @@ EditResult EditingSystem::Apply(const EditCommand& command) {
 
 EditResult EditingSystem::ApplyFullPayload(const EditCommand& cmd) {
     if (const auto* tpl = std::get_if<ChangeTemplatePayload>(&cmd.payload)) {
+        const auto old_id = host_.template_selection
+                                ? host_.template_selection()
+                                : std::string{};
+        const auto old_binding = host_.template_binding
+                                     ? host_.template_binding()
+                                     : std::optional<TemplateBinding>{};
+        if (host_.change_template && !host_.change_template(*tpl))
+            return EditResult::Fail(FailureReason::InvalidTarget,
+                                    "Template binding is unavailable");
         // 模板变更是项目级变更（架构补充 8）：
         // DocumentVersion 不变，ProjectRevision +1。
         ProjectRevision old_rev = host_.revision();
         ProjectRevision new_rev = host_.bump_revision();
+        if (host_.template_binding && cmd.origin != EditOrigin::Undo &&
+            cmd.origin != EditOrigin::Redo) {
+            HistoryEntry entry;
+            entry.action =
+                TemplateHistoryAction{old_id, tpl->template_id, old_binding,
+                                      host_.template_binding()};
+            entry.operation_id = cmd.operation_id;
+            entry.resulting_revision = new_rev;
+            history_.Push(std::move(entry));
+        }
         Notify(cmd, old_rev, new_rev, {}, {ChangeKind::TemplateChanged});
         return EditResult::Ok(new_rev);
     }
@@ -402,6 +421,7 @@ EditResult EditingSystem::Undo() {
     if (const auto* tpl = std::get_if<TemplateHistoryAction>(&entry->action)) {
         ChangeTemplatePayload p;
         p.template_id = tpl->old_template;
+        p.binding = tpl->old_binding;
         EditCommand cmd;
         cmd.operation_id = OperationId(IdGenerator::NewOperationId());
         cmd.project_id = host_.project_id();
@@ -435,6 +455,7 @@ EditResult EditingSystem::Redo() {
     if (const auto* tpl = std::get_if<TemplateHistoryAction>(&entry->action)) {
         ChangeTemplatePayload p;
         p.template_id = tpl->new_template;
+        p.binding = tpl->new_binding;
         EditCommand cmd;
         cmd.operation_id = OperationId(IdGenerator::NewOperationId());
         cmd.project_id = host_.project_id();

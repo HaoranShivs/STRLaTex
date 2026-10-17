@@ -200,10 +200,10 @@ PF_TEST(GenericArticleUsesCitationOrderBibliographyStyle) {
     PF_CHECK(def != nullptr);
     if (def)
         PF_CHECK(def->bibliography_style == "unsrtnat");
-    // IEEE 保留 IEEEtran —— 同样按引用顺序编号。
+    // 官方 natbib 变体保留 IEEE 引用顺序，并提供叙述式引用的作者标签。
     const auto* ieee = TemplateRegistry::Instance().Find("ieee-conference");
     if (ieee)
-        PF_CHECK(ieee->bibliography_style == "IEEEtran");
+        PF_CHECK(ieee->bibliography_style == "IEEEtranN");
 }
 
 PF_TEST(RendererEmitsSemanticCitesNeverNumbers) {

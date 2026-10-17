@@ -1,8 +1,12 @@
 #include "build/Compiler.h"
 
+#include "core/ContentHash.h"
+#include "core/Json.h"
+#include "core/ProjectPath.h"
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <thread>
 
@@ -29,8 +33,105 @@ std::string QuoteShell(const std::string& value) {
     return quoted;
 }
 
+void RecordCompileInputs(const CompileRequest& request,
+                         const std::filesystem::path& runtime,
+                         const std::filesystem::path& bin_dir) {
+    // Recorder evidence complements the template lock: built-in runtime
+    // classes, fonts, formats and even staged images participate in the compile
+    // identity.
+    JsonObject inputs;
+    std::error_code ec;
+    const auto root = std::filesystem::weakly_canonical(runtime, ec);
+    const auto work = std::filesystem::weakly_canonical(request.workspace, ec);
+    auto record = [&](std::filesystem::path path) {
+        if (path.string().starts_with("/work/"))
+            path = work / path.lexically_relative("/work");
+        if (!path.is_absolute())
+            path = work / path;
+        path = std::filesystem::weakly_canonical(path, ec);
+        if (ec)
+            return;
+        std::string key;
+        auto rel = path.lexically_relative(root).generic_string();
+        if (!rel.empty() && !rel.starts_with("../"))
+            key = "runtime/" + rel;
+        else {
+            rel = path.lexically_relative(work).generic_string();
+            if (!rel.empty() && !rel.starts_with("../"))
+                key = "build/" + rel;
+        }
+        if (key.empty() || inputs.contains(key))
+            return;
+        const auto size = std::filesystem::file_size(path, ec);
+        if (ec || size > 64 * 1024 * 1024)
+            return;
+        std::ifstream in(path, std::ios::binary);
+        std::string bytes{std::istreambuf_iterator<char>(in), {}};
+        if (!in.bad())
+            inputs[key] = Sha256(bytes);
+    };
+    record(bin_dir / ToString(request.toolchain.engine));
+    record(bin_dir / "latexmk");
+    if (request.toolchain.bibliography_engine == BibliographyEngine::BibTex)
+        record(bin_dir / "bibtex");
+    std::ifstream recorder(work / "main.fls");
+    std::string line;
+    while (std::getline(recorder, line))
+        if (line.starts_with("INPUT "))
+            record(line.substr(6));
+    // BibTeX's style input is recorded in its own log rather than main.fls.
+    std::ifstream bibliography_log(work / "main.blg");
+    while (std::getline(bibliography_log, line))
+        if (line.starts_with("The style file: ")) {
+            const auto name = line.substr(16);
+            if (std::filesystem::exists(work / name, ec))
+                record(work / name);
+            else
+                for (std::filesystem::recursive_directory_iterator
+                         it(root / "texmf-dist/bibtex/bst", ec),
+                     end;
+                     !ec && it != end; it.increment(ec)) {
+                    if (it->path().filename() == name) {
+                        record(it->path());
+                        break;
+                    }
+                }
+        }
+    JsonValue audit = JsonObject{
+        {"planDigest", request.package.plan_digest},
+        {"engine", ToString(request.toolchain.engine)},
+        {"bibliographyEngine", ToString(request.toolchain.bibliography_engine)},
+        {"isolation",
+         request.package.requires_isolation ? "bubblewrap-v1" : "builtin"},
+        {"inputs", inputs}};
+    audit.set("digest", Sha256(audit.Dump(0)));
+    std::ofstream out(work / "compile.lock.json", std::ios::binary);
+    out << audit.Dump();
+}
+
 bool StagePackage(const CompileRequest& request, std::string* error) {
     std::error_code ec;
+    std::set<std::string> targets;
+    for (const auto& file : request.package.files) {
+        auto path = ProjectRelativePath::Parse(file.path);
+        if (!path || path.value().value() != file.path ||
+            !targets.insert(file.path).second || file.executable) {
+            *error = "Invalid/duplicate generated resource path: " + file.path;
+            return false;
+        }
+    }
+    for (const auto& [name, source] : request.asset_sources) {
+        auto path = ProjectRelativePath::Parse(name);
+        if (!path || path.value().value() != name ||
+            !targets.insert(name).second) {
+            *error = "Invalid or colliding asset path: " + name;
+            return false;
+        }
+    }
+    if (!targets.contains(request.package.entry_file)) {
+        *error = "Build entry file is missing";
+        return false;
+    }
     // 每次 build 都拥有独立的工作目录（方案 §25），重试的 build 绝不能
     // 继承上一次尝试的 latexmk 状态：否则 latexmk 会报告
     // "gave an error in previous invocation" 并拒绝运行，即使新暂存的源码
@@ -143,12 +244,17 @@ std::vector<CompilerMessage> ParseMessages(const std::string& log, CompileFailur
         CompilerMessage message;
         const bool file_line = ParseFileLine(line, &message);
         const bool warning = line.find("Warning") != std::string::npos;
-        const bool overfull = line.rfind("Overfull \\hbox", 0) == 0 || line.rfind("Underfull \\hbox", 0) == 0;
-        if (!file_line && !warning && !overfull && line.find("!") == std::string::npos) {
+        const bool overfull = line.rfind("Overfull \\hbox", 0) == 0 ||
+                              line.rfind("Underfull \\hbox", 0) == 0 ||
+                              line.rfind("Overfull \\vbox", 0) == 0 ||
+                              line.rfind("Underfull \\vbox", 0) == 0;
+        // A package may print ordinary text such as "new hooks used!!".
+        // TeX errors have a leading ! or a file:line prefix, not a trailing !.
+        if (!file_line && !warning && !overfull) {
             continue;
         }
 
-        message.is_error = !warning;
+        message.is_error = !warning && !overfull;
         if (message.file.empty())
             message.file = last_file;
         if (message.line == 0)
@@ -245,11 +351,17 @@ int RunCommand(const std::string& command, const std::chrono::seconds timeout,
             ssize_t got = 0;
             while ((got = ::read(fd, buffer, sizeof(buffer))) > 0) {
                 const std::string chunk(buffer, static_cast<size_t>(got));
+                constexpr std::size_t output_limit = 8 * 1024 * 1024;
                 if (is_err) {
                     if (stderr_text)
-                        *stderr_text += chunk;
+                        stderr_text->append(
+                            chunk, 0,
+                            output_limit -
+                                std::min(output_limit, stderr_text->size()));
                 } else if (combined) {
-                    *combined += chunk;
+                    combined->append(chunk, 0,
+                                     output_limit - std::min(output_limit,
+                                                             combined->size()));
                 }
                 if (on_output)
                     on_output(CompileOutputChunk{is_err, chunk});
@@ -310,30 +422,6 @@ int RunCommand(const std::string& command, const std::chrono::seconds timeout,
 }
 
 } // namespace
-
-const char* ToString(LatexEngine engine) {
-    switch (engine) {
-    case LatexEngine::PdfLatex:
-        return "pdflatex";
-    case LatexEngine::XeLatex:
-        return "xelatex";
-    case LatexEngine::LuaLatex:
-        return "lualatex";
-    }
-    return "?";
-}
-
-const char* ToString(BibliographyEngine engine) {
-    switch (engine) {
-    case BibliographyEngine::None:
-        return "none";
-    case BibliographyEngine::BibTex:
-        return "bibtex";
-    case BibliographyEngine::Biber:
-        return "biber";
-    }
-    return "?";
-}
 
 const char* ToString(CompileFailureKind kind) {
     switch (kind) {
@@ -446,6 +534,13 @@ TexLiveCompiler::TexLiveCompiler(CompilerConfig config) : config_(std::move(conf
 
 CompileResult TexLiveCompiler::Compile(const CompileRequest& request, const std::atomic<bool>* cancel_requested) {
     CompileResult result;
+    if (!request.package.plan_digest.empty() &&
+        request.toolchain != request.package.toolchain) {
+        result.log =
+            "Compile toolchain disagrees with the validated generation plan";
+        result.failure_kind = CompileFailureKind::InternalError;
+        return result;
+    }
     if (cancel_requested && cancel_requested->load()) {
         result.status = CompileStatus::Cancelled;
         result.failure_kind = CompileFailureKind::Cancelled;
@@ -501,14 +596,75 @@ CompileResult TexLiveCompiler::Compile(const CompileRequest& request, const std:
     const auto log_path = request.workspace / "latexmk.log";
     // 环境隔离（方案 §12）：PATH 上只有内置 bin 目录，
     // TeX 缓存位于运行时目录下，外部 shell 环境不得影响结果。
-    const std::string command =
-        "cd " + QuoteShell(request.workspace.string()) + " && " + "PATH=" + QuoteShell(bin_dir_str + ":/usr/bin:/bin") +
-        " " + "HOME=" + QuoteShell(config_.texlive_root.string()) + " " +
-        "TEXMFHOME=" + QuoteShell((config_.texlive_root / "texmf-home").string()) + " " +
-        "TEXMFVAR=" + QuoteShell((config_.texlive_root / "texmf-var").string()) + " " +
-        "TEXMFCACHE=" + QuoteShell((config_.texlive_root / "texmf-cache").string()) + " " + QuoteShell(latexmk) + " " +
-        engine_flag + " -interaction=nonstopmode -file-line-error -halt-on-error " +
+    const std::string driver =
+        QuoteShell(latexmk) + " " + engine_flag +
+        (request.toolchain.bibliography_engine == BibliographyEngine::None
+             ? " -bibtex-"
+             : " -bibtex") +
+        " -norc -no-shell-escape -interaction=nonstopmode -file-line-error "
+        "-halt-on-error -recorder " +
+        " -e " + QuoteShell("$biber = 'false';") + " " +
         QuoteShell(request.package.entry_file);
+    if (request.toolchain.bibliography_engine == BibliographyEngine::Biber) {
+        result.log = "The current citation contract requires BibTeX, not Biber";
+        result.failure_kind = CompileFailureKind::BibliographyError;
+        return result;
+    }
+    std::string command =
+        "cd " + QuoteShell(request.workspace.string()) + " && " +
+        "PATH=" + QuoteShell(bin_dir_str + ":/usr/bin:/bin") + " " +
+        "HOME=" + QuoteShell(config_.texlive_root.string()) + " " +
+        "TEXMFHOME=" +
+        QuoteShell((config_.texlive_root / "texmf-home").string()) + " " +
+        "TEXMFVAR=" +
+        QuoteShell((config_.texlive_root / "texmf-var").string()) + " " +
+        "TEXMFCACHE=" +
+        QuoteShell((config_.texlive_root / "texmf-cache").string()) + " " +
+        driver;
+    if (request.package.requires_isolation) {
+#ifdef __linux__
+        if (!std::filesystem::exists("/usr/bin/bwrap") ||
+            !std::filesystem::exists("/usr/bin/prlimit")) {
+            result.log = "External templates require Bubblewrap and prlimit. "
+                         "No unsandboxed compilation was attempted.";
+            result.failure_kind = CompileFailureKind::RuntimeMissing;
+            return result;
+        }
+        // Only the runtime, standard system libraries/tools and this build are
+        // visible. The project, user home, application settings and network are
+        // not mounted.
+        std::filesystem::create_directories(request.workspace / ".cache", ec);
+        command = "/usr/bin/bwrap --die-with-parent --new-session "
+                  "--unshare-user --unshare-pid --unshare-net "
+                  "--unshare-ipc --unshare-uts --clearenv --ro-bind /usr /usr "
+                  "--ro-bind /bin /bin --ro-bind /lib /lib ";
+        if (std::filesystem::exists("/lib64"))
+            command += "--ro-bind /lib64 /lib64 ";
+        if (std::filesystem::exists("/etc/fonts"))
+            command += "--ro-bind /etc/fonts /etc/fonts ";
+        command +=
+            "--ro-bind " + QuoteShell(config_.texlive_root.string()) + " " +
+            QuoteShell(config_.texlive_root.string()) + " --bind " +
+            QuoteShell(std::filesystem::absolute(request.workspace).string()) +
+            " /work --tmpfs /tmp --proc /proc --dev /dev "
+            "--chdir /work --setenv PATH " +
+            QuoteShell(bin_dir_str + ":/usr/bin:/bin") +
+            " --setenv HOME /work/.cache --setenv TEXMFHOME "
+            "/work/.cache/texmf-home "
+            "--setenv TEXMFVAR /work/.cache/texmf-var --setenv TEXMFCACHE "
+            "/work/.cache/texmf-cache "
+            "--setenv openin_any p --setenv openout_any p --setenv "
+            "shell_escape f "
+            "/usr/bin/prlimit --as=1073741824 --fsize=67108864 --cpu=90 "
+            "--nproc=64 -- " +
+            driver;
+#else
+        result.log = "External template compilation isolation is currently "
+                     "supported on Linux only";
+        result.failure_kind = CompileFailureKind::RuntimeMissing;
+        return result;
+#endif
+    }
     bool cancelled = false;
     std::string stdout_text;
     std::string stderr_text;
@@ -523,7 +679,24 @@ CompileResult TexLiveCompiler::Compile(const CompileRequest& request, const std:
     }
     result.log = stdout_text + stderr_text;
     CompileFailureKind kind = CompileFailureKind::None;
-    result.messages = ParseMessages(result.log, &kind);
+    std::string diagnostic_log = result.log;
+    // latexmk's early passes contain unresolved citations that later passes
+    // fix. Keep the full process log, but show final TeX/BibTeX diagnostics on
+    // success.
+    if (exit_code == 0) {
+        std::ifstream final_log(request.workspace / "main.log",
+                                std::ios::binary);
+        std::string final_text{std::istreambuf_iterator<char>(final_log), {}};
+        if (!final_text.empty())
+            diagnostic_log = std::move(final_text);
+        std::ifstream bib_log(request.workspace / "main.blg", std::ios::binary);
+        if (bib_log) {
+            diagnostic_log += "\n";
+            diagnostic_log.append(std::istreambuf_iterator<char>(bib_log), {});
+            result.auxiliary_logs.push_back(request.workspace / "main.blg");
+        }
+    }
+    result.messages = ParseMessages(diagnostic_log, &kind);
     result.auxiliary_logs.push_back(log_path);
     // main.log 是编译器自身的日志；与 latexmk.log 放在一起（§15）。
     const auto main_log = request.workspace / "main.log";
@@ -537,6 +710,7 @@ CompileResult TexLiveCompiler::Compile(const CompileRequest& request, const std:
         result.failure_kind = CompileFailureKind::Cancelled;
     } else if (exit_code == 0 && std::filesystem::exists(result.pdf_path)) {
         result.status = CompileStatus::Success;
+        RecordCompileInputs(request, config_.texlive_root, bin_dir);
     } else {
         result.status = CompileStatus::Failure;
         result.failure_kind = kind == CompileFailureKind::None ? CompileFailureKind::LatexError : kind;

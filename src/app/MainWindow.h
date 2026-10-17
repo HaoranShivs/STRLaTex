@@ -71,6 +71,8 @@ class MainWindow : public QMainWindow {
     void OnBuild();
     void OnImportBibliography();
     void OnAddReference();
+    void OnImportTemplate();
+    void RefreshTemplateChoices();
     void OnChangeTemplate(const QString& template_id);
 
     void RefreshDocumentView();

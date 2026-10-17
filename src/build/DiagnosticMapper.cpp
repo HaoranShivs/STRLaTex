@@ -102,10 +102,14 @@ std::vector<Diagnostic> DiagnosticMapper::Map(const CompileResult& result, const
         }
         // 该映射索引的是 main.tex 的行；来自其他文件（class 文件、package）
         // 的消息会有意解析不到任何 node（§47）。
-        if (auto entry = source_map.ResolveEntry(message.line)) {
-            diagnostic.location.kind = DiagnosticLocationKind::Node;
-            diagnostic.location.node = entry->node;
-            diagnostic.location.label = entry->label;
+        if (message.file == "main.tex" || message.file == "./main.tex") {
+            if (auto entry = source_map.ResolveEntry(message.line)) {
+                if (!entry->node.empty()) {
+                    diagnostic.location.kind = DiagnosticLocationKind::Node;
+                    diagnostic.location.node = entry->node;
+                }
+                diagnostic.location.label = entry->label;
+            }
         }
         diagnostics.push_back(std::move(diagnostic));
     }

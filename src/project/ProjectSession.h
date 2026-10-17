@@ -191,6 +191,15 @@ class ProjectSession {
 
     // ---- Template ----
     void ChangeTemplate(const std::string& template_id);
+    std::vector<TemplateDefinition> AvailableTemplates() const;
+    std::shared_ptr<const TemplateDefinition>
+    ResolveTemplate(const std::string& id) const;
+    Result<void>
+    InstallVerifiedTemplate(const struct VerifiedTemplatePackage& package,
+                            const std::string& profile_id);
+    const std::filesystem::path& texlive_root() const {
+        return texlive_root_;
+    }
 
     // ---- Assets ----
     AssetImportResult ImportAsset(const std::filesystem::path& source);
@@ -302,6 +311,7 @@ class ProjectSession {
     void RestoreProjectPreview();
     BibliographyImportResult StoreBibliography(const std::string& bibtex_text, const std::string& relative_path);
     void MarkDirty();
+    void LoadTemplateCatalog();
     // 单一所有者规则的烟雾探测器：当从外部线程进入仅限所有者的入口时
     // 递增计数器。
     void NoteOwnerThreadUse() const;
@@ -321,6 +331,9 @@ class ProjectSession {
     Config config_;
     SessionPaths paths_;
     ProjectState state_;
+    std::map<std::string, std::shared_ptr<const TemplateDefinition>>
+        imported_templates_;
+    std::string template_catalog_error_;
     std::unique_ptr<AssetManager> assets_;
     BibliographyDatabase bibliography_db_;
     std::string bibliography_bibtex_;

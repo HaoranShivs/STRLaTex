@@ -31,6 +31,9 @@ struct BuildSnapshot {
     ProjectRevision revision;
     std::shared_ptr<const Document> document;
     std::string template_id;
+    std::shared_ptr<const TemplateDefinition> resolved_template;
+    std::string template_error;
+    std::optional<std::string> debug_dump_dir;
     std::string bibliography_bibtex;
     std::map<std::string, std::string> asset_files;
     std::map<std::string, std::filesystem::path> asset_sources;

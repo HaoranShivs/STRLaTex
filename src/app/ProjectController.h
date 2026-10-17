@@ -15,6 +15,10 @@
 
 class QTimer;
 
+namespace pf {
+struct VerifiedTemplatePackage;
+}
+
 namespace pf::gui {
 
 class ProjectController : public QObject {
@@ -107,6 +111,8 @@ class ProjectController : public QObject {
     void Undo();
     void Redo();
     void ChangeTemplate(const QString& template_id);
+    Result<void> InstallTemplate(const ::pf::VerifiedTemplatePackage& package,
+                                 const QString& profile_id);
     void RequestBuild(bool manual = true);
     void CancelBuild();
 

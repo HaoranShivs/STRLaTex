@@ -12,6 +12,7 @@
 #include "core/ProjectPath.h"
 #include "document/InlineText.h"
 #include "persistence/ProjectPdf.h"
+#include "template/TemplatePackage.h"
 
 namespace pf {
 
@@ -69,6 +70,15 @@ ProjectSession::ProjectSession(Config config)
     ehost.revision = [this] { return state_.revision(); };
     ehost.bump_revision = [this] { return state_.BumpRevision(); };
     ehost.document = [this]() -> Document& { return state_.mutable_document(); };
+    ehost.template_selection = [this] { return state_.template_selection(); };
+    ehost.template_binding = [this] { return state_.template_binding(); };
+    ehost.change_template = [this](const ChangeTemplatePayload& payload) {
+        auto def = ResolveTemplate(payload.template_id);
+        if (!def || (payload.binding && *payload.binding != def->binding))
+            return false;
+        state_.SetTemplateBinding(def->binding);
+        return true;
+    };
     ehost.on_document_changed = [this](const DocumentChangedEvent& e) {
         if (document_changed_handler_)
             document_changed_handler_(e);
@@ -101,7 +111,11 @@ ProjectSession::ProjectSession(Config config)
     bhost.debug_dump_dir = [this]() -> std::optional<std::string> {
         if (lifecycle_state_ != LifecycleState::Open)
             return std::nullopt;
-        return paths_.build_dir.string();
+        auto path = ResolveUntrustedProjectPath(paths_.project_dir,
+                                                ".paperforge/build");
+        if (!path)
+            return std::nullopt;
+        return path.value().string();
     };
     // worker 线程：只发布值对象，绝不读取实时 state。
     bhost.on_build_finished = [this](const BuildResult& result) { PostBuildResult(result); };
@@ -395,6 +409,8 @@ bool ProjectSession::OpenProject(const std::filesystem::path& project_dir, std::
     state_.SetRevision(ProjectRevision{sp.revision});
     state_.mutable_document() = sp.document;
     state_.mutable_template() = sp.template_id.empty() ? "generic-article" : sp.template_id;
+    state_.SetTemplateBinding(sp.template_binding);
+    LoadTemplateCatalog();
     state_.mutable_settings().bibliography_path = sp.bibliography_path;
     for (const auto& meta : sp.assets) {
         assets_->registry().Register(meta);
@@ -433,7 +449,11 @@ void ProjectSession::CloseProject() {
     save_coordinator_.Flush();
     ProcessApplicationEvents();
     state_.Reset();
+    editing_.history().Clear();
+    editing_.index().Rebuild(state_.document());
     bibliography_db_.Clear();
+    imported_templates_.clear();
+    template_catalog_error_.clear();
     bibliography_bibtex_.clear();
     latest_snapshot_id_.clear();
     latest_build_id_.clear();
@@ -553,6 +573,8 @@ SaveResult ProjectSession::RecoverFromAutosave() {
     state_.SetRevision(sp.revision);
     state_.mutable_document() = sp.document;
     state_.mutable_template() = sp.template_id.empty() ? "generic-article" : sp.template_id;
+    state_.SetTemplateBinding(sp.template_binding);
+    LoadTemplateCatalog();
     for (const auto& meta : sp.assets) {
         assets_->registry().Register(meta);
     }
@@ -631,10 +653,25 @@ void ProjectSession::RequestBuild(bool manual) {
         return;
     auto snapshot = snapshot_factory_.CreateBuildSnapshot(state_, bibliography_bibtex_);
     // 模板决定引擎（方案 §14）：在此处、在应用线程上解析，并随请求一起携带。
-    if (const TemplateDefinition* tpl = TemplateRegistry::Instance().Find(state_.template_selection())) {
-        snapshot.toolchain.engine = tpl->toolchain.engine;
-        snapshot.toolchain.bibliography_engine = tpl->toolchain.bibliography_engine;
-    }
+    snapshot.resolved_template = ResolveTemplate(state_.template_selection());
+    if (const auto& tpl = snapshot.resolved_template) {
+        snapshot.toolchain = {tpl->toolchain.engine,
+                              tpl->toolchain.bibliography_engine};
+        if (state_.template_binding() &&
+            *state_.template_binding() != tpl->binding)
+            snapshot.template_error = "Pinned template version is unavailable; "
+                                      "select an installed template explicitly";
+        else if (tpl->external) {
+            auto verified =
+                VerifyTemplateBinding(paths_.project_dir, tpl->binding);
+            if (!verified)
+                snapshot.template_error = verified.error();
+        }
+    } else
+        snapshot.template_error =
+            template_catalog_error_.empty()
+                ? "Template is unavailable: " + snapshot.template_id
+                : template_catalog_error_;
     // 在持有线程上记住这次请求的身份标识；只有与之匹配的结果才会被接受。
     latest_snapshot_id_ = snapshot.snapshot_id;
     latest_build_id_ = snapshot.build_id;
@@ -768,26 +805,22 @@ void ProjectSession::ApplySaveCompletion(const SaveCompletion& completion) {
 // ---------------- 模板 ----------------
 
 void ProjectSession::ChangeTemplate(const std::string& template_id) {
-    const auto* def = TemplateRegistry::Instance().Find(template_id);
+    NoteOwnerThreadUse();
+    if (lifecycle_state_ != LifecycleState::Open)
+        return;
+    auto def = ResolveTemplate(template_id);
     if (!def)
         return;
-    std::string old_id = state_.template_selection();
-    if (old_id == template_id)
+    const auto old_id = state_.template_selection();
+    const auto old_binding = state_.template_binding();
+    if (old_id == template_id && old_binding && *old_binding == def->binding)
         return;
-    state_.mutable_template() = template_id;
-    // 模板变更：ProjectRevision +1，DocumentVersion 不变（架构补充 8）。
-    // 压入一条模板历史动作。
-    state_.BumpRevision();
-    HistoryEntry entry;
-    TemplateHistoryAction action;
-    action.old_template = old_id;
-    action.new_template = template_id;
-    entry.action = std::move(action);
-    entry.operation_id = OperationId(IdGenerator::NewOperationId());
-    entry.resulting_revision = state_.revision();
-    editing_.history().Push(std::move(entry));
-    MarkDirty();
-    RequestBuild(false);
+    EditCommand command;
+    command.operation_id = OperationId(IdGenerator::NewOperationId());
+    command.project_id = state_.id();
+    command.base_revision = state_.revision();
+    command.payload = ChangeTemplatePayload{template_id, def->binding};
+    Execute(command);
 }
 
 // ---------------- 资源 ----------------

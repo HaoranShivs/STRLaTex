@@ -10,6 +10,7 @@
 #include "core/StrongId.h"
 #include "document/Document.h"
 #include "document/DocumentEditor.h"
+#include "template/TemplateBinding.h"
 
 namespace pf {
 
@@ -218,6 +219,7 @@ struct SetKeywordsPayload {
 
 struct ChangeTemplatePayload {
     std::string template_id;
+    std::optional<TemplateBinding> binding;
 };
 // 仅 Document 的载荷变体（不含模板变更）。
 using EditPayload = std::variant<
@@ -300,6 +302,8 @@ struct SnapshotHistoryAction {
 struct TemplateHistoryAction {
     std::string old_template;
     std::string new_template;
+    std::optional<TemplateBinding> old_binding;
+    std::optional<TemplateBinding> new_binding;
 };
 
 using HistoryAction = std::variant<SnapshotHistoryAction, TemplateHistoryAction>;

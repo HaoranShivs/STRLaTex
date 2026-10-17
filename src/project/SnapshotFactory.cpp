@@ -16,6 +16,13 @@ BuildSnapshot SnapshotFactory::CreateBuildSnapshot(const ProjectState& state,
     // document 的不可变深拷贝。
     snapshot.document = std::make_shared<const Document>(state.document());
     snapshot.template_id = state.template_selection();
+    if (const auto* def =
+            TemplateRegistry::Instance().Find(snapshot.template_id)) {
+        snapshot.resolved_template =
+            std::make_shared<const TemplateDefinition>(*def);
+        snapshot.toolchain = {def->toolchain.engine,
+                              def->toolchain.bibliography_engine};
+    }
     snapshot.bibliography_bibtex = bibliography_bibtex;
     // Asset manifest：asset id -> 相对路径（由 compiler workspace 暂存阶段解析）。
     // 暂存目标在包的 assets/ 目录下保留源文件名与扩展名，这正是渲染器在
@@ -42,6 +49,12 @@ SaveSnapshot SnapshotFactory::CreateSaveSnapshot(const ProjectState& state) cons
     data.serialized.project_id = state.id().value();
     data.serialized.revision = state.revision();
     data.serialized.template_id = state.template_selection();
+    data.serialized.template_binding = state.template_binding();
+    if (!data.serialized.template_binding) {
+        if (const auto* def =
+                TemplateRegistry::Instance().Find(state.template_selection()))
+            data.serialized.template_binding = def->binding;
+    }
     data.serialized.document = state.document();
     data.serialized.bibliography_path = state.settings().bibliography_path;
     for (const auto& [id, meta] : assets_->registry().All()) {

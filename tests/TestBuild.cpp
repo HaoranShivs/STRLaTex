@@ -159,7 +159,7 @@ PF_TEST(DiagnosticMapperMapsLineToNode) {
     cres.status = CompileStatus::Failure;
     CompilerMessage msg;
     msg.file = "main.tex";
-    msg.line = 132; // 位于映射范围的临近区域内
+    msg.line = 121; // 只有实际生成范围内的行才能映射回该节点
     msg.is_error = true;
     msg.text = "Undefined control sequence";
     cres.messages.push_back(msg);

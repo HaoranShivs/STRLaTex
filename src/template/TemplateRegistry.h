@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "build/Toolchain.h"
+#include "template/TemplateBinding.h"
 
 namespace pf {
 
@@ -27,6 +28,12 @@ struct TemplateCapabilities {
     int max_heading_depth = 3;
 };
 
+struct LatexPackageRequirement {
+    std::string name;
+    std::string options;
+    bool provided_by_class = false;
+};
+
 struct TemplateDefinition {
     std::string id;
     std::string name;
@@ -34,13 +41,22 @@ struct TemplateDefinition {
     std::vector<std::string> class_options;
     bool two_column = false;
     std::string bibliography_style = "plain";
-    // 模板所需的额外 preamble 行。
-    std::vector<std::string> preamble_lines;
+    std::vector<LatexPackageRequirement> packages;
     TemplateRequiredFields required;
     TemplateCapabilities capabilities;
     // 模板所需的编译 toolchain（方案 §7、§28）。引擎由模板作者决定，
     // 下游不再重新推断。
     TemplateToolchainRequirement toolchain;
+    TemplateBinding binding;
+    int api_version = 1;
+    // Only registered C++ adapters can be selected; manifests cannot execute
+    // code.
+    std::string frontmatter = "article-v1";
+    std::string citation_contract = "natbib-numeric-first-use-v1";
+    // Verified bytes, never mutable source paths. Copied into each build
+    // package.
+    std::map<std::string, std::string> resources;
+    bool external = false;
 };
 
 class TemplateRegistry {

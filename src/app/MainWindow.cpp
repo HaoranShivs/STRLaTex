@@ -16,6 +16,7 @@
 #include <QScopedValueRollback>
 #include <QScrollArea>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStatusBar>
@@ -25,11 +26,12 @@
 #include <algorithm>
 #include <filesystem>
 
-#include "app/BlockEditor.h"
 #include "app/AddReferenceDialog.h"
+#include "app/BlockEditor.h"
 #include "app/OutlinePanel.h"
 #include "app/PdfPreview.h"
 #include "app/ProblemsPanel.h"
+#include "app/TemplateImportDialog.h"
 #include "app/Theme.h"
 #include "app/WelcomePage.h"
 #include "document/InlineText.h"
@@ -194,6 +196,7 @@ QWidget* MainWindow::BuildHeader() {
     layout->addSpacing(12);
 
     template_combo_ = new QComboBox(header);
+    template_combo_->setObjectName("templateSelector");
     for (const auto& def : TemplateRegistry::Instance().All()) {
         template_combo_->addItem(ToQ(def.name), ToQ(def.id));
     }
@@ -204,6 +207,8 @@ QWidget* MainWindow::BuildHeader() {
             OnChangeTemplate(template_combo_->currentData().toString());
         }
     });
+    connect(controller_, &ProjectController::templateChanged, this,
+            &MainWindow::RefreshTemplateChoices);
     layout->addWidget(template_combo_);
     layout->addStretch(1);
 
@@ -273,6 +278,14 @@ void MainWindow::BuildMenus() {
     connect(controller_, &ProjectController::projectChanged, add_reference,
             [this, add_reference]() { add_reference->setEnabled(controller_->has_project()); });
     file_menu->addAction("&Import Bibliography (.bib)…", this, &MainWindow::OnImportBibliography);
+    auto* import_template = file_menu->addAction(
+        "Import &Template (.zip)…", this, &MainWindow::OnImportTemplate);
+    import_template->setObjectName("importTemplateAction");
+    import_template->setEnabled(controller_->has_project());
+    connect(controller_, &ProjectController::projectChanged, import_template,
+            [this, import_template] {
+                import_template->setEnabled(controller_->has_project());
+            });
     file_menu->addSeparator();
     file_menu->addAction("E&xit", this, &QWidget::close, QKeySequence::Quit);
 
@@ -429,7 +442,8 @@ void MainWindow::UpdateRequiredHints() {
     if (!controller_->has_project())
         return;
     BlockEditor::RequiredHints hints;
-    const auto* def = TemplateRegistry::Instance().Find(controller_->session().state().template_selection());
+    const auto def = controller_->session().ResolveTemplate(
+        controller_->session().state().template_selection());
     if (def) {
         hints.title = def->required.title;
         hints.authors = def->required.authors;
@@ -820,6 +834,39 @@ void MainWindow::OnAddReference() {
     dialog.exec();
 }
 
+void MainWindow::OnImportTemplate() {
+    if (!controller_->has_project())
+        return;
+    editor_->CommitFocused();
+    const auto archive = QFileDialog::getOpenFileName(
+        this, "Import Template", {}, "Template archives (*.zip)");
+    if (archive.isEmpty())
+        return;
+    TemplateImportDialog dialog(controller_, archive, this);
+    if (dialog.exec() == QDialog::Accepted) {
+        RefreshTemplateChoices();
+        statusBar()->showMessage(
+            "Template imported. Select a profile in the top template selector.",
+            5000);
+    }
+}
+
+void MainWindow::RefreshTemplateChoices() {
+    QSignalBlocker guard(template_combo_);
+    template_combo_->clear();
+    for (const auto& def : controller_->session().AvailableTemplates())
+        template_combo_->addItem(ToQ(def.name), ToQ(def.id));
+    const auto selected =
+        ToQ(controller_->session().state().template_selection());
+    int index = template_combo_->findData(selected);
+    if (index < 0) {
+        template_combo_->addItem("Unavailable: " + selected, selected);
+        index = template_combo_->count() - 1;
+    }
+    template_combo_->setCurrentIndex(index);
+    UpdateRequiredHints();
+}
+
 void MainWindow::OnImportBibliography() {
     if (!controller_->has_project())
         return;
@@ -913,7 +960,8 @@ void MainWindow::RefreshDocumentView() {
         return;
     }
     // 插入菜单与「/」菜单按当前模板能表达的内容进行过滤（方案 §9）。
-    if (const auto* tpl = TemplateRegistry::Instance().Find(controller_->session().state().template_selection())) {
+    if (const auto tpl = controller_->session().ResolveTemplate(
+            controller_->session().state().template_selection())) {
         editor_->SetMaxHeadingDepth(tpl->capabilities.max_heading_depth);
     } else {
         editor_->SetMaxHeadingDepth(3);
@@ -944,6 +992,7 @@ void MainWindow::RefreshSidePanels() {
 }
 
 void MainWindow::OnProjectChanged() {
+    RefreshTemplateChoices();
     current_pdf_path_.clear();
     last_build_revision_ = -1;
     last_built_revision_ = {};

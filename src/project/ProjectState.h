@@ -2,6 +2,7 @@
 // ProjectState：持有可变的项目聚合根（架构 十四）。
 // ProjectRevision 的唯一所有者。
 
+#include <optional>
 #include <string>
 
 #include "asset/AssetManager.h"
@@ -42,6 +43,14 @@ class ProjectState {
     TemplateSelection& mutable_template() noexcept {
         return template_;
     }
+    const std::optional<TemplateBinding>& template_binding() const {
+        return template_binding_;
+    }
+    void SetTemplateBinding(std::optional<TemplateBinding> binding) {
+        template_binding_ = std::move(binding);
+        if (template_binding_)
+            template_ = template_binding_->id;
+    }
     ProjectSettings& mutable_settings() noexcept {
         return settings_;
     }
@@ -61,6 +70,8 @@ class ProjectState {
     void Reset() {
         document_ = Document{};
         template_ = "generic-article";
+        template_binding_ =
+            TemplateRegistry::Instance().Find("generic-article")->binding;
         revision_ = ProjectRevision{0};
     }
 
@@ -69,6 +80,7 @@ class ProjectState {
     ProjectRevision revision_{0};
     Document document_;
     TemplateSelection template_ = "generic-article";
+    std::optional<TemplateBinding> template_binding_;
     ProjectSettings settings_;
 };
 

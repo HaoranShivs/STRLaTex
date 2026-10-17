@@ -15,10 +15,10 @@ void SourceMap::AddMapping(std::uint32_t line, NodeId node, std::string label) {
 }
 
 std::optional<SourceMapEntry> SourceMap::ResolveEntry(std::uint32_t line) const {
-    // 查找位于 `line` 处或之前（节点起始位置最近）的最后一条映射。
+    // 仅使用实际生成范围内的映射，避免把后置内容的错误归给前一个正文节点。
     const Entry* best = nullptr;
     for (const auto& entry : line_to_node_) {
-        if (entry.line <= line && (!best || entry.line >= best->line)) {
+        if (entry.line == line) {
             best = &entry;
         }
     }
@@ -28,7 +28,7 @@ std::optional<SourceMapEntry> SourceMap::ResolveEntry(std::uint32_t line) const 
 }
 
 std::optional<NodeId> SourceMap::Resolve(std::uint32_t line) const {
-    if (auto entry = ResolveEntry(line))
+    if (auto entry = ResolveEntry(line); entry && !entry->node.empty())
         return entry->node;
     return std::nullopt;
 }

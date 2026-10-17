@@ -5,11 +5,13 @@ add_library(pf_core STATIC
     core/IoError.cpp
     core/Json.cpp
     core/ProjectPath.cpp
+    core/ContentHash.cpp
+    build/Toolchain.cpp
 )
 
 target_include_directories(pf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(pf_core PUBLIC cxx_std_20)
-target_link_libraries(pf_core PUBLIC Threads::Threads)
+target_link_libraries(pf_core PUBLIC Threads::Threads OpenSSL::Crypto)
 
 # Math: math-expression core types, LaTeX input boundary and generator.
 add_library(pf_math STATIC
@@ -39,8 +41,9 @@ target_link_libraries(pf_editing PUBLIC pf_document)
 # Template registry
 add_library(pf_template STATIC
     template/TemplateRegistry.cpp
+    template/TemplatePackage.cpp
 )
-target_link_libraries(pf_template PUBLIC pf_document)
+target_link_libraries(pf_template PUBLIC pf_document ZLIB::ZLIB)
 
 # Assets
 add_library(pf_asset STATIC
@@ -73,6 +76,8 @@ target_link_libraries(pf_validation PUBLIC pf_document pf_template)
 # Rendering: semantic document -> LaTeX
 add_library(pf_render STATIC
     render/LatexRenderer.cpp
+    render/LatexPlanner.cpp
+    render/LatexEmitter.cpp
     render/SourceMap.cpp
 )
 target_link_libraries(pf_render PUBLIC pf_document pf_template pf_validation)
@@ -85,6 +90,7 @@ add_library(pf_build STATIC
     build/DiagnosticMapper.cpp
     build/BuildCoordinator.cpp
     build/RuntimeManager.cpp
+    build/TemplateVerifier.cpp
 )
 target_link_libraries(pf_build PUBLIC pf_render)
 
@@ -95,7 +101,7 @@ add_library(pf_persistence STATIC
     persistence/ProjectPdf.cpp
     persistence/SaveCoordinator.cpp
 )
-target_link_libraries(pf_persistence PUBLIC pf_document pf_asset pf_bibliography)
+target_link_libraries(pf_persistence PUBLIC pf_document pf_asset pf_bibliography pf_template)
 
 # Application session
 add_library(pf_app STATIC
@@ -104,6 +110,7 @@ add_library(pf_app STATIC
     project/ProjectState.cpp
     project/SnapshotFactory.cpp
     project/ProjectSession.cpp
+    project/ProjectTemplates.cpp
 )
 target_link_libraries(pf_app PUBLIC pf_build pf_persistence pf_editing pf_numbering)
 

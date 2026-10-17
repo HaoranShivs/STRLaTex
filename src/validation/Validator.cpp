@@ -159,11 +159,16 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
 }
 
 void Validator::ValidateTemplate(const Document& doc, const ValidationInput& input, ValidationResult* result) const {
-    const auto* def = TemplateRegistry::Instance().Find(input.template_id);
+    const auto* def = input.resolved_template.get();
+    if (!def && input.template_error.empty())
+        def = TemplateRegistry::Instance().Find(input.template_id);
     if (!def) {
-        result->diagnostics.push_back(MakeDiag(input.revision, DiagnosticSeverity::Error, "E-TEMPLATE-UNKNOWN",
-                                               "unknown template: " + input.template_id,
-                                               DiagnosticLocation::ForProject()));
+        result->diagnostics.push_back(MakeDiag(
+            input.revision, DiagnosticSeverity::Error, "E-TEMPLATE-UNKNOWN",
+            input.template_error.empty()
+                ? "unknown template: " + input.template_id
+                : input.template_error,
+            DiagnosticLocation::ForProject()));
         return;
     }
 

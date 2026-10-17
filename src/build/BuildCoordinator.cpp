@@ -84,6 +84,22 @@ void BuildCoordinator::SetPhase(BuildPhase next) {
 }
 
 void BuildCoordinator::RequestBuild(BuildSnapshot snapshot, bool manual) {
+    if (!snapshot.debug_dump_dir && host_.debug_dump_dir)
+        snapshot.debug_dump_dir = host_.debug_dump_dir();
+    // Freeze legacy direct requests at the caller boundary, never in the
+    // worker.
+    if (!snapshot.resolved_template && snapshot.template_error.empty()) {
+        if (const auto* def =
+                TemplateRegistry::Instance().Find(snapshot.template_id)) {
+            snapshot.resolved_template =
+                std::make_shared<const TemplateDefinition>(*def);
+            snapshot.toolchain = {def->toolchain.engine,
+                                  def->toolchain.bibliography_engine};
+        } else
+            snapshot.template_error =
+                "Unknown or unavailable pinned template: " +
+                snapshot.template_id;
+    }
     {
         std::lock_guard lock(mutex_);
         pending_ = std::move(snapshot);
@@ -175,6 +191,8 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot& snapshot) {
     validation_input.revision = snapshot.revision;
     validation_input.document = snapshot.document.get();
     validation_input.template_id = snapshot.template_id;
+    validation_input.resolved_template = snapshot.resolved_template;
+    validation_input.template_error = snapshot.template_error;
     validation_input.has_bibliography = !snapshot.bibliography_bibtex.empty();
     validation_input.bibliography_keys = ExtractBibliographyKeys(snapshot.bibliography_bibtex);
     for (const auto& [destination, source] : snapshot.asset_sources) {
@@ -197,6 +215,8 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot& snapshot) {
     render_request.revision = snapshot.revision;
     render_request.document = snapshot.document.get();
     render_request.template_id = snapshot.template_id;
+    render_request.resolved_template = snapshot.resolved_template;
+    render_request.template_error = snapshot.template_error;
     render_request.asset_files = snapshot.asset_files;
     render_request.bibliography_bibtex = snapshot.bibliography_bibtex;
     auto rendered = LatexRenderer().Render(render_request);
@@ -214,14 +234,11 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot& snapshot) {
     // 之前检查 renderer 产出了什么。写入 <project>/.paperforge/build/main.tex，
     // 诊断结束后移除。
     // host 钩子是可选的：测试构建 coordinator 时不会设置它。
-    if (host_.debug_dump_dir) {
+    if (snapshot.debug_dump_dir && !snapshot.debug_dump_dir->empty()) {
         std::error_code dump_ec;
         for (const auto& file : rendered.package.files) {
-            const auto dump_path = host_.debug_dump_dir().value_or("").empty()
-                                       ? std::filesystem::path{}
-                                       : std::filesystem::path(*host_.debug_dump_dir()) / file.path;
-            if (dump_path.empty())
-                break;
+            const auto dump_path =
+                std::filesystem::path(*snapshot.debug_dump_dir) / file.path;
             std::filesystem::create_directories(dump_path.parent_path(), dump_ec);
             std::ofstream dump(dump_path, std::ios::binary | std::ios::trunc);
             if (dump) {
@@ -231,7 +248,7 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot& snapshot) {
         // 同时将引用的 assets 放置到转储的 main.tex 旁边，使转储源码中的
         // \includegraphics 路径能解析到真实文件（assets/<name>.<ext>），
         // 而不是悬空的名称。
-        const auto dump_root = host_.debug_dump_dir().value_or("");
+        const auto dump_root = *snapshot.debug_dump_dir;
         if (!dump_root.empty()) {
             for (const auto& [destination_name, source] : snapshot.asset_sources) {
                 const auto dump_asset = std::filesystem::path(dump_root) / destination_name;
@@ -248,7 +265,7 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot& snapshot) {
     compile_request.workspace =
         std::filesystem::path(host_.workspace_root()) / snapshot.project_id.value() / snapshot.snapshot_id;
     compile_request.asset_sources = snapshot.asset_sources;
-    compile_request.toolchain = snapshot.toolchain;
+    compile_request.toolchain = compile_request.package.toolchain;
     // 将编译器的实时输出以结构化事件流式发出（方案 §44）：进程运行期间
     // Build Log 持续增长。回调在此（worker）线程上触发并携带当前 build id，
     // 因此若有更新的 build 已启动，应用侧可以丢弃它们。
@@ -257,7 +274,9 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot& snapshot) {
     };
     // compiler 依据模板的 toolchain 需求选定（方案 §13）；为测试起见，
     // 仍然支持单次请求的 compiler。
-    const std::unique_ptr<ICompiler> selected = compiler_provider_ ? compiler_provider_(snapshot.toolchain) : nullptr;
+    const std::unique_ptr<ICompiler> selected =
+        compiler_provider_ ? compiler_provider_(compile_request.toolchain)
+                           : nullptr;
     ICompiler* const used = selected ? selected.get() : (compiler_ ? compiler_ : nullptr);
     if (!used) {
         result.outcome = BuildResult::Outcome::Failure;
@@ -288,8 +307,8 @@ BuildResult BuildCoordinator::BuildOne(const BuildSnapshot& snapshot) {
 
     // TEMP-DEBUG：将编译出的 PDF 复制到项目旁边，用于与预览窗口显示的内容
     // 进行比对。
-    if (compiled.status == CompileStatus::Success && host_.debug_dump_dir) {
-        const auto dump_dir = host_.debug_dump_dir().value_or("");
+    if (compiled.status == CompileStatus::Success && snapshot.debug_dump_dir) {
+        const auto dump_dir = *snapshot.debug_dump_dir;
         if (!dump_dir.empty()) {
             std::error_code copy_ec;
             std::filesystem::copy_file(compiled.pdf_path, std::filesystem::path(dump_dir) / "main.pdf",
