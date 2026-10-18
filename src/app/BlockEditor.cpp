@@ -2155,15 +2155,11 @@ QWidget* BlockEditor::MakeCodeCard(const pf::CodeBlock& code_block, const QStrin
     auto* tools_layout = new QHBoxLayout(tools);
     tools_layout->setContentsMargins(0, 0, 0, 0);
     tools_layout->setSpacing(6);
-    auto* language = new QComboBox(tools);
-    language->setObjectName(QStringLiteral("codeLanguage"));
-    language->setEditable(true);
-    language->addItems({QStringLiteral("python"), QStringLiteral("c++"), QStringLiteral("java"),
-                        QStringLiteral("javascript"), QStringLiteral("rust"), QStringLiteral("go"),
-                        QStringLiteral("bash"), QStringLiteral("sql"), QStringLiteral("json"),
-                        QStringLiteral("yaml"), QStringLiteral("latex")});
-    language->setCurrentText(ToQ(code_block.language));
-    tools_layout->addWidget(language);
+    // 代码块在论文里通常是高层伪代码，不要求用户选择语言；语言字段保留给
+    // 从外部导入/旧项目读取，但卡片不再暴露语言选择器。
+    auto* language_label = new QLabel(QStringLiteral("Pseudocode"), tools);
+    language_label->setStyleSheet(QString("color: %1; font-size: 8pt;").arg(theme::kSecondaryText));
+    tools_layout->addWidget(language_label);
     auto* line_numbers = new QCheckBox(QStringLiteral("Line numbers"), tools);
     line_numbers->setObjectName(QStringLiteral("codeLineNumbers"));
     line_numbers->setChecked(code_block.line_numbers);
@@ -2198,20 +2194,17 @@ QWidget* BlockEditor::MakeCodeCard(const pf::CodeBlock& code_block, const QStrin
             break;
         }
     }
-    auto emit_edit = [this, node_id, source, language, caption, line_numbers, label, tracked]() {
+    const QString language = ToQ(code_block.language);
+    auto emit_edit = [this, node_id, source, caption, line_numbers, label, tracked, language]() {
         if (tracked) {
-            tracked->code_language = language->currentText();
+            tracked->code_language = language;
             tracked->code_caption = caption->text();
             tracked->code_line_numbers = line_numbers->isChecked();
             tracked->code_label = label->text();
         }
-        emit CodeEdited(node_id, language->currentText(), source->toPlainText(), caption->text(),
+        emit CodeEdited(node_id, language, source->toPlainText(), caption->text(),
                         line_numbers->isChecked(), label->text());
     };
-    connect(language, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            [emit_edit](int) { emit_edit(); });
-    if (auto* language_edit = language->lineEdit())
-        connect(language_edit, &QLineEdit::editingFinished, this, emit_edit);
     connect(line_numbers, &QCheckBox::toggled, this, [emit_edit](bool) { emit_edit(); });
     connect(label, &QLineEdit::editingFinished, this, emit_edit);
     connect(caption, &QLineEdit::editingFinished, this, emit_edit);

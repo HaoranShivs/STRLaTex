@@ -226,9 +226,10 @@ Linux 外部模板导入及构建还需要 Bubblewrap、prlimit 和可用的用�
   不会退出编辑态，只有实际点击公式卡片外部才收起。编号按全文自动排序，
   `Numbered` 关闭时不参与编号。
 - **定理/证明 + 代码块（WP-07）**：插入菜单提供 Theorem/Proof/Code。定理卡片
-  支持 kind、标题、正文、编号与 label；代码卡片使用等宽源码、语言、行号、
-  caption 与 label，代码正文不做正文 reflow。定理环境通过模板 amsthm 声明，
-  代码在自带 runtime 下使用 verbatim + Listing 计数宏，外部模板可声明 listings。
+  支持 kind、标题、正文、编号与 label；代码卡片使用等宽源码、行号、caption
+  与 label，代码正文不做正文 reflow。代码默认作为伪代码呈现，不要求选择语言；
+  内置 runtime 使用 verbatim + Listing 计数宏（IEEEtran 下显式使用 cmtt
+  字型），外部模板可声明 listings。
 - **引用胶囊与 PDF 编号一致**：`[n]` 来自 `CitationNumberResolver`
   （首次引用顺序 + natbib 的 sort&compress），交叉引用编号来自
   `DocumentNumberer`；文档里只存 key/mode/label，不存编号。schema v4 增加

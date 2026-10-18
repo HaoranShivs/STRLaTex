@@ -12,6 +12,7 @@
 #include <string>
 
 #include "project/ProjectSession.h"
+#include "template/TemplatePackage.h"
 
 using namespace pf;
 
@@ -317,6 +318,129 @@ PF_TEST(EndToEndTectonicBuild) {
         }
     }
 }
+
+PF_TEST(EndToEndCasCodeBuild) {
+    const auto archive = std::filesystem::path(PF_INSTALL_ROOT) / "tools/templates/els-cas-templates.zip";
+    if (!std::filesystem::exists(archive)) {
+        std::cout << "    (CAS template archive unavailable; skipping)\n";
+        return;
+    }
+    auto inspected = InspectTemplateArchive(archive);
+    PF_CHECK(inspected.ok());
+    if (!inspected.ok())
+        return;
+    pf::test::ScopedTempDir dir("pf-e2e-cas-code");
+    ProjectSession session(TestConfig());
+    session.NewProject(dir);
+    auto installed = InstallTemplatePackage(dir, inspected.value());
+    PF_CHECK(installed.ok());
+    (void)SaveAndFlush(session);
+    session.CloseProject();
+    std::string error;
+    if (!session.OpenProject(dir, &error)) {
+        std::cout << "    (CAS project reopen failed: " << error << ")\n";
+        PF_CHECK(false);
+        return;
+    }
+    bool has_cas = false;
+    for (const auto& definition : session.AvailableTemplates()) {
+        if (definition.id.starts_with("elsevier-cas-dc"))
+            has_cas = true;
+    }
+    PF_CHECK(has_cas);
+    if (!has_cas)
+        return;
+    session.ChangeTemplate("elsevier-cas-dc@e166edadc97a");
+    auto make_cmd = [&](auto payload) {
+        EditCommand cmd;
+        cmd.operation_id = OperationId(IdGenerator::NewOperationId());
+        cmd.project_id = session.state().id();
+        cmd.base_revision = session.current_revision();
+        cmd.payload = std::move(payload);
+        return cmd;
+    };
+    SetTitlePayload title;
+    title.title = InlineFromText("CAS Code Test");
+    session.Execute(make_cmd(title));
+    InsertSectionPayload sec;
+    sec.title = InlineFromText("Method");
+    auto sec_result = session.Execute(make_cmd(sec));
+    PF_CHECK(sec_result.status == EditStatus::Applied);
+    InsertCodePayload code;
+    code.parent = sec_result.created_node;
+    code.code = "for each sample:\n  if score > threshold:\n    keep\n";
+    code.caption = InlineFromText("Pseudocode");
+    code.label = "lst:pseudo";
+    PF_CHECK(session.Execute(make_cmd(code)).status == EditStatus::Applied);
+    (void)SaveAndFlush(session);
+
+    bool completed = false;
+    std::optional<BuildResult> last_result;
+    session.SetBuildResultHandler([&](const BuildResult& result) {
+        last_result = result;
+        completed = true;
+    });
+    session.RequestBuild(true);
+    PF_CHECK(WaitForBuild(session, [&] { return completed; }));
+    PF_CHECK(last_result.has_value());
+    if (last_result && last_result->outcome == BuildResult::Outcome::Success) {
+        PF_CHECK(std::filesystem::exists(last_result->pdf_path));
+    } else {
+        for (const auto& d : last_result->diagnostics)
+            std::cout << "    " << d.Summary() << "\n";
+        PF_CHECK(last_result->outcome == BuildResult::Outcome::Success);
+    }
+}
+
+PF_TEST(EndToEndIeeeCodeBuild) {
+    pf::test::ScopedTempDir dir("pf-e2e-ieee-code");
+    ProjectSession session(TestConfig());
+    session.NewProject(dir);
+    session.ChangeTemplate("ieee-conference");
+
+    auto make_cmd = [&](auto payload) {
+        EditCommand cmd;
+        cmd.operation_id = OperationId(IdGenerator::NewOperationId());
+        cmd.project_id = session.state().id();
+        cmd.base_revision = session.current_revision();
+        cmd.payload = std::move(payload);
+        return cmd;
+    };
+    SetTitlePayload title;
+    title.title = InlineFromText("IEEE Code Test");
+    session.Execute(make_cmd(title));
+    InsertSectionPayload sec;
+    sec.title = InlineFromText("Method");
+    auto sec_result = session.Execute(make_cmd(sec));
+    PF_CHECK(sec_result.status == EditStatus::Applied);
+
+    InsertCodePayload code;
+    code.parent = sec_result.created_node;
+    code.code = "if x > 0 then\n  return x\nend\n";
+    code.caption = InlineFromText("Pseudocode");
+    code.label = "lst:pseudo";
+    auto code_result = session.Execute(make_cmd(code));
+    PF_CHECK(code_result.status == EditStatus::Applied);
+    (void)SaveAndFlush(session);
+
+    bool completed = false;
+    std::optional<BuildResult> last_result;
+    session.SetBuildResultHandler([&](const BuildResult& result) {
+        last_result = result;
+        completed = true;
+    });
+    session.RequestBuild(true);
+    PF_CHECK(WaitForBuild(session, [&] { return completed; }));
+    PF_CHECK(last_result.has_value());
+    if (last_result && last_result->outcome == BuildResult::Outcome::Success) {
+        PF_CHECK(std::filesystem::exists(last_result->pdf_path));
+    } else {
+        for (const auto& d : last_result->diagnostics)
+            std::cout << "    " << d.Summary() << "\n";
+        PF_CHECK(last_result->outcome == BuildResult::Outcome::Success);
+    }
+}
+
 #endif
 
 PF_TEST(SessionAutosaveAndCrashRecovery) {

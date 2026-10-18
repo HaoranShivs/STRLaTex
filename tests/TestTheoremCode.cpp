@@ -10,6 +10,7 @@
 #include "numbering/LabelRegistry.h"
 #include "persistence/ProjectPersistence.h"
 #include "render/LatexRenderer.h"
+#include "template/TemplateRegistry.h"
 #include "validation/Validator.h"
 
 using namespace pf;
@@ -131,4 +132,59 @@ PF_TEST(TheoremAndCodeEditingPersistAndValidate) {
     const auto validation = Validator().Validate(input);
     PF_CHECK(CountDiagnostics(validation, "E-CODE-END-MARKER") == 1);
     PF_CHECK(CountDiagnostics(validation, "W-CODE-LANGUAGE") == 1);
+}
+
+
+PF_TEST(CodeFallbackWorksWithoutTemplateCapability) {
+    Document doc;
+    DocumentEditor editor(doc);
+    auto section = editor.InsertSection(0, InlineFromText("S"));
+    editor.InsertCode(section.value(), std::nullopt, "", "if x then\n  return 1\nend\n", {}, true, "lst:legacy");
+
+    auto definition = *TemplateRegistry::Instance().Find("generic-article");
+    definition.capabilities.code_blocks = false;
+    definition.code_listing = {"listings", ""};
+
+    RenderRequest request;
+    request.document = &doc;
+    request.template_id = definition.id;
+    request.resolved_template = std::make_shared<const TemplateDefinition>(definition);
+    request.revision = ProjectRevision{1};
+    auto rendered = LatexRenderer().Render(request);
+    PF_CHECK(rendered.status == RenderResult::Status::Ok);
+    if (rendered.package.files.empty())
+        return;
+    const std::string& tex = rendered.package.files[0].content;
+    PF_CHECK(tex.find("\\newcommand{\\paperforgeListing}") != std::string::npos);
+    PF_CHECK(tex.find("\\begin{verbatim}") != std::string::npos);
+    PF_CHECK(tex.find("\\usepackage{listings}") == std::string::npos);
+    PF_CHECK(tex.find("\\end{verbatim}") != std::string::npos);
+}
+
+PF_TEST(TheoremFallbackWorksWithoutTemplateCapability) {
+    Document doc;
+    DocumentEditor editor(doc);
+    auto section = editor.InsertSection(0, InlineFromText("S"));
+    editor.InsertTheorem(section.value(), std::nullopt, TheoremKind::Theorem, {}, InlineFromText("Body."), true,
+                         "thm:legacy");
+    editor.InsertTheorem(section.value(), std::nullopt, TheoremKind::Proof, {}, InlineFromText("Proof body."), false,
+                         "");
+
+    auto definition = *TemplateRegistry::Instance().Find("generic-article");
+    definition.capabilities.theorems = false;
+    definition.theorem_environments.clear();
+    RenderRequest request;
+    request.document = &doc;
+    request.template_id = definition.id;
+    request.resolved_template = std::make_shared<const TemplateDefinition>(definition);
+    request.revision = ProjectRevision{1};
+    auto rendered = LatexRenderer().Render(request);
+    PF_CHECK(rendered.status == RenderResult::Status::Ok);
+    if (rendered.package.files.empty())
+        return;
+    const std::string& tex = rendered.package.files[0].content;
+    PF_CHECK(tex.find("\\usepackage{amsthm}") != std::string::npos);
+    PF_CHECK(tex.find("\\newtheorem{theorem}{Theorem}") != std::string::npos);
+    PF_CHECK(tex.find("\\begin{theorem}") != std::string::npos);
+    PF_CHECK(tex.find("\\begin{proof}") != std::string::npos);
 }

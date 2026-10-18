@@ -1,11 +1,11 @@
 {
   "derivedFrom": "project.paper",
-  "projectRevision": 194,
+  "projectRevision": 222,
   "template": {
-    "digest": "2fe5cd487eb00cee03b397b0544dafe4e6a4550d50e2d186e6d7390079a74e81",
-    "id": "ieee-conference",
+    "digest": "e166edadc97a7a61142f3fe62d50a14ad4d20e6f2b1c0eabfa8c657e44cc8ed9",
+    "id": "elsevier-cas-sc@e166edadc97a",
     "options": {},
-    "profile": "ieee-conference",
-    "version": "1"
+    "profile": "elsevier-cas-sc",
+    "version": "2.4"
   }
 }

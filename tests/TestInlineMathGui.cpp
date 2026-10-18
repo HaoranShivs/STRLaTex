@@ -1172,7 +1172,7 @@ PF_TEST(TheoremAndCodeCardsProjectAndEdit) {
     auto theorem = controller->InsertTheoremAfter(section.created_node, TheoremKind::Theorem,
                                                    InlineFromText("Initial title"), true, QStringLiteral("thm:a"));
     PF_CHECK(theorem.status == EditStatus::Applied);
-    auto code = controller->InsertCodeAfter(section.created_node, QStringLiteral("python"),
+    auto code = controller->InsertCodeAfter(section.created_node, QString(),
                                             QStringLiteral("print(1)"), true, QStringLiteral("lst:a"));
     PF_CHECK(code.status == EditStatus::Applied);
     Spin(350);
@@ -1217,13 +1217,11 @@ PF_TEST(TheoremAndCodeCardsProjectAndEdit) {
         Spin(150);
     }
 
-    auto* language = code_card->findChild<QComboBox*>(QStringLiteral("codeLanguage"));
     auto* source = code_card->findChild<QPlainTextEdit*>(QStringLiteral("codeSource"));
     auto* caption = code_card->findChild<QLineEdit*>(QStringLiteral("codeCaption"));
     auto* code_label = code_card->findChild<QLineEdit*>(QStringLiteral("codeLabel"));
-    PF_CHECK(language && source && caption && code_label);
-    if (language && source && caption && code_label) {
-        language->setCurrentText(QStringLiteral("c++"));
+    PF_CHECK(source && caption && code_label);
+    if (source && caption && code_label) {
         source->setPlainText(QStringLiteral("int main() { return 0; }"));
         QMetaObject::invokeMethod(source, "CommitRequested", Qt::DirectConnection);
         caption->setText(QStringLiteral("Entry point"));
@@ -1249,7 +1247,7 @@ PF_TEST(TheoremAndCodeCardsProjectAndEdit) {
                                 : nullptr;
     PF_CHECK(code_back != nullptr);
     if (code_back) {
-        PF_CHECK(code_back->language == "c++");
+        PF_CHECK(code_back->language.empty());
         PF_CHECK(code_back->code.find("return 0") != std::string::npos);
         PF_CHECK(InlineToPlainText(code_back->caption) == "Entry point");
         PF_CHECK(code_back->label == "lst:b");

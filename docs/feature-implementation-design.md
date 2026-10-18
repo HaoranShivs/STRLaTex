@@ -1614,10 +1614,15 @@ struct EditCodePayload { NodeId code; std::optional<std::string> language;
   计数宏；外部模板可显式声明 `listings`，planner 会输出 `lstlisting`。
 - 渲染：定理/引理/命题等按模板环境输出，Proof 使用 `proof`；未编号定理使用
   `theorem*`；代码块保留原文，fallback 支持行号前缀、Listing 编号与 `\ref` label。
+  只要文档含有 CodeBlock，即使外部模板没有声明 code capability，也会生成
+  `\paperforgeListing`/`verbatim` 支撑宏；IEEEtran/CAS 的 `\ttfamily` 字体
+  差异通过显式 `cmtt` 覆盖解决。
 - 校验：`E-CODE-END-MARKER` 拦截 `\end{lstlisting}`/`\end{verbatim}`；
   未知语言报 `W-CODE-LANGUAGE` 并由 planner 安全省略语言选项。
 - GUI：插入菜单 Theorem/Proof/Code；定理卡片 kind/title/body/numbered/label；
-  代码卡片语言、代码、行号、caption、label；代码正文不做 reflow。
+  代码卡片按伪代码呈现（不提供语言选择）、代码、行号、caption、label；代码正文
+  不做 reflow。代码语言字段保留给旧项目/外部导入，但 UI 不再暴露。真实构建
+  回归覆盖 generic-article、IEEEtran 与 imported Elsevier CAS 三种模板。
 - 测试：`TestTheoremCode`、GUI `TheoremAndCodeCardsProjectAndEdit`、真实
   tectonic 构建；模板/编号/label/picker 同步支持 Theorem/Listing。
 

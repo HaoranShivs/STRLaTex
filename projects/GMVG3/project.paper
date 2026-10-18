@@ -1,83 +1,13 @@
 {
   "assets": [
     {
-      "fileSize": 9767,
-      "hash": "dc9b265c92ff17d6",
-      "height": 93,
-      "id": "a5",
-      "mediaType": "image/png",
-      "originalName": "弱监督学习范式.png",
-      "path": "_____________________.png",
-      "width": 851
-    },
-    {
-      "fileSize": 149256,
-      "hash": "3187bcc5c9da062a",
-      "height": 494,
-      "id": "a11",
-      "mediaType": "image/jpeg",
-      "originalName": "fa.jpg",
-      "path": "a10_fa.jpg",
-      "width": 2100
-    },
-    {
       "fileSize": 123317,
       "hash": "3b2b7602554cb319",
       "height": 1042,
-      "id": "a4",
+      "id": "a13",
       "mediaType": "image/jpeg",
       "originalName": "point_label_examples.jpg",
-      "path": "a3_point_label_examples.jpg",
-      "width": 2100
-    },
-    {
-      "fileSize": 1259751,
-      "hash": "fd1642b0bf736415",
-      "height": 3205,
-      "id": "a3",
-      "mediaType": "image/png",
-      "originalName": "dir_msg_visulization.png",
-      "path": "dir_msg_visulization.png",
-      "width": 2929
-    },
-    {
-      "fileSize": 1259751,
-      "hash": "fd1642b0bf736415",
-      "height": 3205,
-      "id": "a2",
-      "mediaType": "image/png",
-      "originalName": "dir_msg_visulization.png",
-      "path": "a1_dir_msg_visulization.png",
-      "width": 2929
-    },
-    {
-      "fileSize": 123317,
-      "hash": "3b2b7602554cb319",
-      "height": 1042,
-      "id": "a6",
-      "mediaType": "image/jpeg",
-      "originalName": "point_label_examples.jpg",
-      "path": "a5_point_label_examples.jpg",
-      "width": 2100
-    },
-    {
-      "fileSize": 125988,
-      "hash": "a6ea64a0e77f7f0d",
-      "height": 187,
-      "id": "a1",
-      "mediaType": "image/png",
-      "originalName": "IRST-example.png",
-      "path": "IRST-example.png",
-      "width": 747
-    },
-    {
-      "fileSize": 149256,
-      "hash": "3187bcc5c9da062a",
-      "height": 494,
-      "id": "a7",
-      "mediaType": "image/jpeg",
-      "originalName": "fa.jpg",
-      "path": "fa.jpg",
+      "path": "a12_point_label_examples.jpg",
       "width": 2100
     },
     {
@@ -91,14 +21,84 @@
       "width": 3131
     },
     {
+      "fileSize": 149256,
+      "hash": "3187bcc5c9da062a",
+      "height": 494,
+      "id": "a7",
+      "mediaType": "image/jpeg",
+      "originalName": "fa.jpg",
+      "path": "fa.jpg",
+      "width": 2100
+    },
+    {
+      "fileSize": 125988,
+      "hash": "a6ea64a0e77f7f0d",
+      "height": 187,
+      "id": "a1",
+      "mediaType": "image/png",
+      "originalName": "IRST-example.png",
+      "path": "IRST-example.png",
+      "width": 747
+    },
+    {
       "fileSize": 123317,
       "hash": "3b2b7602554cb319",
       "height": 1042,
-      "id": "a13",
+      "id": "a6",
       "mediaType": "image/jpeg",
       "originalName": "point_label_examples.jpg",
-      "path": "a12_point_label_examples.jpg",
+      "path": "a5_point_label_examples.jpg",
       "width": 2100
+    },
+    {
+      "fileSize": 1259751,
+      "hash": "fd1642b0bf736415",
+      "height": 3205,
+      "id": "a2",
+      "mediaType": "image/png",
+      "originalName": "dir_msg_visulization.png",
+      "path": "a1_dir_msg_visulization.png",
+      "width": 2929
+    },
+    {
+      "fileSize": 1259751,
+      "hash": "fd1642b0bf736415",
+      "height": 3205,
+      "id": "a3",
+      "mediaType": "image/png",
+      "originalName": "dir_msg_visulization.png",
+      "path": "dir_msg_visulization.png",
+      "width": 2929
+    },
+    {
+      "fileSize": 123317,
+      "hash": "3b2b7602554cb319",
+      "height": 1042,
+      "id": "a4",
+      "mediaType": "image/jpeg",
+      "originalName": "point_label_examples.jpg",
+      "path": "a3_point_label_examples.jpg",
+      "width": 2100
+    },
+    {
+      "fileSize": 149256,
+      "hash": "3187bcc5c9da062a",
+      "height": 494,
+      "id": "a11",
+      "mediaType": "image/jpeg",
+      "originalName": "fa.jpg",
+      "path": "a10_fa.jpg",
+      "width": 2100
+    },
+    {
+      "fileSize": 9767,
+      "hash": "dc9b265c92ff17d6",
+      "height": 93,
+      "id": "a5",
+      "mediaType": "image/png",
+      "originalName": "弱监督学习范式.png",
+      "path": "_____________________.png",
+      "width": 851
     }
   ],
   "bibliographyPath": "references.bib",
@@ -289,12 +289,36 @@
             "width": "100"
           },
           {
-            "caption": [],
-            "id": "n26",
+            "body": [
+              {
+                "text": "AB = A + B",
+                "type": "text"
+              }
+            ],
+            "id": "n27",
+            "kind": "Theorem",
             "label": "",
+            "numbered": true,
+            "title": [
+              {
+                "text": "fasdfasdf",
+                "type": "text"
+              }
+            ],
+            "type": "theorem"
+          },
+          {
+            "caption": [
+              {
+                "text": "AB = A, B",
+                "type": "text"
+              }
+            ],
+            "id": "n26",
+            "label": "dfasdfas ",
             "language": "",
-            "lineNumbers": false,
-            "text": "",
+            "lineNumbers": true,
+            "text": "Input: A, B\nOutput: AB",
             "type": "code"
           },
           {
@@ -368,14 +392,14 @@
     ]
   },
   "projectId": "p1",
-  "revision": 194,
+  "revision": 222,
   "schemaVersion": "5",
-  "template": "ieee-conference",
+  "template": "elsevier-cas-sc@e166edadc97a",
   "templateBinding": {
-    "digest": "2fe5cd487eb00cee03b397b0544dafe4e6a4550d50e2d186e6d7390079a74e81",
-    "id": "ieee-conference",
+    "digest": "e166edadc97a7a61142f3fe62d50a14ad4d20e6f2b1c0eabfa8c657e44cc8ed9",
+    "id": "elsevier-cas-sc@e166edadc97a",
     "options": {},
-    "profile": "ieee-conference",
-    "version": "1"
+    "profile": "elsevier-cas-sc",
+    "version": "2.4"
   }
 }

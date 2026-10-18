@@ -57,6 +57,15 @@ Node Origin(Node n, const std::string& label, const std::string& component) {
     n.origin = component;
     return n;
 }
+std::vector<TheoremEnvironmentDecl> DefaultTheoremDeclarations() {
+    return {
+        {TheoremKind::Theorem, "theorem", true},       {TheoremKind::Lemma, "lemma", true},
+        {TheoremKind::Proposition, "proposition", true}, {TheoremKind::Corollary, "corollary", true},
+        {TheoremKind::Definition, "definition", true}, {TheoremKind::Remark, "remark", true},
+        {TheoremKind::Example, "example", true},
+    };
+}
+
 JsonValue NodeJson(const Node& node) {
     JsonArray args, children;
     for (const auto& arg : node.arguments) {
@@ -79,9 +88,11 @@ JsonValue NodeJson(const Node& node) {
 
 class CommonPlanner {
   public:
-    CommonPlanner(const RenderRequest& request, const TemplateDefinition& definition,
+    CommonPlanner(const RenderRequest& request, const TemplateDefinition& definition, bool use_listings,
+                  const std::vector<TheoremEnvironmentDecl>& theorem_declarations,
                   CrossReferenceStyle cross_reference = CrossReferenceStyle::Ref)
-        : request_(request), definition_(definition), labels_(LabelRegistry::Build(*request.document)),
+        : request_(request), definition_(definition), use_listings_(use_listings),
+          theorem_declarations_(theorem_declarations), labels_(LabelRegistry::Build(*request.document)),
           cross_reference_(cross_reference) {
         // Validator 会先给出 E-DUPLICATE-LABEL；这里拒绝生成会被 TeX 静默
         // 覆盖的重复 \label，避免“PDF 编译成功但引用指向错误目标”。
@@ -138,7 +149,7 @@ class CommonPlanner {
         return out;
     }
     const TheoremEnvironmentDecl* TheoremDecl(TheoremKind kind) const {
-        for (const auto& decl : definition_.theorem_environments) {
+        for (const auto& decl : theorem_declarations_) {
             if (decl.kind == kind)
                 return &decl;
         }
@@ -197,7 +208,7 @@ class CommonPlanner {
     }
 
     Node CodePlan(const CodeBlock& code) const {
-        const bool listings = definition_.code_listing.package == "listings";
+            const bool listings = use_listings_;
         const char* end_marker = listings ? "\\end{lstlisting}" : "\\end{verbatim}";
         if (code.code.find(end_marker) != std::string::npos)
             throw std::runtime_error(std::string("code block contains ") + end_marker);
@@ -356,6 +367,8 @@ class CommonPlanner {
   private:
     const RenderRequest& request_;
     const TemplateDefinition& definition_;
+    const bool use_listings_ = false;
+    const std::vector<TheoremEnvironmentDecl>& theorem_declarations_;
     LabelRegistry labels_;
     CrossReferenceStyle cross_reference_ = CrossReferenceStyle::Ref;
 };
@@ -538,7 +551,21 @@ PlanResult LatexPlanner::Plan(const RenderRequest& request,
         if (def.toolchain.bibliography_engine != BibliographyEngine::BibTex)
             throw std::runtime_error(
                 "The numeric citation component requires BibTeX");
-        CommonPlanner common(request, def, def.capabilities.cross_reference);
+        bool has_code = false;
+        bool has_theorem = false;
+        VisitBlocks(*request.document, [&](const Block& block, const NodeAddress&) {
+            if (std::holds_alternative<CodeBlock>(block))
+                has_code = true;
+            if (std::holds_alternative<TheoremBlock>(block))
+                has_theorem = true;
+        });
+        // 外部模板可能没有声明 code/theorem capability，但项目可能从别的模板
+        // 带入了这些块。只要文档里有，就必须生成可编译的支撑声明。
+        const bool use_listings = def.capabilities.code_blocks && def.code_listing.package == "listings";
+        std::vector<TheoremEnvironmentDecl> theorem_declarations = def.theorem_environments;
+        if (theorem_declarations.empty())
+            theorem_declarations = DefaultTheoremDeclarations();
+        CommonPlanner common(request, def, use_listings, theorem_declarations, def.capabilities.cross_reference);
         auto plan =
             std::shared_ptr<LatexGenerationPlan>(new LatexGenerationPlan());
         auto& nodes = plan->nodes_;
@@ -598,12 +625,12 @@ PlanResult LatexPlanner::Plan(const RenderRequest& request,
                 Line(nodes, std::move(node));
             }
         }
-        if (def.capabilities.theorems) {
+        if (has_theorem) {
             if (seen.find("amsthm") == seen.end()) {
                 Line(nodes, Cmd("usepackage", {Id("amsthm")}));
                 seen.emplace("amsthm", "");
             }
-            for (const auto& theorem : def.theorem_environments) {
+            for (const auto& theorem : theorem_declarations) {
                 Node definition = Leaf(Node::Kind::Command, "newtheorem");
                 definition.arguments = {{Lit(theorem.latex_name)}, {Text(ToString(theorem.kind))}};
                 Line(nodes, std::move(definition));
@@ -613,8 +640,8 @@ PlanResult LatexPlanner::Plan(const RenderRequest& request,
                 Line(nodes, std::move(starred));
             }
         }
-        if (def.capabilities.code_blocks) {
-            if (def.code_listing.package == "listings") {
+        if (has_code) {
+            if (use_listings) {
                 if (seen.find("listings") == seen.end())
                     Line(nodes, Cmd("usepackage", {Id("listings")}));
             } else {
@@ -626,6 +653,10 @@ PlanResult LatexPlanner::Plan(const RenderRequest& request,
                 Line(nodes,
                      Lit("\\newcommand{\\paperforgeListing}[2]"
                          "{\\refstepcounter{listing}\\label{#1}\\textbf{Listing \\thelisting: #2}}"));
+                // IEEEtran 把 \ttfamily 指向 Courier，而自带 runtime 没有 pcr
+                // 字型；verbatim 默认使用 \verbatim@font，显式改回 cmtt。
+                Line(nodes, Lit("\\makeatletter\\renewcommand{\\verbatim@font}"
+                                "{\\fontfamily{cmtt}\\selectfont}\\makeatother"));
             }
         }
         nodes.push_back(Lit("\n\\begin{document}\n\n"));

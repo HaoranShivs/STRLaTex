@@ -375,7 +375,7 @@ void MainWindow::WireEditor() {
         } else if (type == "proof") {
             result = controller_->InsertTheoremAfter(anchor, TheoremKind::Proof, {}, false);
         } else if (type == "code") {
-            result = controller_->InsertCodeAfter(anchor, QStringLiteral("python"), {}, true);
+            result = controller_->InsertCodeAfter(anchor, QString(), {}, true);
         } else if (type == "figure") {
             editor_->CommitFocused();
             QString path = QFileDialog::getOpenFileName(this, "Insert Figure", {},
