@@ -3,6 +3,31 @@
 
 namespace pf {
 
+namespace {
+
+std::vector<TheoremEnvironmentDecl> DefaultTheoremEnvironments() {
+    return {
+        {TheoremKind::Theorem, "theorem", true},
+        {TheoremKind::Lemma, "lemma", true},
+        {TheoremKind::Proposition, "proposition", true},
+        {TheoremKind::Corollary, "corollary", true},
+        {TheoremKind::Definition, "definition", true},
+        {TheoremKind::Remark, "remark", true},
+        {TheoremKind::Example, "example", true},
+    };
+}
+
+void EnableTheoremsAndCode(TemplateDefinition& t) {
+    t.capabilities.theorems = true;
+    t.capabilities.code_blocks = true;
+    t.theorem_environments = DefaultTheoremEnvironments();
+    // 自带 runtime 没有 listings.sty；内置模板使用基础 verbatim + 自定义
+    // listing 计数器，外部模板可显式声明 listings。
+    t.code_listing = {"verbatim", ""};
+}
+
+} // namespace
+
 TemplateRegistry& TemplateRegistry::Instance() {
     static TemplateRegistry instance;
     return instance;
@@ -34,6 +59,7 @@ TemplateRegistry::TemplateRegistry() {
         t.toolchain.engine = LatexEngine::PdfLatex;
         t.toolchain.bibliography_engine = BibliographyEngine::BibTex;
         t.toolchain.required_packages = {"amsmath", "booktabs", "hyperref"};
+        EnableTheoremsAndCode(t);
         templates_[t.id] = t;
     }
     {
@@ -61,6 +87,7 @@ TemplateRegistry::TemplateRegistry() {
         t.toolchain.bibliography_engine = BibliographyEngine::BibTex;
         t.toolchain.required_packages = {"IEEEtran", "amsmath", "booktabs",
                                          "natbib", "hyperref"};
+        EnableTheoremsAndCode(t);
         templates_[t.id] = t;
     }
     for (auto& [id, def] : templates_) {

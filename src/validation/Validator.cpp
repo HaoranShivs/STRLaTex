@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <functional>
 #include <optional>
+#include <set>
 
 #include "core/IdGenerator.h"
 #include "document/DocumentTraversal.h"
@@ -20,11 +22,20 @@ namespace {
 // 由 ThreadSanitizer 发现。
 std::atomic<std::uint64_t> g_counter{0};
 
+bool IsKnownCodeLanguage(const std::string& language) {
+    static const std::set<std::string> languages = {
+        "python", "py", "c", "cpp", "c++", "java", "javascript", "js", "typescript", "ts",
+        "rust", "go", "bash", "sh", "shell", "sql", "json", "yaml", "xml", "html", "css",
+        "latex", "tex", "matlab", "r", "swift", "kotlin", "scala"};
+    return language.empty() || languages.count(language) != 0;
+}
+
 Diagnostic MakeDiag(ProjectRevision rev, DiagnosticSeverity severity, const std::string& code,
-                    const std::string& message, DiagnosticLocation loc) {
+                    const std::string& message, DiagnosticLocation loc,
+                    DiagnosticSource source = DiagnosticSource::Validation) {
     Diagnostic d;
     d.id = MakeDiagnosticId("val", g_counter.fetch_add(1) + 1);
-    d.source = DiagnosticSource::Validation;
+    d.source = source;
     d.severity = severity;
     d.code = code;
     d.message = message;
@@ -58,6 +69,31 @@ ValidationResult Validator::Validate(const ValidationInput& input) const {
 }
 
 void Validator::ValidateSemantic(const Document& doc, const ValidationInput& input, ValidationResult* result) const {
+    // 模板实际加载的数学宏包。renderer 总会注入 amsmath/amssymb，因此它们
+    // 无论模板 manifest 是否列出都视为可用。
+    std::set<std::string> available_packages = {"amsmath", "amssymb"};
+    {
+        const TemplateDefinition* definition = input.resolved_template ? input.resolved_template.get() : nullptr;
+        if (!definition && !input.template_id.empty())
+            definition = TemplateRegistry::Instance().Find(input.template_id);
+        if (definition) {
+            for (const auto& package : definition->packages)
+                available_packages.insert(package.name);
+        }
+    }
+    auto check_math_packages = [&](const MathValidation& validation, const DiagnosticLocation& location) {
+        if (!validation.valid())
+            return;
+        for (const auto& package : validation.required_packages) {
+            if (available_packages.count(package) != 0)
+                continue;
+            result->diagnostics.push_back(MakeDiag(
+                input.revision, DiagnosticSeverity::Error, "E-MATH-MISSING-PACKAGE",
+                "math requires package '" + package + "'; the current template does not load it", location,
+                DiagnosticSource::Template));
+        }
+    };
+
     // 重复 \label（WP-03）：planner 会拒绝生成，Problems 面板必须先给出
     // 可定位的错误，而不是让用户从“引用指错了地方”反推。
     {
@@ -86,6 +122,22 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
     auto check_inline = [&](const InlineContent& content, const std::optional<NodeId>& owner) {
         const DiagnosticLocation location =
             owner ? DiagnosticLocation::ForNode(*owner) : DiagnosticLocation::ForProject();
+        // 脚注不允许嵌套（模型允许共享 body，但 UI/校验只支持一层）。
+        std::function<void(const InlineContent&, int)> check_footnote_depth =
+            [&](const InlineContent& nodes, int depth) {
+                for (const auto& nested : nodes) {
+                    if (const auto* footnote = std::get_if<Footnote>(&nested)) {
+                        if (depth >= 1) {
+                            result->diagnostics.push_back(MakeDiag(
+                                input.revision, DiagnosticSeverity::Error, "E-FOOTNOTE-NESTED",
+                                "footnotes cannot contain another footnote", location));
+                        }
+                        if (footnote->body)
+                            check_footnote_depth(footnote->body->content, depth + 1);
+                    }
+                }
+            };
+        check_footnote_depth(content, 0);
         for (const auto& node : content) {
             if (const auto* cit = std::get_if<Citation>(&node)) {
                 if (!cit->keys.empty())
@@ -110,6 +162,7 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
                     result->diagnostics.push_back(MakeDiag(input.revision, DiagnosticSeverity::Warning,
                                                            "W-EMPTY-INLINE-MATH", "inline math is empty", location));
                 }
+                check_math_packages(validation, location);
             }
         }
     };
@@ -117,21 +170,17 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
     // 块级语义规则。一次遍历完成；标题嵌套关系在 DocumentTraversal 中，
     // 不在这里。
     VisitBlocks(doc, [&](const Block& block, const NodeAddress& address) {
-        if (const auto* para = std::get_if<Paragraph>(&block)) {
-            check_inline(para->content, address.node);
-        } else if (const auto* fig = std::get_if<Figure>(&block)) {
+        if (const auto* fig = std::get_if<Figure>(&block)) {
             if (fig->asset_id.empty()) {
                 result->diagnostics.push_back(MakeDiag(input.revision, DiagnosticSeverity::Error, "E-MISSING-ASSET",
                                                        "figure has no asset", DiagnosticLocation::ForNode(fig->id)));
             }
-            check_inline(fig->caption, fig->id);
         } else if (const auto* table = std::get_if<Table>(&block)) {
             if (!table->IsRectangular()) {
                 result->diagnostics.push_back(MakeDiag(input.revision, DiagnosticSeverity::Error, "E-NON-RECT-TABLE",
                                                        "table is not rectangular",
                                                        DiagnosticLocation::ForNode(table->id)));
             }
-            check_inline(table->caption, table->id);
         } else if (const auto* eq = std::get_if<EquationBlock>(&block)) {
             const MathValidation validation = ValidateMath(eq->expression.latex, MathFlavor::Display);
             if (validation.invalid()) {
@@ -142,7 +191,26 @@ void Validator::ValidateSemantic(const Document& doc, const ValidationInput& inp
                                                        "display equation is empty",
                                                        DiagnosticLocation::ForNode(eq->id)));
             }
+            check_math_packages(validation, DiagnosticLocation::ForNode(eq->id));
+        } else if (const auto* code = std::get_if<CodeBlock>(&block)) {
+            if (code->code.find("\\end{lstlisting}") != std::string::npos ||
+                code->code.find("\\end{verbatim}") != std::string::npos) {
+                result->diagnostics.push_back(MakeDiag(
+                    input.revision, DiagnosticSeverity::Error, "E-CODE-END-MARKER",
+                    "code block contains a forbidden environment end marker",
+                    DiagnosticLocation::ForNode(code->id)));
+            }
+            if (!IsKnownCodeLanguage(code->language)) {
+                result->diagnostics.push_back(MakeDiag(
+                    input.revision, DiagnosticSeverity::Warning, "W-CODE-LANGUAGE",
+                    "unknown code language '" + code->language + "'; listings will omit the language option",
+                    DiagnosticLocation::ForNode(code->id)));
+            }
         }
+    });
+
+    VisitInlineContent(doc, [&](const InlineContent& content, const NodeAddress& address) {
+        check_inline(content, address.section ? std::optional<NodeId>(address.node) : std::nullopt);
     });
 
     // 悬空的交叉引用：一次遍历覆盖所有行内内容（段落正文与题注，

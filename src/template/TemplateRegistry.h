@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "build/Toolchain.h"
+#include "document/Document.h"
 #include "template/TemplateBinding.h"
 
 namespace pf {
@@ -33,6 +34,19 @@ struct TemplateCapabilities {
     int max_heading_depth = 3;
     // 交叉引用命令。默认 Ref 保持现有模板的字节级输出不变。
     CrossReferenceStyle cross_reference = CrossReferenceStyle::Ref;
+    bool theorems = false;
+    bool code_blocks = false;
+};
+
+struct TheoremEnvironmentDecl {
+    TheoremKind kind = TheoremKind::Theorem;
+    std::string latex_name = "theorem";
+    bool numbered = true;
+};
+
+struct CodeListingDecl {
+    std::string package = "listings";
+    std::string options;
 };
 
 struct LatexPackageRequirement {
@@ -51,6 +65,8 @@ struct TemplateDefinition {
     std::vector<LatexPackageRequirement> packages;
     TemplateRequiredFields required;
     TemplateCapabilities capabilities;
+    std::vector<TheoremEnvironmentDecl> theorem_environments;
+    CodeListingDecl code_listing;
     // 模板所需的编译 toolchain（方案 §7、§28）。引擎由模板作者决定，
     // 下游不再重新推断。
     TemplateToolchainRequirement toolchain;

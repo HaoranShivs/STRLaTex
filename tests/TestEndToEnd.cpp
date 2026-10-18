@@ -233,6 +233,52 @@ PF_TEST(EndToEndTectonicBuild) {
     eq.latex = "E = mc^{2}";
     session.Execute(make_cmd(eq));
 
+    // WP-02：内置模板声明/由 renderer 注入 amssymb，黑板体与哥特体必须真正
+    // 进入 PDF，而不只是离线预览里可画。
+    InsertEquationPayload font_eq;
+    font_eq.parent = sec_result.created_node;
+    font_eq.latex = "\\mathbb{R} + \\mathfrak{g}";
+    session.Execute(make_cmd(font_eq));
+
+    // WP-06：真实 TeX 中脚注与有序/无序列表必须能通过 tectonic。
+    Paragraph note;
+    note.content = InlineFromText("A paragraph with a footnote");
+    note.content.push_back(MakeFootnote(InlineFromText("Footnote text in the PDF")));
+    InsertParagraphPayload note_payload;
+    note_payload.parent = sec_result.created_node;
+    note_payload.content = note.content;
+    session.Execute(make_cmd(note_payload));
+
+    InsertListPayload list_payload;
+    list_payload.parent = sec_result.created_node;
+    list_payload.style = ListStyle::Numbered;
+    list_payload.first_item = InlineFromText("First list item");
+    auto list_result = session.Execute(make_cmd(list_payload));
+    PF_CHECK(list_result.status == EditStatus::Applied);
+    if (list_result.status == EditStatus::Applied) {
+        InsertListItemPayload item_payload;
+        item_payload.list = list_result.created_node;
+        item_payload.index = 1;
+        item_payload.content = InlineFromText("Second list item");
+        session.Execute(make_cmd(item_payload));
+    }
+
+    InsertTheoremPayload theorem;
+    theorem.parent = sec_result.created_node;
+    theorem.kind = TheoremKind::Theorem;
+    theorem.title = InlineFromText("Main result");
+    theorem.body = InlineFromText("Every end-to-end paper has a theorem.");
+    theorem.label = "thm:e2e";
+    session.Execute(make_cmd(theorem));
+
+    InsertCodePayload code;
+    code.parent = sec_result.created_node;
+    code.language = "python";
+    code.code = "print('paperforge')\n";
+    code.caption = InlineFromText("A listing");
+    code.label = "lst:e2e";
+    session.Execute(make_cmd(code));
+
     session.ImportBibliography("@article{ref1, author={Jane Doe}, title={Something}, year={2021}}");
     (void)SaveAndFlush(session);
 

@@ -4,6 +4,14 @@
 
 namespace pf {
 
+bool Footnote::operator==(const Footnote& other) const {
+    if (body == other.body)
+        return true;
+    if (!body || !other.body)
+        return false;
+    return body->content == other.body->content;
+}
+
 const char* ToString(NodeKind kind) {
     switch (kind) {
     case NodeKind::Section:
@@ -20,8 +28,36 @@ const char* ToString(NodeKind kind) {
         return "Table";
     case NodeKind::Equation:
         return "Equation";
+    case NodeKind::List:
+        return "List";
+    case NodeKind::Theorem:
+        return "Theorem";
+    case NodeKind::Code:
+        return "Code";
     }
     return "Unknown";
+}
+
+const char* ToString(TheoremKind kind) {
+    switch (kind) {
+    case TheoremKind::Theorem:
+        return "Theorem";
+    case TheoremKind::Lemma:
+        return "Lemma";
+    case TheoremKind::Proposition:
+        return "Proposition";
+    case TheoremKind::Corollary:
+        return "Corollary";
+    case TheoremKind::Definition:
+        return "Definition";
+    case TheoremKind::Proof:
+        return "Proof";
+    case TheoremKind::Remark:
+        return "Remark";
+    case TheoremKind::Example:
+        return "Example";
+    }
+    return "Theorem";
 }
 
 bool Document::ContainsNode(const NodeId& id) const {

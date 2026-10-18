@@ -6,7 +6,7 @@ namespace pf {
 
 bool ProjectMigrator::IsKnownVersion(const std::string& version) {
     return version == kSchemaVersionV1 || version == kSchemaVersionV2 || version == kSchemaVersionV3 ||
-           version == kSchemaVersion;
+           version == kSchemaVersionV4 || version == kSchemaVersion;
 }
 
 MigrationResult ProjectMigrator::MigrateToCurrent(SerializedProject* project) {
@@ -63,8 +63,20 @@ MigrationResult ProjectMigrator::MigrateToCurrent(SerializedProject* project) {
     if (project->schema_version == kSchemaVersionV3) {
         MigrationStep step;
         step.from_version = kSchemaVersionV3;
-        step.to_version = kSchemaVersion;
+        step.to_version = kSchemaVersionV4;
         step.description = "optional figure/table labels for cross-references (no data change)";
+        result.applied.push_back(step);
+        result.migrated = true;
+        project->schema_version = kSchemaVersionV4;
+    }
+
+    // V4 -> V5：列表与脚注。V4 文件没有 "list" block 或 "footnote"
+    // 行内节点，因此读取后的内存表示已经正确；迁移仅打版本戳。
+    if (project->schema_version == kSchemaVersionV4) {
+        MigrationStep step;
+        step.from_version = kSchemaVersionV4;
+        step.to_version = kSchemaVersion;
+        step.description = "lists, footnotes, theorems and code blocks (no data change)";
         result.applied.push_back(step);
         result.migrated = true;
         project->schema_version = kSchemaVersion;

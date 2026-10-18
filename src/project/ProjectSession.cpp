@@ -56,7 +56,7 @@ namespace {
 
 ProjectSession::ProjectSession(Config config)
     : config_(std::move(config)),
-      assets_(std::make_unique<AssetManager>(std::filesystem::path("/tmp/paperforge-assets"))),
+      assets_(std::make_unique<AssetManager>(std::filesystem::path("/tmp/paperforge-assets"), config_.asset_converter)),
       snapshot_factory_(assets_.get()),
       // save worker 通过应用事件队列回传完成结果，绝不直接调用 domain。
       save_coordinator_([this](const SaveCompletion& completion) {
@@ -347,7 +347,7 @@ Result<void, IoError> ProjectSession::EnsureDirectories() {
         }
     }
     // 把 asset manager 重新指向本项目的 assets 目录。
-    assets_ = std::make_unique<AssetManager>(paths_.assets_dir);
+    assets_ = std::make_unique<AssetManager>(paths_.assets_dir, config_.asset_converter);
     snapshot_factory_ = SnapshotFactory(assets_.get());
     return {};
 }
@@ -810,6 +810,13 @@ void ProjectSession::ChangeTemplate(const std::string& template_id) {
 // ---------------- 资源 ----------------
 
 AssetImportResult ProjectSession::ImportAsset(const std::filesystem::path& source) {
+    NoteOwnerThreadUse();
+    if (lifecycle_state_ != LifecycleState::Open) {
+        AssetImportResult result;
+        result.status = AssetImportResult::Status::IoError;
+        result.detail = "Open a project before importing a figure.";
+        return result;
+    }
     AssetImportRequest request;
     request.source_path = source;
     request.project_id = state_.id();
@@ -821,6 +828,19 @@ AssetImportResult ProjectSession::ImportAsset(const std::filesystem::path& sourc
 EditResult ProjectSession::InsertFigureFromSource(const std::filesystem::path& source, const NodeId& parent,
                                                   std::optional<size_t> index) {
     auto imported = ImportAsset(source);
+    InsertFigurePayload payload;
+    payload.parent = parent;
+    payload.index = index;
+    payload.asset_id = imported.asset_id;
+    return ApplyImportedAsset(imported, payload);
+}
+
+EditResult ProjectSession::ReplaceFigureFromSource(const NodeId& figure, const std::filesystem::path& source) {
+    auto imported = ImportAsset(source);
+    return ApplyImportedAsset(imported, SetFigureAssetPayload{figure, imported.asset_id});
+}
+
+EditResult ProjectSession::ApplyImportedAsset(const AssetImportResult& imported, FullEditPayload payload) {
     if (imported.status != AssetImportResult::Status::Ok) {
         EditResult r;
         r.status = EditStatus::Rejected;
@@ -828,21 +848,26 @@ EditResult ProjectSession::InsertFigureFromSource(const std::filesystem::path& s
         r.detail = "asset import failed: " + imported.detail;
         return r;
     }
-    // 既然已被使用，现在就注册。
-    assets_->Register(assets_->ToCandidate(imported));
-
     // 针对当前 revision 重新解析锚点（架构补充规则 4）。
     EditCommand cmd;
     cmd.operation_id = OperationId(IdGenerator::NewOperationId());
     cmd.project_id = state_.id();
     cmd.base_revision = state_.revision();
     cmd.origin = EditOrigin::User;
-    InsertFigurePayload payload;
-    payload.parent = parent;
-    payload.index = index;
-    payload.asset_id = imported.asset_id;
-    cmd.payload = payload;
-    return Execute(cmd);
+    cmd.payload = std::move(payload);
+    // Register only a successful edit, before capturing the build snapshot.
+    // Old assets stay registered so undo/redo can restore the previous image.
+    auto result = editing_.Apply(cmd);
+    if (result.status == EditStatus::Applied) {
+        assets_->Register(assets_->ToCandidate(imported));
+    } else {
+        auto path = ResolveUntrustedProjectPath(assets_->assets_dir(), imported.metadata.relative_path);
+        if (path) {
+            std::error_code ignored;
+            std::filesystem::remove(path.value(), ignored);
+        }
+    }
+    return FinalizeEdit(std::move(result));
 }
 
 // ---------------- 参考文献 ----------------

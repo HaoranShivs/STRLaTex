@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -11,6 +12,9 @@
 #include "core/StrongId.h"
 
 namespace pf {
+
+enum class AssetKind : std::uint8_t { Raster, Pdf, Svg, Eps };
+AssetKind AssetKindForMediaType(const std::string& media_type) noexcept;
 
 struct AssetMetadata {
     AssetId id;
@@ -22,6 +26,17 @@ struct AssetMetadata {
     // 图像尺寸（未知时为 0）
     std::uint64_t width = 0;
     std::uint64_t height = 0;
+    // Describes the stored file; converted SVG/EPS files are normally PDF.
+    AssetKind kind = AssetKind::Raster;
+    bool IsVector() const noexcept { return kind != AssetKind::Raster; }
+};
+
+class IAssetConverter {
+  public:
+    virtual ~IAssetConverter() = default;
+    virtual std::optional<std::filesystem::path>
+    Convert(const std::filesystem::path& source, const std::filesystem::path& work_dir,
+            std::string* error) = 0;
 };
 
 struct AssetImportRequest {
@@ -58,11 +73,11 @@ class AssetRegistry {
 
 class AssetManager {
   public:
-    explicit AssetManager(std::filesystem::path assets_dir);
+    explicit AssetManager(std::filesystem::path assets_dir, std::shared_ptr<IAssetConverter> converter = nullptr);
 
     // Stage：把文件复制到 assets 目录（或报告其已存在），
     // 计算元数据与哈希。不执行注册（导入与注册分离）。
-    AssetImportResult Stage(const AssetImportRequest& request);
+    AssetImportResult Stage(const AssetImportRequest& request, bool allow_vector = true);
     ImportedAssetCandidate ToCandidate(const AssetImportResult& result) const;
 
     // 注册到 registry（成为正式的项目资源）。
@@ -77,6 +92,7 @@ class AssetManager {
   private:
     std::filesystem::path assets_dir_;
     AssetRegistry registry_;
+    std::shared_ptr<IAssetConverter> converter_;
 };
 
 } // namespace pf

@@ -74,6 +74,11 @@ LabelRegistry LabelRegistry::Build(const Document& document) {
                     // occupy a label or produce a conflict.
                     if (typed.numbered)
                         registry.Register(typed.id, EffectiveLabel(typed.label, typed.id));
+                } else if constexpr (std::is_same_v<T, TheoremBlock>) {
+                    if (typed.kind != TheoremKind::Proof && typed.numbered)
+                        registry.Register(typed.id, EffectiveLabel(typed.label, typed.id));
+                } else if constexpr (std::is_same_v<T, CodeBlock>) {
+                    registry.Register(typed.id, EffectiveLabel(typed.label, typed.id));
                 }
             },
             block);

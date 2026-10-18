@@ -205,7 +205,7 @@
                 "type": "citation"
               },
               {
-                "text": " explicitly incorporate prior knowledge specific to the IRSTD task, offering high interpretability. However, they exhibit limited robustness in diverse real-world scenarios and often require manual parameter tuning to achieve satisfactory performance. In recent years",
+                "text": " explicitly incorporate prior knowledge specific to the IRSTD task, offering high interpretability. However, they exhibit limited robustness in diverse real-world scenarios and often require manual parameter tuning to achieve satisfactory performance. In recent years ",
                 "type": "text"
               },
               {
@@ -225,12 +225,43 @@
                 "type": "citation"
               },
               {
-                "text": ", data-driven methods , particularly deep learning approaches, have attracted widespread attention because of their superior performance and robustness. Nevertheless, most of these methods depend on pixel-level annotations for network training, underscoring the demand for large-scale, high-quality mask labels [23–25]. In practice, however, acquiring pixel-level annotations for infrared small targets is extremely costly in terms of human labor and time [26]. Moreover, the tiny scale and poor visibility of infrared small targets render manual pixel-level labeling highly subjective and error-prone, often yielding low-quality annotations.",
+                "text": ", data-driven methods , particularly deep learning approaches, have attracted widespread attention because of their superior performance and robustness. Nevertheless, most of these methods depend on pixel-level annotations for network training, underscoring the demand for large-scale, high-quality mask labels ",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "kou2023detection",
+                  "kou2024mcgc",
+                  "li2022dense"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": ". In practice, however, acquiring pixel-level annotations for infrared small targets is extremely costly in terms of human labor and time ",
+                "type": "text"
+              },
+              {
+                "keys": [
+                  "li2023monte"
+                ],
+                "mode": "parenthetical",
+                "type": "citation"
+              },
+              {
+                "text": ". Moreover, the tiny scale and poor visibility of infrared small targets render manual pixel-level labeling highly subjective and error-prone, often yielding low-quality annotations.",
                 "type": "text"
               }
             ],
             "id": "n21",
             "type": "paragraph"
+          },
+          {
+            "id": "n24",
+            "label": "",
+            "latex": "a^b_c",
+            "numbered": true,
+            "type": "equation"
           },
           {
             "alt": "",
@@ -245,7 +276,7 @@
             "label": "",
             "span": "single",
             "type": "figure",
-            "width": "100"
+            "width": "75"
           },
           {
             "alt": "",
@@ -256,6 +287,15 @@
             "span": "single",
             "type": "figure",
             "width": "100"
+          },
+          {
+            "caption": [],
+            "id": "n26",
+            "label": "",
+            "language": "",
+            "lineNumbers": false,
+            "text": "",
+            "type": "code"
           },
           {
             "alt": "",
@@ -328,14 +368,14 @@
     ]
   },
   "projectId": "p1",
-  "revision": 139,
-  "schemaVersion": "4",
-  "template": "elsevier-cas-dc@e166edadc97a",
+  "revision": 194,
+  "schemaVersion": "5",
+  "template": "ieee-conference",
   "templateBinding": {
-    "digest": "e166edadc97a7a61142f3fe62d50a14ad4d20e6f2b1c0eabfa8c657e44cc8ed9",
-    "id": "elsevier-cas-dc@e166edadc97a",
+    "digest": "2fe5cd487eb00cee03b397b0544dafe4e6a4550d50e2d186e6d7390079a74e81",
+    "id": "ieee-conference",
     "options": {},
-    "profile": "elsevier-cas-dc",
-    "version": "2.4"
+    "profile": "ieee-conference",
+    "version": "1"
   }
 }

@@ -336,7 +336,7 @@ ieee-conference: doc(bold=1 italic=1) tex(bold=1 italic=1)
 | picker 覆盖 Section/Subsection/Subsubsection/Figure/Table/Equation | `BlockEditor::ShowReferencePicker`、`ProjectController::CrossReferences` |
 | 类型前缀 + 编号的胶囊显示 | `DocumentNumberer` → `BlockEditor::SetCrossReferences` → `InlineEditor::SetCrossReferenceLabels` |
 | 卡片标题显示 `Figure 3` / `Eq. (4)` | `BlockEditor::MakeCard` |
-| Figure/Table 自定义 label + schema v4 | `Document.h`、`ProjectPersistence`、`ProjectMigrator`、卡片 `Label` 行 |
+| Figure/Table 自定义 label + schema v4（当前 schema v5） | `Document.h`、`ProjectPersistence`、`ProjectMigrator`、卡片 `Label` 行 |
 | 重复 label 诊断与渲染拒绝 | `Validator` 的 `E-DUPLICATE-LABEL`、`LatexPlanner` 的 `LabelRegistry` |
 | `\ref` / `\cref` 模板能力 | `CrossReferenceStyle` + planner 的包排序 |
 
@@ -347,13 +347,13 @@ ieee-conference: doc(bold=1 italic=1) tex(bold=1 italic=1)
   目标不会悬空。
 * **label 唯一性由渲染前检查兜底**：Validator 先报错并定位到第二个节点；
   planner 仍拒绝生成重复 `\label`，因为 TeX 会静默覆盖且不报错。
-* schema v4 只增加 Figure/Table 的可选 `label`；旧文件在内存中迁移，
-  磁盘文件在下次保存时才重写。
+* schema v4 增加 Figure/Table 的可选 `label`，schema v5 增加列表/脚注；
+  旧文件在内存中迁移，磁盘文件在下次保存时才重写。
 
 新增回归测试：
 
 * domain：`TestNumbering` 的编号/label/重复诊断/renderer `\ref`/`\cref`；
-  `TestPersistence` 的 schema v4 图表 label 往返；`TestStructure` 的 V3→V4 迁移。
+  `TestPersistence` 的 schema v4 图表 label 往返；`TestStructure` 的 V3→V5 迁移。
 * GUI：`CrossReferencePickerShowsNumberedTargetsAcrossKinds`、
   `CrossReferenceCapsuleUsesPdfNumberingAndReeditReplacesTarget`、
   `FigureAndTableLabelEditorsCommitToDocument`、

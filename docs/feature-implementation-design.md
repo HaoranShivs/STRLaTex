@@ -8,14 +8,28 @@
 > 相关文档：[运行时调用链路](runtime-call-chain.md)、
 > [编辑器设计审查](editor-design-review.md)、[冗余清理记录](redundancy-cleanup.md)。
 
-> **实施状态（2026-10）**：WP-00、WP-01、WP-03 已实现并通过测试。token
-> 编解码见 `document/InlineTokenCodec`，picker 见
+> **实施状态（2026-10）**：WP-00、WP-01、WP-03 已实现；WP-02 的核心
+> （MathCommandCatalog、面板、命令补全、宏包诊断、预览 note）已实现并通过测试。
+> M-04（自定义宏）、M-05（\tag/按节编号）、M-08（siunitx）与 M-12（数学语法高亮）
+> 仍待后续迭代。
+> token 编解码见 `document/InlineTokenCodec`，citation picker 见
 > `BlockEditor::ShowCitationPicker`，缓存见
 > `ProjectController::CitationResolver`；编号见
-> `numbering/DocumentNumberer` 与 `numbering/LabelRegistry`，schema 已升到 v4
-> （Figure/Table 可选 `label`）。实现记录见
-> [`docs/inline-editor.md`](inline-editor.md) §10/§11。后续工作包（WP-02 起）
-> 仍按本文接口草案推进。
+> `numbering/DocumentNumberer` 与 `numbering/LabelRegistry`；schema 已升到 v5
+> （v4：Figure/Table 可选 `label`；v5：ListBlock 与 Footnote）；数学目录/面板/补全见
+> `math/MathCommandCatalog`、`app/MathPaletteWidget`、
+> `app/MathCommandCompleter`，缺包诊断见 `Validator` 的
+> `E-MATH-MISSING-PACKAGE`。实现记录见
+> [`docs/inline-editor.md`](inline-editor.md) §10/§11 与
+> [`docs/math-input.md`](math-input.md) §8。WP-04 已接入富文本题注、可配置的表格
+> 插入、单元格草稿弹窗、行列/对齐/表头命令及图片宽度选择；数据仍使用现有 v4。
+> 实现与验证入口见 [`docs/tables-and-captions.md`](tables-and-captions.md) 与 §7.8。
+> WP-05 已接入 PDF/可选 SVG/EPS 转换、图片替换、拖放与粘贴，以及异步 PDF
+> 缩略图；资源元数据沿用 v4，无需迁移。见 [图片与矢量图](figures-and-assets.md)
+> 与 §8.7。WP-06 已接入列表与脚注：ListBlock/Footnote 模型、可撤销命令、
+> V4→V5 迁移、遍历/渲染/校验、列表卡片与脚注编辑弹窗；WP-07 已接入定理/
+> 证明与代码块（amsthm + 代码 fallback）、模板能力、卡片与真实 TeX 构建。
+> 实现记录见 §9.10、§10.8；后续工作包（WP-08 起）仍按本文接口草案推进。
 
 ---
 
@@ -39,8 +53,8 @@
 | WP-03 | 交叉引用 + DocumentNumberer | X-01~X-07 | P0 | 编号服务 | M–L |
 | WP-04 | 富文本题注 + 表格编辑 | F-06、F-08~F-11、R-07 | P0 | WP-03（题注编号） | L |
 | WP-05 | 图片宽度/label/替换 + 矢量图 | F-01~F-05、F-11、F-12 | P1 | AssetManager 扩展 | M–L |
-| WP-06 | 列表 + 脚注（schema v4） | S-01、S-02、R-06 | P1 | schema v4 | L |
-| WP-07 | 定理/证明 + 代码块 | S-03、S-04、M-09 | P1 | schema v4、模板包 | L |
+| WP-06 | 列表 + 脚注（schema v5） | S-01、S-02、R-06 | P1 | schema v5 | L |
+| WP-07 | 定理/证明 + 代码块 | S-03、S-04、M-09 | P1 | schema v5、模板包 | L |
 | WP-08 | 子图 + 表格高级能力 | S-06、F-10、F-13 | P2 | WP-04/05 | L |
 | WP-09 | 中文模板 + FrontMatter 适配器 | T-01、T-02、M-13 | P1（中文） | 模板注册表扩展 | M |
 | WP-10 | author-year / biblatex | C-12、T-04 | P1 | CitationResolver 样式化 | L |
@@ -66,11 +80,12 @@
 
 ### 1.2 schema 版本
 
-- 当前 `kSchemaVersion = "3"`；新增结构/字段统一进入 **v4**。
-- `ProjectMigrator` 增加 V3→V4：旧文件在内存里补默认值，`migrated = true`
-  但**不重写磁盘**；保存时写 v4。
-- 读取器同时接受旧写法；写入器只写 v4。迁移测试必须覆盖“V3 文件打开后不丢
-  数据、保存后再读回一致”。
+- 当前 `kSchemaVersion = "5"`；v4 已承载 Figure/Table `label`，v5 承载
+  ListBlock 与 Footnote。
+- `ProjectMigrator` 增加 V3→V4（label）与 V4→V5（列表/脚注）：旧文件在内存里
+  补默认值，`migrated = true` 但**不重写磁盘**；保存时写 v5。
+- 读取器同时接受旧写法；写入器只写 v5。迁移测试必须覆盖“V3/V4 文件打开后
+  不丢数据、保存后再读回一致”。
 
 ### 1.3 模板能力
 
@@ -1051,6 +1066,28 @@ schema 变更；`EditCaptionPayload` 已经是 `InlineContent`，只是 GUI 以�
 - L（10–15 人日）。风险：题注编辑器与正文行共享 `InlineEditor` 的提交/焦点
   逻辑；表格弹窗的焦点往返需 `BeginProtectedInsert`；Undo 快照会变大（已有）。
 
+### 7.8 实施记录（2026-10）
+
+- 题注改用 `InlineEditor`；`NewInlineEditor` 统一初始化排版、数学宏包、引用
+  目录和格式动作，`CommitBlock` 按 `commit_role` 区分正文与题注。保留旧
+  `CaptionEdited`/`EditCaption` 接口，GUI 新路径使用 `CaptionContentEdited` /
+  `EditCaptionRich`，不再经过纯文本转换。
+- 单元格采用方案 A：`InlineContentEditorDialog` 维护独立草稿；确认后发送
+  `SetTableCellPayload`，取消不产生 revision。数学编辑器与引用选择器复用正文
+  入口，选择器挂到单元格弹窗下；文档通知不会拆除仍在编辑的卡片。
+- 表格命令已追加到 `EditPayload` / `FullEditPayload`。另增
+  `SetTableHeaderRowPayload`，支持插入后切换表头；行列操作保留当前选择，执行前
+  提交尚未失焦的题注。不能删除最后一列。
+- `InsertTableDialog` 提供尺寸/表头选择，原 `InsertTableAfter(anchor)` 保留 3×3
+  默认值。模型、编辑器、GUI 和持久化共用 100 行 / 50 列上限，避免创建无法保存
+  或重新加载的表格。图片宽度选择使用现有 `FigureWidth` 字段和新的可撤销命令。
+- 保存校验接受章节/子节/三级标题作为交叉引用目标，并通过 `VisitInlineContent`
+  检查各层题注、单元格和正文。Validator 同时检查单元格的数学宏包及引用 key。
+- 回归覆盖见 `TestTableEditing.cpp`、`TestCaptionTableGui.cpp`，含保存重开、
+  Undo/Redo、取消、弹窗期间文档变化，以及真实 TeX 构建。
+- 合并单元格、逐单元格内嵌编辑、子图仍属于 WP-08；图片替换与矢量格式仍按
+  WP-05 推进。
+
 ---
 
 ## 8. WP-05 图片控制 + 矢量图（P1）
@@ -1169,15 +1206,37 @@ PDF 预览用 `pdftoppm` 第一页（可复用 `PdfPreview` 的 helper，或 `QP
 - M–L（6–10 人日）。风险：SVG 转换依赖外部工具，需在 UI 中明确安装提示；
   PDF 尺寸探测可选，缺失时预览用固定比例。
 
+### 8.7 实施记录（2026-10）
+
+- `AssetKind`、`IAssetConverter` 和 `Stage(request, allow_vector=true)` 已实现。
+  PDF 直接复制；SVG/EPS 通过 `ProjectSession::Config::asset_converter` 注入转换器，
+  `ProcessAssetConverter` 在 app 层调用 `rsvg-convert` / `epstopdf`，15 秒超时。
+  转换工作目录在成功和失败时均清理，资源路径指向最终 PDF/位图。
+- `kind` 表示最终存储格式，转换后的 SVG/EPS 通常为 `Pdf`；原始文件名另行保留。
+  `kind` 可从既有 `mediaType` 推导，加载旧 v4 文件时重建，JSON 无新增必填字段。
+- `ReplaceFigureFromSource` / `ReplaceFigureAsset` 通过新增的
+  `SetFigureAssetPayload` 更新图片引用，保留节点及全部题注/布局属性。资源仅在
+  命令成功后注册、构建快照捕获前提交；失败移除暂存文件。旧资源保留供撤销。
+- `BlockEditor` 的图片输入过滤器覆盖卡片、间隙和子编辑器视口；本地文件和剪贴板
+  图像在事件结束后插入，避免销毁正在接收事件的控件。多文件保持顺序，插入前
+  提交当前输入，临时 PNG 在同步导入结束后删除。模态草稿弹窗保留自身粘贴行为。
+- Figure 卡片已有宽度/标签/跨栏控件，并增加 `Replace image…`。预览 resolver
+  使用 `AssetId` 与目标尺寸，由 MainWindow 校验项目路径后交给
+  `FigurePreviewRenderer`；保持资源查找集中在应用层。PDF 首页通过异步
+  `pdftoppm` 渲染，限制分辨率/缓存/并发/时间，仅刷新对应图片，缺工具显示占位符。
+- 验证见 `TestAssetVector.cpp` / `TestFigureGui.cpp`：导入和转换失败清理、拖放/
+  粘贴、替换对话框、Undo/Redo、保存重开、异步缩略图和真实 graphicx 构建。
+  裁剪、浮动位置控制与子图不在本工作包范围。
+
 ---
 
-## 9. WP-06 列表 + 脚注（schema v4，P1）
+## 9. WP-06 列表 + 脚注（schema v5，P1）
 
 ### 9.1 目标
 
 - 真正的 `itemize`/`enumerate`（v1 不支持嵌套）；
 - 真正的 `\footnote`，脚注内可含公式/引用/交叉引用；
-- schema v4 + 迁移；
+- schema v5 + V4→V5 迁移；
 - 完整的遍历/渲染/校验/编辑/撤销链路。
 
 ### 9.2 模型
@@ -1349,7 +1408,7 @@ std::optional<InlineContent> InlineFromClipboard(const std::string& text);
 v2；`InlineToRichText` 只用于 PlainText/搜索，遇到 Footnote 输出 `[^n]` 占位。
 这样复制/粘贴不会丢脚注，也不会把脚注内容压成普通文本。
 
-### 9.7 持久化（v4）
+### 9.7 持久化（v5）
 
 ```json
 {
@@ -1374,8 +1433,8 @@ v2；`InlineToRichText` 只用于 PlainText/搜索，遇到 Footnote 输出 `[^n
 ]}
 ```
 
-迁移 V3→V4：只加版本戳；旧文档没有新类型，无需转换。读者对未知块类型返回
-结构化错误（现有行为）。
+迁移 V4→V5：只加版本戳；旧文档没有新类型，无需转换。读者对未知块类型返回
+结构化错误（现有行为）。schema v4 已用于 Figure/Table label，因此列表/脚注使用 v5。
 
 ### 9.8 测试
 
@@ -1390,9 +1449,33 @@ v2；`InlineToRichText` 只用于 PlainText/搜索，遇到 Footnote 输出 `[^n
 - L（12–18 人日）。风险：`Footnote` 的递归/共享语义；剪贴板与 Undo 的快照
   一致性；列表与现有 `Block` variant 的遍历/定位全面改造（编译器会帮你找）。
 
+### 9.10 实施记录（WP-06）
+
+- 模型：`ListStyle`/`ListItem`/`ListBlock`、`Footnote`/`FootnoteBody` 与
+  `NodeKind::List`；`Footnote` 用 `shared_ptr<const FootnoteBody>`，相等性按
+  body 内容比较（`document/Document.cpp`）。
+- 遍历：`VisitInlineContent` 递归脚注 body，列表项参与引用编号/校验；
+  `VisitBlocks`/`VisitNodes` 覆盖 `ListBlock`。
+- 编辑：`DocumentEditor` + `EditCommand` + `EditingSystem` 增加列表六条命令与
+  脚注三条命令；History 继续使用整篇 snapshot，Undo/Redo 无需特殊分支。
+- 渲染：`egin{itemize}`/`egin{enumerate}` + `\item `；脚注渲染为
+  `ootnote{...}`，body 内的公式/引用/交叉引用走同一个 `Inline()`。
+- 持久化：schema **v5** 写入 `{"type":"list","style":"bullet|numbered",
+  "items":[...]}` 与 `{"type":"footnote","body":[...]}`；V4→V5 只加版本戳。
+  行内剪贴板使用 `InlineToClipboard`/`InlineFromClipboard`（`PFINLINE2`），
+  保留脚注 body。
+- 校验：脚注嵌套报 `E-FOOTNOTE-NESTED`；脚注 body 内的 citation/数学继续由
+  现有 Validator 覆盖。
+- UI：`BlockEditor::MakeListCard`（条目编辑、上下移动、增删、样式切换）、
+  `MakeFootnote` 工具按钮 + `InlineContentEditorDialog` 脚注正文弹窗；
+  `InlineEditor` 的 footnote token 支持双击编辑与复制/粘贴。
+- 测试：`TestListFootnote`（模型/编辑/渲染/校验/剪贴板/持久化）、
+  `TestInlineMathGui` 的列表卡片与脚注弹窗/往返、真实 tectonic 构建包含
+  列表与脚注；`TestStructure` 覆盖 V4→V5。
+
 ---
 
-## 10. WP-07 定理/证明 + 代码块（P1）
+## 10. WP-07 定理/证明 + 代码块（P1，已实现）
 
 ### 10.1 模型
 
@@ -1520,6 +1603,23 @@ struct EditCodePayload { NodeId code; std::optional<std::string> language;
 
 - L（10–15 人日）。风险：定理环境需要模板导言区注入机制；minted 的
   shell-escape 安全边界；代码字体与 PDF 字体。
+
+### 10.8 实施记录（WP-07）
+
+- 模型：`TheoremKind`、`TheoremBlock`、`CodeBlock`；`Block`/`NodeKind`/traversal/
+  persistence 全覆盖。
+- 模板：`TheoremEnvironmentDecl`、`CodeListingDecl`、`TemplateCapabilities::
+  theorems/code_blocks`；内置模板声明 amsthm 环境。自带 runtime 没有
+  `listings.sty`，因此内置模板的代码块使用 `verbatim` + `\paperforgeListing`
+  计数宏；外部模板可显式声明 `listings`，planner 会输出 `lstlisting`。
+- 渲染：定理/引理/命题等按模板环境输出，Proof 使用 `proof`；未编号定理使用
+  `theorem*`；代码块保留原文，fallback 支持行号前缀、Listing 编号与 `\ref` label。
+- 校验：`E-CODE-END-MARKER` 拦截 `\end{lstlisting}`/`\end{verbatim}`；
+  未知语言报 `W-CODE-LANGUAGE` 并由 planner 安全省略语言选项。
+- GUI：插入菜单 Theorem/Proof/Code；定理卡片 kind/title/body/numbered/label；
+  代码卡片语言、代码、行号、caption、label；代码正文不做 reflow。
+- 测试：`TestTheoremCode`、GUI `TheoremAndCodeCardsProjectAndEdit`、真实
+  tectonic 构建；模板/编号/label/picker 同步支持 Theorem/Listing。
 
 ---
 
@@ -2038,16 +2138,17 @@ std::shared_ptr<const pf::DocumentNumberer> Numbering() const;
 
 ---
 
-## 17. schema v4 汇总
+## 17. schema v5 汇总
 
 ### 17.1 版本常量
 
 ```cpp
 inline constexpr const char* kSchemaVersionV4 = "4";
-inline constexpr const char* kSchemaVersion = "4";
+inline constexpr const char* kSchemaVersion = "5";
 ```
 
-`ProjectMigrator`：V3→V4 步骤（只加版本戳；新字段默认值）。
+`ProjectMigrator`：V3→V4（Figure/Table label）与 V4→V5（List/Footnote）
+均为只加版本戳；旧字段默认值由读取器提供。
 
 ### 17.2 JSON 字段增补
 
@@ -2056,17 +2157,18 @@ inline constexpr const char* kSchemaVersion = "4";
 | `figure` | `"label"`（string，可空）、`"subfigures"`（v4.1） |
 | `table` | `"label"`（string，可空） |
 | `paragraph/content` | `{"type":"footnote","body":[...]}` |
-| `block` | `{"type":"list",...}`、`{"type":"theorem",...}`、`{"type":"code",...}` |
+| `block` | `{"type":"list","style":"bullet|numbered","items":[...]}`、`{"type":"theorem","kind":"Theorem","title":[...],"body":[...],"numbered":true,"label":"thm:main"}`、`{"type":"code","language":"python","text":"...","caption":[...],"lineNumbers":true,"label":"lst:main"}` |
 | `citation` | `"prefix"`/`"suffix"`/`"locator"`（WP-10 可选） |
 | `project` | `"language"`、`"citationStyle"`（可选覆盖） |
 | `template`（非 project.paper） | `theorem_environments`、`code_listing`、`language`、`cross_reference`、`citation_contract` 枚举 |
 
 ### 17.3 迁移测试
 
-- V3 文件：加载后所有旧字段不变，`migration.migrated == true`，保存后为 V4；
+- V3/V4 文件：加载后所有旧字段不变，`migration.migrated == true`，保存后为 V5
+  （V5 同时承载列表/脚注/定理/代码）；
 - 重复迁移幂等；
 - 未知块类型/字段：加载报结构化错误，不崩溃；
-- V4 文件被旧版本读取：旧版本应拒绝（现有 `IsKnownVersion` 会报 unknown 并
+- V5 文件被旧版本读取：旧版本应拒绝（现有 `IsKnownVersion` 会报 unknown 并
   按原样加载——需要评估：建议旧版本对更高版本报错而不是按原样加载）。
 
 ---
@@ -2114,8 +2216,8 @@ inline constexpr const char* kSchemaVersion = "4";
 | `document/DocumentEditor.{h,cpp}` | 新块/单元格/脚注操作 | WP-04~07 |
 | `document/DocumentTraversal.{h,cpp}` | 新 NodeKind、脚注递归、列表 items | WP-06/07 |
 | `editing/EditCommand.h` / `EditingSystem.cpp` | 新 payload 与分派 | 全部 |
-| `persistence/ProjectPersistence.cpp` | v4 读写、嵌套脚注/列表/定理/代码 | WP-06/07 |
-| `persistence/SchemaVersions.h` / `ProjectMigrator.cpp` | V4 | WP-06/07 |
+| `persistence/ProjectPersistence.cpp` | v5 读写、嵌套脚注/列表/定理/代码 | WP-06/07 |
+| `persistence/SchemaVersions.h` / `ProjectMigrator.cpp` | V4→V5 | WP-06/07 |
 | `render/LatexPlanner.cpp` | 新块渲染、label、cref、biblatex | WP-03/06/07/10 |
 | `template/TemplateRegistry.{h,cpp}` | 能力/契约/中文模板 | WP-03/07/09/10 |
 | `validation/Validator.cpp` | 新诊断（重复 label、缺包、代码注入） | WP-02/03/07 |
@@ -2145,7 +2247,7 @@ inline constexpr const char* kSchemaVersion = "4";
 ### 20.2 每个 WP 的 Definition of Done
 
 1. 公共接口有头文件注释与单元测试；
-2. 旧项目能打开（V3→V4），保存后仍是当前版本；
+2. 旧项目能打开（V3/V4→V5），保存后仍是当前版本；
 3. Undo/Redo 覆盖所有新操作；
 4. 真实 TeX 至少一个构建用例；
 5. 文档（README/docs）同步；
@@ -2199,7 +2301,7 @@ WP-00（一致性）
 
 | 风险 | 影响 | 缓解 |
 | --- | --- | --- |
-| schema v4 迁移破坏旧项目 | 高 | golden 文件回归；迁移只在内存；保存前备份/原子写 |
+| schema v5 迁移破坏旧项目 | 高 | golden 文件回归；迁移只在内存；保存前备份/原子写 |
 | `Footnote` 递归/共享语义 | 高 | 限制嵌套；剪贴板显式编码；测试循环引用 |
 | 新块类型扩散到所有 switch | 中 | 编译器 `-Wswitch`；为 `NodeKind`/`Block` 提供集中访问器 |
 | 模板包缺失导致 PDF 失败 | 中 | `MathCommandCatalog`/`TemplateVerifier` 提前诊断 |
@@ -2250,6 +2352,6 @@ WP-00（一致性）
 ## 24. 一句话总结
 
 按本文实施时，先做**不改 schema 的接口层**（WP-00~WP-05），把“已有模型但
-GUI 不会用”的能力补齐；再以 **schema v4** 为单位加入列表/脚注/定理/代码；
+GUI 不会用”的能力补齐；再以 **schema v5** 为单位加入列表/脚注/定理/代码；
 最后做样式、模板、导出与 PDF 文本层。每个 WP 都以可评审的头文件、命令载荷和
 迁移测试为边界，避免把“图形界面补全”做成一次不可回滚的大重构。

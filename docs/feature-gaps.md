@@ -20,7 +20,7 @@
 | --- | --- | --- | --- | --- |
 | 1 | **Citation 选择器信息不足**：没有标题、没有文中引用编号、没有“已引用”标记、不能多选、不能叙述式、点击已插入引用不能重选 | ⚠ 不足 | 条目只有 `FirstAuthor et al. · year`，右列固定写 `Reference` | **P0** |
 | 2 | **数学没有图形化入口**：花体/黑板体/希腊字母/结构模板只能手打 LaTeX，无符号面板、无命令补全 | ◐ UI 缺失 | `MathEditorDialog` 只是一个带预览的纯文本框 | **P0** |
-| 3 | **图表题注是纯文本**：题注里的公式、引用、粗斜体在编辑时会被压平；表格单元格完全不可编辑 | ◐ 模型支持、UI 缺失 | 题注用 `BlockEdit`（`QPlainTextEdit`）承载，提交时 `InlineFromText` | **P0** |
+| 3 | **图表题注与表格编辑（WP-04 已接入）**：题注与单元格保留公式、引用、粗斜体；支持行列/对齐/表头 | ✅ 已实现 | `InlineEditor` 题注、单元格草稿弹窗、可撤销表格命令；见 `tables-and-captions.md` | **P0** |
 | 4 | **交叉引用选择器不完整**：只列 Section 和顶层 Figure，缺 Equation/Table/Subsection/Subsubsection；GUI 胶囊显示标题而 PDF 显示编号 | ⚠ 不足 | `MainWindow::RefreshReferenceItems` 手写两层循环 | **P0** |
 | 5 | **中文文档没有可用模板**：内置模板都是 pdfLaTeX 且未加载 ctex/xeCJK | ❌ 缺失 | 中文正文进入 pdflatex 会缺字/报错 | **P0（中文用户）** |
 | 6 | **矢量图不能插入**：只接受 PNG/JPG/GIF，明确拒绝 PDF/SVG/EPS | ❌ 缺失 | `AssetManager::Stage` 直接返回 `UnsupportedType` | **P1** |
@@ -39,7 +39,10 @@
 > Narrative 不再丢失。§4.3/§3.3 的交叉引用（X-01~X-07）也已完成：
 > `DocumentNumberer`、跨 Section/Equation/Figure/Table 的选择器、与 PDF 一致的
 > 胶囊编号、图表自定义 label 与 `E-DUPLICATE-LABEL`，schema 升到 v4。
-> 实现细节与回归测试见 [`docs/inline-editor.md`](inline-editor.md) §10/§11。
+> §3.1 的数学面板/命令补全（M-01~M-03、M-10~M-11 的核心部分）也已完成：
+> `MathCommandCatalog`、MathPalette、`\` 补全、缺包诊断与预览 note。
+> 实现细节与回归测试见 [`docs/inline-editor.md`](inline-editor.md) §10/§11
+> 与 [`docs/math-input.md`](math-input.md) §8。
 
 ---
 
@@ -72,7 +75,7 @@
 | 预览：多页、缩放、惰性位图 | `app/PdfPreview.cpp` |
 | 参考文献：`.bib` 导入、逐条新增、引用编号、搜索服务 | `bibliography/*`、`numbering/CitationNumberResolver.cpp` |
 | 模板：2 个内置 + zip 外部模板导入 + 固定绑定 | `template/*`、`app/TemplateImportDialog.cpp` |
-| 持久化：JSON schema v4（V3→V4 只加图表 label 字段）、原子保存、autosave 恢复 | `persistence/*` |
+| 持久化：JSON schema v5（V4→V5 增加列表/脚注）、原子保存、autosave 恢复 | `persistence/*` |
 | 撤销/重做、大纲、Problems、CLI | `editing/*`、`app/OutlinePanel.cpp`、`app/ProblemsPanel.cpp`、`cli/*` |
 
 **重要判断**：很多“看起来缺失”的 LaTeX 能力其实管线是通的，例如
@@ -213,9 +216,9 @@ using Block = std::variant<Paragraph, Figure, Table, EquationBlock>;
 | ID | 缺失结构 | 说明 | LaTeX 生态 |
 | --- | --- | --- | --- |
 | S-01 | 无序/有序/描述列表 | 无法生成 `itemize`/`enumerate`/`description`；`MathValidator` 也禁止这些环境（因为它们不属于公式） | 标准 LaTeX |
-| S-02 | 脚注 | 没有行内 `Footnote` 节点；正文无法插入脚注 | `\footnote` |
-| S-03 | 定理/引理/定义/证明 | 没有块类型；无法编号、无法交叉引用 | `amsthm` |
-| S-04 | 代码/verbatim | 没有代码块；`verbatim`、`lstlisting`、`minted` 都被 validator 禁止 | `listings`/`minted` |
+| ~~S-02~~ | 脚注 | WP-06 已实现：行内 Footnote token + 正文弹窗 + `\footnote` 渲染 | 已完成 |
+| ~~S-03~~ | 定理/引理/定义/证明 | WP-07 已实现：TheoremBlock + amsthm 环境 + 编号/引用 | 已完成 |
+| ~~S-04~~ | 代码/verbatim | WP-07 已实现：CodeBlock + verbatim fallback/listings 模板能力 | 已完成 |
 | S-05 | 算法/伪代码 | 没有算法块 | [algorithm2e](https://ctan.org/pkg/algorithm2e) |
 | S-06 | 子图/图组 | `Figure` 只持有单个 `AssetId`；没有 subfigure 模型 | [subcaption](https://ctan.org/pkg/subcaption) |
 | S-07 | 附录 | `BackMatter` 只有 `bibliography_enabled` | `\appendix` |
@@ -235,18 +238,18 @@ using Block = std::variant<Paragraph, Figure, Table, EquationBlock>;
 
 | ID | 缺口 | 现状/证据 | 建议 |
 | --- | --- | --- | --- |
-| F-01 | 只支持位图 | `AssetManager::DetectMediaType` 识别 PDF/SVG/EPS，但 `Stage` 明确拒绝，提示 “V1 only accepts bitmap images” | 支持 PDF（pdfLaTeX 原生）、SVG（转 PDF/PNG 或 `\includesvg`）、EPS（epstopdf） |
-| F-02 | 不能拖拽/粘贴图片 | `BlockEditor` 的 drag/drop 只处理块重排 MIME，没有 `hasUrls`/`image/*`；插入图只走 `QFileDialog` | 拖入文件/粘贴剪贴板图片 → `AssetManager::Stage` → `InsertFigure` |
-| F-03 | 不能替换/裁剪图片 | Figure 卡片只显示图片；删除再插是唯一路径 | 右键“Replace image”、裁剪/缩放 |
-| F-04 | 图片宽度不可调 | 模型有 `FigureWidth`（25/50/75/100%），但 GUI 只暴露双栏开关；插入固定 100% | 下拉/滑块设置宽度 |
+| F-01 | 矢量图（WP-05 已实现） | PDF 原样导入；SVG/EPS 经可注入转换器转为 PDF，缺工具时提示安装或先导出 PDF；PDF 缩略图异步生成 | 见 [图片与矢量图](figures-and-assets.md) |
+| F-02 | 图片拖放/粘贴（WP-05 已实现） | 本地图片可拖到卡片或间隙；剪贴板图像暂存为 PNG 并插入 Figure，导入后清理 | 多文件保持原顺序，普通文字与块重排保留原行为 |
+| F-03 | 图片替换已实现，裁剪待补 | `Replace image…` 更换 AssetId；保留节点/题注/label/宽度/跨栏，支持撤销与重做 | 裁剪仍待后续迭代 |
+| F-04 | 图片宽度（WP-04 已实现） | Figure 卡片可选 25/50/75/100%；卡片预览与 PDF 同步使用该选择 | — |
 | F-05 | 没有图片浮动位置控制 | 渲染器固定 `htbp` | 选择 `htbp`/`H`/`t`/`b` 等 |
-| F-06 | 题注不能富文本 | `MakeFigureCard` 用 `BlockEdit` 编辑题注，提交走 `InlineFromText`；题注中的公式/引用/粗体会被压平 | 题注改用 `InlineEditor`（模型与渲染器已支持 `InlineContent`） |
-| F-07 | 题注无编号显示 | 卡片只显示题注文字 | 显示 “Figure 1” 并纳入编号模型 |
-| F-08 | 表格不可编辑 | `QTableWidget` 设置 `NoEditTriggers`；只能看 | 单元格编辑复用行内编辑器；行列操作走 `DocumentEditor` 已有 API |
-| F-09 | 表格尺寸固定 3×3、无对话框 | `ProjectController::InsertTableAfter` 固定 3 列 3 行 | 插入时选行列/表头；支持增删行列 |
-| F-10 | 表格无对齐/合并/多行多列 | 模型只有 `ColumnAlignment`；无 `\multicolumn`/`\multirow` | 先做列对齐 UI，再做合并单元格（schema 升级） |
-| F-11 | 表格单元格不能富文本 | `QTableWidgetItem` 用 `InlineToPlainText`；模型 `TableCell::content` 是 `InlineContent` | 编辑时用 InlineEditor，渲染器已支持 |
-| F-12 | 无图/表 label | 使用 node id；用户不可读 | 增加 label 字段 |
+| F-06 | 富文本题注（WP-04 已实现） | 图表题注使用 `InlineEditor`，通过 `CaptionContentEdited` / `EditCaptionRich` 提交完整内容 | 保存、重开与撤销保留公式/引用/粗斜体 |
+| F-07 | 图表编号（WP-03 已实现） | 卡片显示 `DocumentNumberer` 的 Figure/Table 编号，交叉引用使用同一编号 | — |
+| F-08 | 表格编辑（WP-04 已实现） | 双击单元格打开富内容弹窗；工具栏增删行列，全部经编辑命令提交 | 取消不修改文档，确认后支持撤销/重做 |
+| F-09 | 表格尺寸与表头（WP-04 已实现） | 插入对话框可选行列/表头，默认 3×3；插入后可增删行列及切换表头 | 上限 100 行、50 列，与存储约束一致 |
+| F-10 | 列对齐已实现，合并单元格待后续 | WP-04 工具栏支持选中列左/中/右对齐；合并/跨行跨列仍未建模 | 合并单元格继续 WP-08（schema 升级） |
+| F-11 | 富文本单元格（WP-04 已实现） | 网格保持轻量文本预览，双击后在 `InlineContentEditorDialog` 编辑完整语义内容 | 公式、引用、交叉引用和标记均保留；内嵌编辑放到 WP-08 |
+| F-12 | 图表 label（WP-03 已实现） | Figure/Table 提供可读 label 输入；留空回退 node id | — |
 | F-13 | 无图/表目录 | 见 S-09 | — |
 | F-14 | alt text 不可编辑/不输出 | `Figure::alt_text` 持久化但无 UI；渲染器不输出任何 alt（PDF 标签） | 编辑器加 alt 字段；PDF/UA 需要 tagged PDF，属长期项 |
 
@@ -268,7 +271,7 @@ enum class TextMark { None = 0, Strong = 1 << 0, Emphasis = 1 << 1 };
 | R-04 | 行内代码/等宽 | API 名、文件路径 | `\texttt{}` + 新 mark |
 | R-05 | 超链接 | DOI/URL/项目主页 | `\href{}`；需要 link 节点 |
 | R-06 | 脚注引用 | 见 S-02 | `\footnote{}` |
-| R-07 | 题注/标题富文本 | 见 F-06；标题行也是纯文本 `BlockEdit` | 统一改用 `InlineEditor` |
+| R-07 | 题注/标题富文本 | WP-04 已完成图表题注；标题行仍是纯文本 `BlockEdit` | 标题富文本继续后续迭代 |
 | R-08 | 作者机构上标上限 5 | `BlockEditor.cpp` 里 `const char* supers[] = {"¹"…"⁵"}`，超过 5 个重复 `⁵` | 支持任意位数（¹²³⁴⁵⁶⁷⁸⁹⁰ 组合），与解析器的 10 个机构能力对齐 |
 
 ---
@@ -582,6 +585,11 @@ for (section : doc.body().sections) {
 
 ### 4.4 图/表卡片：题注与编辑能力
 
+> WP-04 已实现富文本题注、单元格草稿弹窗、行列/对齐/表头操作和尺寸选择，
+> 详见 [实现记录](tables-and-captions.md)。以下描述保留为实施前的审查基线；
+> 图片替换与矢量导入已由 WP-05 实现，见 [图片与矢量图](figures-and-assets.md)；
+> 合并单元格仍待 WP-08。
+
 **题注**：
 
 - `MakeFigureCard`/`MakeTableCard` 用 `NewEditor(...)`（`BlockEdit`，
@@ -678,11 +686,11 @@ return text.split(QRegularExpression(QStringLiteral(R"(\s+)")), Qt::SkipEmptyPar
 | `Citation.mode` 进入编辑器 token | 修复 Narrative 丢失（P-9） | `InlineEditor` token 编码/`InlineText`/测试 | 不需要 schema 变更（已存 mode） |
 | `Citation` 增加 locator/prefix/suffix | 支持 `\citep[see][p.3]{}` | schema v4；渲染器 | v4 |
 | `TextMark` 增加 Underline/Superscript/Subscript/Code | 富文本（R-01~R-04） | schema v4；渲染；编辑器；测试 | v4 |
-| `InlineNode` 增加 `Footnote` | 脚注（S-02） | schema v4；遍历；渲染；UI | v4 |
+| ~~`InlineNode` 增加 `Footnote`~~ | 脚注（S-02） | WP-06 已实现（schema v5） | 已完成 |
 | `InlineNode` 增加 `Link` | 超链接（R-05） | schema v4；安全（URL 校验） | v4 |
-| `Block` 增加 `ListBlock`（ordered/unordered + items） | 列表（S-01） | schema v4；编辑器；渲染；遍历 | v4 |
-| `Block` 增加 `TheoremBlock`/`ProofBlock` | 定理（S-03） | schema v4；模板需 `amsthm` | v4 |
-| `Block` 增加 `CodeBlock` | 代码（S-04） | schema v4；安全/字体；渲染 | v4 |
+| ~~`Block` 增加 `ListBlock`（ordered/unordered + items）~~ | 列表（S-01） | WP-06 已实现（schema v5） | 已完成 |
+| ~~`Block` 增加 `TheoremBlock`/`ProofBlock`~~ | 定理（S-03） | WP-07 已实现（schema v5） | 已完成 |
+| ~~`Block` 增加 `CodeBlock`~~ | 代码（S-04） | WP-07 已实现（schema v5） | 已完成 |
 | `Figure` 增加 `label` + `subfigures` | 图表交叉引用/子图（S-06/F-12） | schema v4；渲染 `subcaption` | v4 |
 | `Table` 增加 `label`、合并单元格 | 表格交叉引用/复杂表 | schema v4；渲染 | v4 |
 | `BackMatter` 增加 appendix/acknowledgments | 论文结构（S-07/S-08） | schema v4；渲染 | v4 |
@@ -692,7 +700,7 @@ return text.split(QRegularExpression(QStringLiteral(R"(\s+)")), Qt::SkipEmptyPar
 **迁移策略**：
 
 - 新增字段使用 optional/默认值，旧项目加载时补默认；
-- `ProjectMigrator` 增加 V3→V4 步骤（只改版本戳与默认值）；
+- `ProjectMigrator` 增加 V4→V5 步骤（只改版本戳与默认值）；
 - 每个新块类型都必须有 `NodeKind`、`NodeAddress`、`Visit*`、Persistence、
   Renderer、Validator、Editor、测试的完整链路，否则不要合并。
 

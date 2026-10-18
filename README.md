@@ -191,16 +191,49 @@ Linux 外部模板导入及构建还需要 Bubblewrap、prlimit 和可用的用�
   `tab:stats`）；留空自动回退到 node id。Reserved 字符会被清洗，重复 label
   在 Problems 面板报 `E-DUPLICATE-LABEL`，渲染前拒绝生成会被 TeX 静默覆盖的
   `\label`。
+- **富文本题注与表格（WP-04）**：Figure/Table 题注使用与正文相同的富文本编辑器，
+  保留粗斜体、行内公式、citation 和交叉引用；工具栏与引用快捷键同样可用。
+  插入 Table 时可选择行数、列数和首行表头。双击单元格打开富文本编辑弹窗，
+  `Save` 提交、`Cancel` 放弃草稿；卡片工具栏支持增删行列、选中列左/中/右对齐
+  和切换表头。行列修改、单元格内容和题注均支持 Undo/Redo 与保存重开。
+  表格上限为 100 行、50 列，与文件读取约束一致。详见
+  [图表题注与表格编辑](docs/tables-and-captions.md)。
+- **图片宽度**：Figure 的 `Width` 可选 25/50/75/100%，相对于当前栏或通栏
+  浮动体；卡片图片预览与 PDF 输出使用同一宽度选择。
+- **图片导入与替换（WP-05）**：可从文件对话框或拖放导入 PDF 矢量图，粘贴
+  剪贴板图片会生成独立 Figure。`Replace image…` 保留节点、富文本题注、标签、
+  宽度和跨栏设置，支持 Undo/Redo。SVG/EPS 通过可选的 `rsvg-convert` /
+  `epstopdf` 转为 PDF；PDF 首页缩略图异步生成。详见 [图片与矢量图](docs/figures-and-assets.md)。
 - **Citation Picker v2**：工具栏 `Citation` / 点击正文中已有引用胶囊打开同一个
   选择器。条目显示 `作者 · 年份`、论文标题、venue 与文中编号 `[n]`，按
   **Cited in this paper / Not cited** 分组；搜索覆盖标题、作者、年份、venue 与
   key。支持多选生成单个 `\citep{a,b}`，`Narrative` 开关生成 `\citet`
   （胶囊显示 `Author [n]`）。点击已有引用可预选当前 keys/mode 并**就地替换**，
   不会新增 token；Narrative 在保存/重开/Undo/Redo 后保持不变。
+- **数学面板 + 命令补全（WP-02）**：`MathEditorDialog` 与公式卡片提供
+  结构（含上标/下标/导数/重音）、字体、希腊、函数（log/ln/exp/三角/…）、
+  运算/关系/箭头/集合/杂项面板；点击按钮在光标处插入模板或包裹选区。源码框
+  输入 `\` 自动补全命令，Tab/Enter 接受。字体按钮会检查模板实际加载的宏包
+  （`\mathbb`/`\mathfrak` → amssymb，`\mathscr` → mathrsfs）；缺包按钮灰化，
+  Validator 在构建前报 `E-MATH-MISSING-PACKAGE`，不再出现“预览正常、PDF
+  缺包”的踩坑。近似预览的 note 通过胶囊 tooltip 与公式卡片状态行显示。
+- **列表 + 脚注（WP-06）**：`itemize`/`enumerate` 列表卡片支持增删条目、
+  上下移动与样式切换；脚注是行内 pill，双击可编辑正文，正文可包含公式、
+  引用与交叉引用。列表/脚注都走可撤销命令，schema v5 支持往返，V4 项目
+  打开时在内存迁移。脚注正文与列表项中的 citation 也参与首次引用编号。
+- **公式卡片展示/编辑两态**：未聚焦时只显示公式预览与右侧自动编号；点击
+  卡片才展开 LaTeX 源码、Palette 与 Numbered/Label；点击 Palette 或属性控件
+  不会退出编辑态，只有实际点击公式卡片外部才收起。编号按全文自动排序，
+  `Numbered` 关闭时不参与编号。
+- **定理/证明 + 代码块（WP-07）**：插入菜单提供 Theorem/Proof/Code。定理卡片
+  支持 kind、标题、正文、编号与 label；代码卡片使用等宽源码、语言、行号、
+  caption 与 label，代码正文不做正文 reflow。定理环境通过模板 amsthm 声明，
+  代码在自带 runtime 下使用 verbatim + Listing 计数宏，外部模板可声明 listings。
 - **引用胶囊与 PDF 编号一致**：`[n]` 来自 `CitationNumberResolver`
   （首次引用顺序 + natbib 的 sort&compress），交叉引用编号来自
-  `DocumentNumberer`；文档里只存 key/mode/label，不存编号。schema v4 只增加
-  Figure/Table 的可选 `label`，旧 v1–v3 项目加载时在内存中迁移、保存时写 v4。
+  `DocumentNumberer`；文档里只存 key/mode/label，不存编号。schema v4 增加
+  Figure/Table 的可选 `label`，v5 增加列表/脚注；旧 v1–v4 项目加载时在内存中
+  迁移、保存时写 v5。
 - **Subsection 插到点击处**：subsection 标题插入后，**其下方的块会归入该
   subsection**（文档模型把 section 自身的块排在 subsections 之前，不这样做
   标题只能落到最后）。因此"在这里插入 subsection"就是所见即所得

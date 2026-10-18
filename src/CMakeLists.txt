@@ -16,6 +16,7 @@ target_link_libraries(pf_core PUBLIC Threads::Threads OpenSSL::Crypto)
 add_library(pf_math STATIC
     math/MathGenerator.cpp
     math/MathValidator.cpp
+    math/MathCommandCatalog.cpp
 )
 target_link_libraries(pf_math PUBLIC pf_core)
 

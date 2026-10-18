@@ -9,6 +9,7 @@
 #include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
 #include "app/QtConvert.h"
+#include "app/AssetConverters.h"
 
 namespace pf::gui {
 
@@ -51,6 +52,7 @@ ProjectController::ProjectController(QObject* parent) : QObject(parent) {
     config.install_root = PF_INSTALL_ROOT;
     config.workspace_root = std::filesystem::temp_directory_path() / "paperforge-gui-builds";
     config.debounce = std::chrono::milliseconds{800};
+    config.asset_converter = std::make_shared<ProcessAssetConverter>();
 
     session_ = std::make_unique<ProjectSession>(config);
 
@@ -480,6 +482,62 @@ EditResult ProjectController::DeleteSubsubsection(const NodeId& subsubsection) {
     return ExecuteAndNotify(std::move(p));
 }
 
+EditResult ProjectController::InsertTheoremAfter(const NodeId& anchor, TheoremKind kind,
+                                                    const InlineContent& title, bool numbered,
+                                                    const QString& label) {
+    auto point = ResolveInsertionPoint(anchor);
+    if (!point)
+        return EditResult::Fail(FailureReason::InvalidTarget, "no insertion point for theorem");
+    InsertTheoremPayload payload;
+    payload.parent = point->parent;
+    payload.index = point->index;
+    payload.kind = kind;
+    payload.title = title;
+    payload.numbered = numbered;
+    payload.label = ToStd(label);
+    return ExecuteAndNotify(payload);
+}
+
+EditResult ProjectController::EditTheorem(const NodeId& theorem, const InlineContent& title,
+                                           const InlineContent& body, bool numbered, const QString& label,
+                                           TheoremKind kind) {
+    EditTheoremPayload payload;
+    payload.theorem = theorem;
+    payload.title = title;
+    payload.body = body;
+    payload.numbered = numbered;
+    payload.label = ToStd(label);
+    payload.kind = kind;
+    return ExecuteAndNotify(payload);
+}
+
+EditResult ProjectController::InsertCodeAfter(const NodeId& anchor, const QString& language, const QString& code,
+                                               bool line_numbers, const QString& label) {
+    auto point = ResolveInsertionPoint(anchor);
+    if (!point)
+        return EditResult::Fail(FailureReason::InvalidTarget, "no insertion point for code");
+    InsertCodePayload payload;
+    payload.parent = point->parent;
+    payload.index = point->index;
+    payload.language = ToStd(language);
+    payload.code = ToStd(code);
+    payload.line_numbers = line_numbers;
+    payload.label = ToStd(label);
+    return ExecuteAndNotify(payload);
+}
+
+EditResult ProjectController::EditCode(const NodeId& code, const QString& language, const QString& text,
+                                        const InlineContent& caption, bool line_numbers, const QString& label) {
+    EditCodePayload payload;
+    payload.code = code;
+    payload.language = ToStd(language);
+    payload.text = ToStd(text);
+    payload.caption = caption;
+    payload.line_numbers = line_numbers;
+    payload.label = ToStd(label);
+    return ExecuteAndNotify(payload);
+}
+
 EditResult ProjectController::InsertParagraph(const NodeId& parent, const QString& text) {
     InsertParagraphPayload p;
     p.parent = parent;
@@ -542,7 +600,14 @@ EditResult ProjectController::InsertFigureAfter(const NodeId& anchor, const QStr
     return result;
 }
 
-EditResult ProjectController::InsertTableAfter(const NodeId& anchor) {
+EditResult ProjectController::ReplaceFigureAsset(const NodeId& figure, const QString& image_path) {
+    auto result = session_->ReplaceFigureFromSource(figure, ToStd(image_path));
+    if (result.status == EditStatus::Applied)
+        EmitDocumentChanged();
+    return result;
+}
+
+EditResult ProjectController::InsertTableAfter(const NodeId& anchor, size_t rows, size_t columns, bool has_header_row) {
     auto point = ResolveInsertionPoint(anchor);
     if (!point) {
         return EditResult::Fail(FailureReason::InvalidTarget, "insertion anchor not found");
@@ -550,10 +615,87 @@ EditResult ProjectController::InsertTableAfter(const NodeId& anchor) {
     InsertTablePayload payload;
     payload.parent = point->parent;
     payload.index = point->index;
-    payload.columns = std::vector<TableColumn>(3);
-    payload.rows = 3;
-    payload.has_header_row = true;
+    if (rows == 0 || columns == 0)
+        return EditResult::Fail(FailureReason::ConstraintViolation, "A table needs at least one row and one column");
+    if (rows > Table::kMaxRows || columns > Table::kMaxColumns)
+        return EditResult::Fail(FailureReason::ConstraintViolation, "A table supports up to 100 rows and 50 columns");
+    payload.columns = std::vector<TableColumn>(columns);
+    payload.rows = rows;
+    payload.has_header_row = has_header_row;
     return ExecuteAndNotify(std::move(payload));
+}
+
+EditResult ProjectController::InsertListAfter(const NodeId& anchor, ListStyle style) {
+    const auto point = ResolveInsertionPoint(anchor);
+    if (!point)
+        return EditResult::Fail(FailureReason::InvalidTarget, "no insertion point for list");
+    InsertListPayload payload;
+    payload.parent = point->parent;
+    payload.index = point->index;
+    payload.style = style;
+    return ExecuteAndNotify(payload);
+}
+
+EditResult ProjectController::InsertListItem(const NodeId& list, size_t index, const InlineContent& content) {
+    InsertListItemPayload payload;
+    payload.list = list;
+    payload.index = index;
+    payload.content = content;
+    return ExecuteAndNotify(payload);
+}
+
+EditResult ProjectController::EditListItem(const NodeId& list, size_t index, const InlineContent& content) {
+    EditListItemPayload payload;
+    payload.list = list;
+    payload.index = index;
+    payload.content = content;
+    return ExecuteAndNotify(payload);
+}
+
+EditResult ProjectController::DeleteListItem(const NodeId& list, size_t index) {
+    DeleteListItemPayload payload;
+    payload.list = list;
+    payload.index = index;
+    return ExecuteAndNotify(payload);
+}
+
+EditResult ProjectController::MoveListItem(const NodeId& list, size_t from, size_t to) {
+    MoveListItemPayload payload;
+    payload.list = list;
+    payload.from = from;
+    payload.to = to;
+    return ExecuteAndNotify(payload);
+}
+
+EditResult ProjectController::SetListStyle(const NodeId& list, ListStyle style) {
+    SetListStylePayload payload;
+    payload.list = list;
+    payload.style = style;
+    return ExecuteAndNotify(payload);
+}
+
+EditResult ProjectController::InsertFootnote(const NodeId& paragraph, std::optional<size_t> at_index,
+                                              const InlineContent& body) {
+    InsertFootnotePayload payload;
+    payload.paragraph = paragraph;
+    payload.at_index = at_index;
+    payload.body = body;
+    return ExecuteAndNotify(payload);
+}
+
+EditResult ProjectController::EditFootnote(const NodeId& paragraph, size_t at_index, const InlineContent& body) {
+    EditFootnotePayload payload;
+    payload.paragraph = paragraph;
+    payload.at_index = at_index;
+    payload.body = body;
+    return ExecuteAndNotify(payload);
+}
+
+EditResult ProjectController::DeleteFootnote(const NodeId& paragraph, size_t at_index) {
+    DeleteFootnotePayload payload;
+    payload.paragraph = paragraph;
+    payload.at_index = at_index;
+    return ExecuteAndNotify(payload);
 }
 
 EditResult ProjectController::EditParagraphRich(const NodeId& paragraph, const InlineContent& content) {
@@ -589,10 +731,46 @@ EditResult ProjectController::RenameSubsection(const NodeId& subsection, const Q
 }
 
 EditResult ProjectController::EditCaption(const NodeId& block, const QString& caption) {
+    return EditCaptionRich(block, InlineFromText(ToStd(caption)));
+}
+
+EditResult ProjectController::EditCaptionRich(const NodeId& block, const InlineContent& caption) {
     EditCaptionPayload payload;
     payload.block = block;
-    payload.caption = InlineFromText(ToStd(caption));
+    payload.caption = caption;
     return ExecuteAndNotify(std::move(payload));
+}
+
+EditResult ProjectController::SetTableCell(const NodeId& table, size_t row, size_t column, const InlineContent& content) {
+    return ExecuteAndNotify(SetTableCellPayload{table, row, column, content});
+}
+
+EditResult ProjectController::InsertTableRow(const NodeId& table, size_t index) {
+    return ExecuteAndNotify(InsertTableRowPayload{table, index});
+}
+
+EditResult ProjectController::DeleteTableRow(const NodeId& table, size_t index) {
+    return ExecuteAndNotify(DeleteTableRowPayload{table, index});
+}
+
+EditResult ProjectController::InsertTableColumn(const NodeId& table, size_t index, ColumnAlignment alignment) {
+    return ExecuteAndNotify(InsertTableColumnPayload{table, index, alignment});
+}
+
+EditResult ProjectController::DeleteTableColumn(const NodeId& table, size_t index) {
+    return ExecuteAndNotify(DeleteTableColumnPayload{table, index});
+}
+
+EditResult ProjectController::SetTableColumnAlignment(const NodeId& table, size_t column, ColumnAlignment alignment) {
+    return ExecuteAndNotify(SetTableColumnAlignmentPayload{table, column, alignment});
+}
+
+EditResult ProjectController::SetTableHeaderRow(const NodeId& table, bool has_header_row) {
+    return ExecuteAndNotify(SetTableHeaderRowPayload{table, has_header_row});
+}
+
+EditResult ProjectController::EditFigureWidth(const NodeId& figure, FigureWidth width) {
+    return ExecuteAndNotify(EditFigureWidthPayload{figure, width});
 }
 
 EditResult ProjectController::EditFigureSpan(const NodeId& figure, bool double_column) {

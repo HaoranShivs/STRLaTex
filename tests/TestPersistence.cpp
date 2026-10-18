@@ -256,7 +256,7 @@ PF_TEST(FigureSpanPersistsAndDefaultsToSingleColumn) {
 }
 
 
-PF_TEST(FigureAndTableLabelsRoundTripThroughSchemaV4) {
+PF_TEST(FigureAndTableLabelsRoundTripThroughCurrentSchema) {
     SerializedProject sp;
     sp.project_id = "p-labels";
     sp.revision = ProjectRevision{7};
@@ -278,12 +278,12 @@ PF_TEST(FigureAndTableLabelsRoundTripThroughSchemaV4) {
     PF_CHECK(table_id.ok());
 
     const std::string json = ProjectSerializer::Serialize(sp);
-    PF_CHECK(json.find("\"schemaVersion\": \"4\"") != std::string::npos);
+    PF_CHECK(json.find("\"schemaVersion\": \"5\"") != std::string::npos);
     auto parsed = ProjectSerializer::Deserialize(json);
     PF_CHECK(parsed.ok());
     if (!parsed.ok())
         return;
-    PF_CHECK(parsed.value().schema_version == "4");
+    PF_CHECK(parsed.value().schema_version == "5");
     bool saw_figure = false;
     bool saw_table = false;
     for (const auto& block : DocumentMutableAccess::body(parsed.value().document).sections[0].blocks) {

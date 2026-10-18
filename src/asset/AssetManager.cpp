@@ -58,6 +58,8 @@ std::string SafeAssetFilename(const std::filesystem::path& source) {
     if (!ext.empty() && ext.front() == '.')
         ext.erase(ext.begin());
     ext = SanitizeNameComponent(ext);
+    for (auto& c : ext)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     if (!ext.empty())
         return stem + "." + ext;
     return stem;
@@ -137,7 +139,18 @@ void SniffImageSize(const std::filesystem::path& path, std::uint64_t& width, std
 
 } // namespace
 
-AssetManager::AssetManager(std::filesystem::path assets_dir) : assets_dir_(std::move(assets_dir)) {
+AssetKind AssetKindForMediaType(const std::string& media_type) noexcept {
+    if (media_type == "application/pdf")
+        return AssetKind::Pdf;
+    if (media_type == "image/svg+xml")
+        return AssetKind::Svg;
+    if (media_type == "application/postscript")
+        return AssetKind::Eps;
+    return AssetKind::Raster;
+}
+
+AssetManager::AssetManager(std::filesystem::path assets_dir, std::shared_ptr<IAssetConverter> converter)
+    : assets_dir_(std::move(assets_dir)), converter_(std::move(converter)) {
     std::error_code ec;
     std::filesystem::create_directories(assets_dir_, ec);
 }
@@ -148,35 +161,77 @@ const AssetMetadata* AssetRegistry::Find(const AssetId& id) const {
 }
 
 void AssetRegistry::Register(AssetMetadata metadata) {
+    metadata.kind = AssetKindForMediaType(metadata.media_type);
     assets_[metadata.id] = std::move(metadata);
 }
 
-AssetImportResult AssetManager::Stage(const AssetImportRequest& request) {
+AssetImportResult AssetManager::Stage(const AssetImportRequest& request, bool allow_vector) {
     AssetImportResult result;
     const auto& src = request.source_path;
-    if (!std::filesystem::exists(src)) {
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(src, ec)) {
         result.status = AssetImportResult::Status::SourceMissing;
-        result.detail = "source file does not exist: " + src.string();
+        result.detail = "source is not a readable file: " + src.string();
         return result;
     }
     std::string media = DetectMediaType(src);
-    if (media.empty() || media == "application/pdf" || media == "image/svg+xml") {
-        // V1仅接受用于PDF嵌入的位图图像。
+    if (media.empty() || (!allow_vector && AssetKindForMediaType(media) != AssetKind::Raster)) {
         result.status = AssetImportResult::Status::UnsupportedType;
         result.detail = "unsupported asset type: " + (media.empty() ? std::string("unknown") : media);
         return result;
     }
-    std::error_code ec;
+    // The converter owns no project state. Its scratch files are removed on
+    // every path, and only a LaTeX-readable result enters the asset directory.
+    struct Scratch {
+        std::filesystem::path path;
+        ~Scratch() {
+            if (!path.empty()) {
+                std::error_code ignored;
+                std::filesystem::remove_all(path, ignored);
+            }
+        }
+    } scratch;
+    auto stored_source = src;
+    auto stored_name = src.filename();
+    if (media == "image/svg+xml" || media == "application/postscript") {
+        if (!converter_) {
+            result.status = AssetImportResult::Status::UnsupportedType;
+            result.detail = media == "image/svg+xml"
+                ? "SVG import requires rsvg-convert (librsvg). Export as PDF or enable an SVG converter."
+                : "EPS import requires epstopdf and Ghostscript. Export as PDF or enable an EPS converter.";
+            return result;
+        }
+        const auto work = assets_dir_ / (".import-" + IdGenerator::NewAssetId());
+        if (!std::filesystem::create_directory(work, ec)) {
+            result.status = AssetImportResult::Status::IoError;
+            result.detail = "cannot create image conversion directory: " + ec.message();
+            return result;
+        }
+        scratch.path = work;
+        std::string error;
+        const auto converted = converter_->Convert(src, work, &error);
+        const auto converted_media = converted ? DetectMediaType(*converted) : std::string();
+        if (!converted || !std::filesystem::is_regular_file(*converted, ec) ||
+            converted_media.empty() || converted_media == "image/svg+xml" ||
+            converted_media == "application/postscript" || std::filesystem::file_size(*converted, ec) == 0 || ec) {
+            result.status = AssetImportResult::Status::IoError;
+            result.detail = error.empty() ? "image conversion did not produce a PDF or raster image" : error;
+            return result;
+        }
+        stored_source = *converted;
+        stored_name.replace_extension(converted->extension());
+        media = converted_media;
+    }
     auto filename = src.filename();
     // 以对LaTeX安全的名称存储（仍可辨认，extension保持不变）；
     // 原始名称保存在metadata中用于展示。
-    const std::string safe_name = SafeAssetFilename(filename);
+    const std::string safe_name = SafeAssetFilename(stored_name);
     auto dest = assets_dir_ / safe_name;
     // 避免覆盖：当名称已存在时，用一个新的asset id作前缀。
-    if (std::filesystem::exists(dest)) {
+    if (std::filesystem::exists(dest, ec)) {
         dest = assets_dir_ / (IdGenerator::NewAssetId() + "_" + safe_name);
     }
-    std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing, ec);
+    std::filesystem::copy_file(stored_source, dest, std::filesystem::copy_options::none, ec);
     if (ec) {
         result.status = AssetImportResult::Status::IoError;
         result.detail = ec.message();
@@ -196,8 +251,15 @@ AssetImportResult AssetManager::Stage(const AssetImportRequest& request) {
         return result;
     }
     meta.media_type = media;
+    meta.kind = AssetKindForMediaType(media);
     meta.original_name = filename.string();
     meta.file_size = std::filesystem::file_size(dest, ec);
+    if (ec) {
+        result.status = AssetImportResult::Status::IoError;
+        result.detail = "cannot read imported image: " + ec.message();
+        std::filesystem::remove(dest, ec);
+        return result;
+    }
     meta.content_hash = FileHash(dest);
     SniffImageSize(dest, meta.width, meta.height);
 

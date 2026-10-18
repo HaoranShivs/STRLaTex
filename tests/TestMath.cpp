@@ -13,6 +13,7 @@
 #include "math/MathValidator.h"
 #include "persistence/ProjectPersistence.h"
 #include "render/LatexRenderer.h"
+#include "template/TemplateRegistry.h"
 #include "validation/Validator.h"
 
 using namespace pf;
@@ -357,4 +358,44 @@ PF_TEST(RichTextEncodingUsesGeneratedDelimiter) {
     const std::string encoded = InlineToRichText(content);
     PF_CHECK(encoded.find("\\(\\alpha\\)") != std::string::npos);
     PF_CHECK(InlineFromRichText(encoded) == content);
+}
+
+PF_TEST(MathValidatorReportsRequiredPackages) {
+    const auto mathbb = ValidateMath("\\mathbb{R}", MathFlavor::Inline);
+    PF_CHECK(mathbb.valid());
+    PF_CHECK(mathbb.required_packages == std::vector<std::string>{"amssymb"});
+
+    const auto mathscr = ValidateMath("\\mathscr{F}", MathFlavor::Display);
+    PF_CHECK(mathscr.valid());
+    PF_CHECK(mathscr.required_packages == std::vector<std::string>{"mathrsfs"});
+
+    const auto plain = ValidateMath("\\frac{a}{b} + \\alpha", MathFlavor::Inline);
+    PF_CHECK(plain.valid());
+    PF_CHECK(plain.required_packages.empty());
+}
+
+PF_TEST(ValidatorReportsMissingMathPackageBeforeRender) {
+    auto fixture = MakeEquationDoc("\\mathscr{F}", "eq:script", true);
+    Validator validator;
+    ValidationInput input;
+    input.document = &fixture.doc;
+    input.template_id = "generic-article";
+    auto result = validator.Validate(input);
+    int missing = 0;
+    for (const auto& diagnostic : result.diagnostics) {
+        if (diagnostic.code == "E-MATH-MISSING-PACKAGE") {
+            ++missing;
+            PF_CHECK(diagnostic.message.find("mathrsfs") != std::string::npos);
+            PF_CHECK(diagnostic.location.node == fixture.equation);
+        }
+    }
+    PF_CHECK(missing == 1);
+
+    // 模板声明 mathrsfs 后不再报错。
+    auto definition = *TemplateRegistry::Instance().Find("generic-article");
+    definition.packages.push_back({"mathrsfs", "", false});
+    input.resolved_template = std::make_shared<const TemplateDefinition>(definition);
+    auto fixed = validator.Validate(input);
+    for (const auto& diagnostic : fixed.diagnostics)
+        PF_CHECK(diagnostic.code != "E-MATH-MISSING-PACKAGE");
 }

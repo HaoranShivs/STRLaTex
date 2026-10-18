@@ -94,7 +94,7 @@ QString CollapseWsTrim(const QString& in) {
 // Box 树
 // ---------------------------------------------------------------------------
 
-enum class Kind { HBox, Text, Fraction, Radical, Accent, Script, Limits, Delim, Grid, Space, Rule };
+enum class Kind { HBox, Text, Fraction, Radical, Accent, Script, Limits, Delim, Grid, Space, Rule, Box, Stack, Brace };
 
 struct Box;
 using BoxPtr = std::shared_ptr<Box>;
@@ -231,25 +231,82 @@ BoxPtr MakeText(const QString& text, const QFont& font, const QColor& color) {
 // 复合 box
 // ---------------------------------------------------------------------------
 
-BoxPtr MakeFraction(const BoxPtr& num, const BoxPtr& den, qreal fontPx, const QColor& color) {
+BoxPtr MakeFraction(const BoxPtr& num, const BoxPtr& den, qreal fontPx, const QColor& color,
+                    bool draw_rule = true) {
     auto box = std::make_shared<Box>();
     box->kind = Kind::Fraction;
     const BoxPtr n = num ? num : MakeEmpty();
     const BoxPtr d = den ? den : MakeEmpty();
     const qreal rule = std::max(1.0, std::round(fontPx / 16.0));
     const qreal gap = std::max(1.0, std::round(fontPx * 0.18));
-    const qreal half = rule / 2.0;
+    const qreal half = draw_rule ? rule / 2.0 : 0.0;
     box->w = std::max(n->w, d->w) + std::max(2.0, std::round(fontPx * 0.20));
     box->h = n->h + n->d + gap + half;
     box->d = d->h + d->d + gap + half;
     const qreal numBase = -(gap + half + n->d);
     const qreal denBase = gap + half + d->h;
     const qreal w = box->w;
-    box->draw = [n, d, w, rule, numBase, denBase, color](QPainter& p, qreal x, qreal baseline) {
-        p.fillRect(QRectF(x, baseline - rule / 2.0, w, rule), color);
+    box->draw = [n, d, w, rule, numBase, denBase, color, draw_rule](QPainter& p, qreal x, qreal baseline) {
+        if (draw_rule)
+            p.fillRect(QRectF(x, baseline - rule / 2.0, w, rule), color);
         DrawBox(n, p, x + (w - n->w) / 2.0, baseline + numBase);
         DrawBox(d, p, x + (w - d->w) / 2.0, baseline + denBase);
     };
+    return box;
+}
+
+BoxPtr MakeBoxed(const BoxPtr& content, qreal fontPx, const QColor& color) {
+    auto box = std::make_shared<Box>();
+    box->kind = Kind::Box;
+    const BoxPtr b = content ? content : MakeEmpty();
+    const qreal pad = std::max(2.0, std::round(fontPx * 0.22));
+    const qreal t = std::max(1.0, std::round(fontPx / 20.0));
+    box->w = b->w + 2.0 * pad;
+    box->h = b->h + pad;
+    box->d = b->d + pad;
+    const qreal totalW = box->w;
+    const qreal totalH = box->h + box->d;
+    box->draw = [b, pad, t, totalW, totalH, color](QPainter& p, qreal x, qreal baseline) {
+        QPen pen(color);
+        pen.setWidthF(t);
+        p.setPen(pen);
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(QRectF(x + t / 2.0, baseline - b->h - pad + t / 2.0, totalW - t, totalH - t), 3.0,
+                          3.0);
+        DrawBox(b, p, x + pad, baseline);
+    };
+    return box;
+}
+
+// \overset / \underset：把较小的注解放在基座上方或下方并水平居中。
+BoxPtr MakeStack(const BoxPtr& annotation, const BoxPtr& base, bool above, qreal fontPx) {
+    auto box = std::make_shared<Box>();
+    box->kind = Kind::Stack;
+    const BoxPtr a = annotation ? annotation : MakeEmpty();
+    const BoxPtr b = base ? base : MakeEmpty();
+    const qreal gap = std::max(1.0, std::round(fontPx * 0.08));
+    box->w = std::max(a->w, b->w);
+    if (above) {
+        box->h = b->h + gap + a->h + a->d;
+        box->d = b->d;
+        const qreal totalW = box->w;
+        const qreal annotationX = (totalW - a->w) / 2.0;
+        const qreal annotationBase = -(b->h + gap + a->d);
+        box->draw = [a, b, annotationX, annotationBase](QPainter& p, qreal x, qreal baseline) {
+            DrawBox(b, p, x, baseline);
+            DrawBox(a, p, x + annotationX, baseline + annotationBase);
+        };
+    } else {
+        box->h = b->h;
+        box->d = b->d + gap + a->h + a->d;
+        const qreal totalW = box->w;
+        const qreal annotationX = (totalW - a->w) / 2.0;
+        const qreal annotationBase = b->d + gap + a->h;
+        box->draw = [a, b, annotationX, annotationBase](QPainter& p, qreal x, qreal baseline) {
+            DrawBox(b, p, x, baseline);
+            DrawBox(a, p, x + annotationX, baseline + annotationBase);
+        };
+    }
     return box;
 }
 
@@ -437,6 +494,76 @@ BoxPtr MakeDelimiterFor(const QString& glyph, qreal contentH, qreal contentD, qr
         p.setFont(f);
         p.setPen(color);
         p.drawText(QPointF(x, baseline + baseOff), glyph);
+    };
+    return box;
+}
+
+BoxPtr MakeBinomial(const BoxPtr& num, const BoxPtr& den, qreal fontPx, const QColor& color,
+                     const ParseState& st) {
+    const BoxPtr frac = MakeFraction(num, den, fontPx, color, false);
+    auto left = MakeDelimiterFor(QStringLiteral("("), frac->h, frac->d, fontPx, color, st);
+    auto right = MakeDelimiterFor(QStringLiteral(")"), frac->h, frac->d, fontPx, color, st);
+    return MakeHBox({left, frac, right});
+}
+
+// \overbrace / \underbrace：用一条花括号路径包住内容；形状是近似，
+// 但不会退化成字面命令。
+BoxPtr MakeBrace(const BoxPtr& content, bool above, qreal fontPx, const QColor& color) {
+    auto box = std::make_shared<Box>();
+    box->kind = Kind::Brace;
+    const BoxPtr b = content ? content : MakeEmpty();
+    const qreal height = std::max(4.0, std::round(fontPx * 0.50));
+    const qreal gap = std::max(1.0, std::round(fontPx * 0.08));
+    box->w = b->w;
+    box->d = above ? b->d : b->d + gap + height;
+    box->h = above ? b->h + gap + height : b->h;
+    const qreal totalW = box->w;
+    box->draw = [b, above, height, gap, totalW, color](QPainter& p, qreal x, qreal baseline) {
+        DrawBox(b, p, x, baseline);
+        if (totalW <= 1.0)
+            return;
+        const qreal outerY = above ? baseline - b->h - gap : baseline + b->d + gap;
+        const qreal tipY = above ? outerY - height : outerY + height;
+        const qreal midX = x + totalW / 2.0;
+        const qreal shoulderY = above ? tipY + height * 0.45 : tipY - height * 0.45;
+        QPainterPath path;
+        path.moveTo(x + 1.0, outerY);
+        path.quadTo(midX - totalW * 0.18, outerY, midX - totalW * 0.10, shoulderY);
+        path.quadTo(midX - totalW * 0.05, tipY, midX, tipY);
+        path.quadTo(midX + totalW * 0.05, tipY, midX + totalW * 0.10, shoulderY);
+        path.quadTo(midX + totalW * 0.18, outerY, x + totalW - 1.0, outerY);
+        QPen pen(color);
+        pen.setWidthF(std::max(1.0, height * 0.10));
+        pen.setCapStyle(Qt::RoundCap);
+        p.setPen(pen);
+        p.setBrush(Qt::NoBrush);
+        p.drawPath(path);
+    };
+    return box;
+}
+
+BoxPtr MakeArrowAccent(const BoxPtr& content, qreal fontPx, const QColor& color) {
+    auto box = std::make_shared<Box>();
+    box->kind = Kind::Accent;
+    const BoxPtr b = content ? content : MakeEmpty();
+    const qreal head = std::max(3.0, std::round(fontPx * 0.18));
+    const qreal gap = std::max(1.0, std::round(fontPx * 0.08));
+    box->w = b->w;
+    box->h = b->h + gap + head;
+    box->d = b->d;
+    const qreal totalW = box->w;
+    box->draw = [b, head, gap, totalW, color](QPainter& p, qreal x, qreal baseline) {
+        DrawBox(b, p, x, baseline);
+        if (totalW <= 1.0)
+            return;
+        const qreal y = baseline - b->h - gap;
+        QPen pen(color);
+        pen.setWidthF(std::max(1.0, head * 0.18));
+        pen.setCapStyle(Qt::RoundCap);
+        p.setPen(pen);
+        p.drawLine(QPointF(x + 1.0, y), QPointF(x + totalW - 1.0, y));
+        p.drawLine(QPointF(x + totalW - 1.0, y), QPointF(x + totalW - 1.0 - head, y - head * 0.55));
+        p.drawLine(QPointF(x + totalW - 1.0, y), QPointF(x + totalW - 1.0 - head, y + head * 0.55));
     };
     return box;
 }
@@ -676,6 +803,66 @@ const QHash<QString, QString>& SymbolTable() {
         add("rceil", 0x2309);
         add("backslash", 0x005C);
         add("qquad", 0x2003); // 从不作为字形查找，按间距处理
+        // WP-02 扩展：面板中的常用符号（保证回退预览不显示字面命令）。
+        add("varpi", 0x03D6);
+        add("varrho", 0x03F1);
+        add("varsigma", 0x03C2);
+        add("wedge", 0x2227);
+        add("land", 0x2227);
+        add("vee", 0x2228);
+        add("lor", 0x2228);
+        add("smallsetminus", 0x2216);
+        add("bigoplus", 0x2A01);
+        add("bigotimes", 0x2A02);
+        add("sim", 0x223C);
+        add("simeq", 0x2243);
+        add("cong", 0x2245);
+        add("ll", 0x226A);
+        add("gg", 0x226B);
+        add("lesssim", 0x2272);
+        add("gtrsim", 0x2273);
+        add("leqslant", 0x2A7D);
+        add("geqslant", 0x2A7E);
+        add("nleq", 0x2270);
+        add("ngeq", 0x2271);
+        add("prec", 0x227A);
+        add("succ", 0x227B);
+        add("preceq", 0x2AAF);
+        add("succeq", 0x2AB0);
+        add("nmid", 0x2224);
+        add("uparrow", 0x2191);
+        add("downarrow", 0x2193);
+        add("longrightarrow", 0x27F6);
+        add("Longrightarrow", 0x27F9);
+        add("longleftarrow", 0x27F5);
+        add("Longleftarrow", 0x27F8);
+        add("hookrightarrow", 0x21AA);
+        add("hookleftarrow", 0x21A9);
+        add("rightleftharpoons", 0x21CC);
+        add("rightharpoonup", 0x21C0);
+        add("updownarrow", 0x2195);
+        add("Uparrow", 0x21D1);
+        add("Downarrow", 0x21D3);
+        add("nearrow", 0x2197);
+        add("searrow", 0x2198);
+        add("swarrow", 0x2199);
+        add("nwarrow", 0x2196);
+        add("sqsubset", 0x228F);
+        add("sqsubseteq", 0x2291);
+        add("sqsupset", 0x2290);
+        add("sqsupseteq", 0x2292);
+        add("top", 0x22A4);
+        add("bot", 0x22A5);
+        add("vdash", 0x22A2);
+        add("models", 0x22A8);
+        add("aleph", 0x2135);
+        add("wp", 0x2118);
+        add("surd", 0x221A);
+        add("flat", 0x266D);
+        add("natural", 0x266E);
+        add("sharp", 0x266F);
+        add("dagger", 0x2020);
+        add("ddagger", 0x2021);
         return m;
     }();
     return table;
@@ -767,6 +954,7 @@ bool SupportedEnvironment(const QString& env) {
         QStringLiteral("gather"),  QStringLiteral("gather*"),     QStringLiteral("cases"),   QStringLiteral("dcases"),
         QStringLiteral("matrix"),  QStringLiteral("smallmatrix"), QStringLiteral("pmatrix"), QStringLiteral("bmatrix"),
         QStringLiteral("Bmatrix"), QStringLiteral("vmatrix"),     QStringLiteral("Vmatrix"),
+        QStringLiteral("array"),   QStringLiteral("split"),
     };
     return envs.contains(env);
 }
@@ -818,6 +1006,62 @@ QVector<QPair<int, int>> SplitTopLevel(const QString& s, bool onAmp) {
         ++j;
     }
     out.push_back({start, n});
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// 数学字母（\mathbb / \mathfrak / \mathscr 的近似）
+// ---------------------------------------------------------------------------
+
+enum class AlphabetKind { DoubleStruck, Fraktur, Script };
+
+QString AppendCodePoint(QString out, char32_t cp) {
+    if (cp <= 0xFFFF) {
+        out.append(QChar(static_cast<char16_t>(cp)));
+    } else {
+        cp -= 0x10000;
+        out.append(QChar(static_cast<char16_t>(0xD800 + (cp >> 10))));
+        out.append(QChar(static_cast<char16_t>(0xDC00 + (cp & 0x3FF))));
+    }
+    return out;
+}
+
+QString MathAlphabet(const QString& text, AlphabetKind kind) {
+    static constexpr char32_t double_upper[26] = {
+        0x1D538, 0x1D539, 0x2102, 0x1D53B, 0x1D53C, 0x1D53D, 0x1D53E, 0x210D, 0x1D540, 0x1D541,
+        0x1D542, 0x1D543, 0x1D544, 0x2115, 0x1D546, 0x2119, 0x211A, 0x211D, 0x1D54A, 0x1D54B,
+        0x1D54C, 0x1D54D, 0x1D54E, 0x1D54F, 0x1D550, 0x2124};
+    static constexpr char32_t fraktur_upper[26] = {
+        0x1D504, 0x1D505, 0x212D, 0x1D507, 0x1D508, 0x1D509, 0x1D50A, 0x210C, 0x2111, 0x1D50D,
+        0x1D50E, 0x1D50F, 0x1D510, 0x1D511, 0x1D512, 0x1D513, 0x1D514, 0x211C, 0x1D516, 0x1D517,
+        0x1D518, 0x1D519, 0x1D51A, 0x1D51B, 0x1D51C, 0x2128};
+    static constexpr char32_t script_upper[26] = {
+        0x1D49C, 0x212C, 0x1D49E, 0x1D49F, 0x2130, 0x2131, 0x1D4A2, 0x210B, 0x2110, 0x1D4A5,
+        0x1D4A6, 0x2112, 0x2133, 0x1D4A9, 0x1D4AA, 0x1D4AB, 0x1D4AC, 0x211B, 0x1D4AE, 0x1D4AF,
+        0x1D4B0, 0x1D4B1, 0x1D4B2, 0x1D4B3, 0x1D4B4, 0x1D4B5};
+
+    QString out;
+    out.reserve(text.size());
+    for (const QChar c : text) {
+        const char16_t u = c.unicode();
+        if (u >= u'A' && u <= u'Z') {
+            const int index = u - u'A';
+            const char32_t cp = kind == AlphabetKind::DoubleStruck ? double_upper[index]
+                                : kind == AlphabetKind::Fraktur    ? fraktur_upper[index]
+                                                                   : script_upper[index];
+            out = AppendCodePoint(out, cp);
+        } else if (u >= u'a' && u <= u'z') {
+            const int index = u - u'a';
+            const char32_t base = kind == AlphabetKind::DoubleStruck ? 0x1D552
+                                  : kind == AlphabetKind::Fraktur    ? 0x1D51E
+                                                                     : 0x1D4B6;
+            out = AppendCodePoint(out, base + index);
+        } else if (kind == AlphabetKind::DoubleStruck && u >= u'0' && u <= u'9') {
+            out = AppendCodePoint(out, 0x1D7D8 + (u - u'0'));
+        } else {
+            out.append(c);
+        }
+    }
     return out;
 }
 
@@ -1123,6 +1367,51 @@ class Parser {
             return MakeFraction(num, den, CurrentFontPx(), st_.color);
         }
 
+        if (name == QLatin1String("binom")) {
+            BoxPtr num, den;
+            {
+                ScaleGuard guard(*this, kFracScale);
+                num = ParseArgument();
+            }
+            {
+                ScaleGuard guard(*this, kFracScale);
+                den = ParseArgument();
+            }
+            return MakeBinomial(num, den, CurrentFontPx(), st_.color, st_);
+        }
+
+        if (name == QLatin1String("boxed"))
+            return MakeBoxed(ParseArgument(), CurrentFontPx(), st_.color);
+        if (name == QLatin1String("overbrace") || name == QLatin1String("underbrace")) {
+            st_.Fail(QStringLiteral("approximate preview: \\") + name);
+            return MakeBrace(ParseArgument(), name == QLatin1String("overbrace"), CurrentFontPx(), st_.color);
+        }
+        if (name == QLatin1String("overset") || name == QLatin1String("underset")) {
+            BoxPtr annotation;
+            {
+                ScaleGuard guard(*this, kScriptScale);
+                annotation = ParseArgument();
+            }
+            return MakeStack(annotation, ParseArgument(), name == QLatin1String("overset"), CurrentFontPx());
+        }
+        if (name == QLatin1String("substack"))
+            return ParseSubstack(name);
+        if (name == QLatin1String("overrightarrow")) {
+            st_.Fail(QStringLiteral("approximate preview: \\overrightarrow"));
+            return MakeArrowAccent(ParseArgument(), CurrentFontPx(), st_.color);
+        }
+        if (name == QLatin1String("pmod")) {
+            const BoxPtr body = ParseArgument();
+            FontSpec sp = spec_;
+            sp.italic = false;
+            sp.auto_italic = false;
+            sp.force_upright = true;
+            const QFont font = FontFor(st_, sp, scale_);
+            return MakeHBox({MakeText(QStringLiteral("("), font, st_.color),
+                             MakeText(QStringLiteral("mod"), font, st_.color), MakeSpace(CurrentFontPx() * 0.18),
+                             body, MakeText(QStringLiteral(")"), font, st_.color)});
+        }
+
         // 根式。
         if (name == QLatin1String("sqrt"))
             return ParseSqrt();
@@ -1153,7 +1442,19 @@ class Parser {
                 }
             });
         }
-        if (name == QLatin1String("mathcal") || name == QLatin1String("mathscr") || name == QLatin1String("mathfrak")) {
+        if (name == QLatin1String("mathbb") || name == QLatin1String("mathfrak") ||
+            name == QLatin1String("mathscr")) {
+            const QString raw = ParseRawArgumentText(name);
+            const AlphabetKind kind = name == QLatin1String("mathbb")     ? AlphabetKind::DoubleStruck
+                                      : name == QLatin1String("mathfrak") ? AlphabetKind::Fraktur
+                                                                          : AlphabetKind::Script;
+            FontSpec sp = spec_;
+            sp.italic = false;
+            sp.auto_italic = false;
+            sp.force_upright = true;
+            return MakeText(MathAlphabet(raw, kind), FontFor(st_, sp, scale_), st_.color);
+        }
+        if (name == QLatin1String("mathcal")) {
             return ParseWithFont([&](FontSpec& s) {
                 s.script = true;
                 s.italic = true;
@@ -1266,6 +1567,32 @@ class Parser {
         BoxPtr box = ParseArgument();
         spec_ = old;
         return box;
+    }
+
+    QString ParseRawArgumentText(const QString& name) {
+        if (i_ >= s_.size() || s_[i_] != u'{') {
+            st_.Fail(QStringLiteral("missing argument for \\") + name);
+            return {};
+        }
+        ++i_;
+        return ConsumeRawBalanced();
+    }
+
+    BoxPtr ParseSubstack(const QString& name) {
+        const QString raw = ParseRawArgumentText(name);
+        if (raw.isEmpty())
+            return MakeEmpty();
+        st_.Fail(QStringLiteral("approximate preview: \\substack"));
+        std::vector<std::vector<BoxPtr>> rows;
+        for (const auto& range : SplitTopLevel(raw, false)) {
+            const QString row = raw.mid(range.first, range.second - range.first);
+            Parser p(row, st_, depth_ + 1, spec_);
+            p.SetScale(scale_ * kScriptScale);
+            std::vector<BoxPtr> cells;
+            cells.push_back(p.Parse(false, false));
+            rows.push_back(std::move(cells));
+        }
+        return MakeGrid(rows, ColAlign::Center, false, 0, std::max(1.0, CurrentFontPx() * 0.12));
     }
 
     BoxPtr ParseTextArgument(const QString& name) {
@@ -1448,7 +1775,32 @@ class Parser {
             st_.Fail(QStringLiteral("nesting too deep"));
             return MakePlainText(CollapseWsTrim(raw), false);
         }
-        const int bodyStart = nameStart + env.size() + 1; // 刚好越过 "}{"
+        int bodyStart = nameStart + env.size() + 1; // 刚好越过 "}{"
+        if (env == QLatin1String("array")) {
+            // array 的列格式参数不属于矩阵内容：\begin{array}{cc}...
+            int p = bodyStart;
+            while (p < bodyEnd && s_[p].isSpace())
+                ++p;
+            if (p < bodyEnd && s_[p] == u'{') {
+                int nesting = 0;
+                while (p < bodyEnd) {
+                    if (s_[p] == u'{')
+                        ++nesting;
+                    else if (s_[p] == u'}') {
+                        --nesting;
+                        if (nesting == 0) {
+                            ++p;
+                            break;
+                        }
+                    }
+                    ++p;
+                }
+                bodyStart = p;
+            }
+            st_.Fail(QStringLiteral("approximate preview: \\begin{array}"));
+        }
+        if (env == QLatin1String("split"))
+            st_.Fail(QStringLiteral("approximate preview: \\begin{split}"));
         return BuildEnvironment(env, s_.mid(bodyStart, std::max(0, bodyEnd - bodyStart)));
     }
 
@@ -1502,9 +1854,11 @@ class Parser {
         const qreal fpx = CurrentFontPx();
         const bool isAligned =
             (env == QLatin1String("aligned") || env == QLatin1String("align") || env == QLatin1String("align*") ||
-             env == QLatin1String("gathered") || env == QLatin1String("gather") || env == QLatin1String("gather*"));
+             env == QLatin1String("gathered") || env == QLatin1String("gather") || env == QLatin1String("gather*") ||
+             env == QLatin1String("split"));
         const bool isCases = (env == QLatin1String("cases") || env == QLatin1String("dcases"));
-        const bool isMatrix = (env == QLatin1String("matrix") || env == QLatin1String("smallmatrix"));
+        const bool isMatrix =
+            (env == QLatin1String("matrix") || env == QLatin1String("smallmatrix") || env == QLatin1String("array"));
         const ColAlign align = isAligned ? ColAlign::Right : (isCases ? ColAlign::Left : ColAlign::Center);
         const qreal colGap = isCases ? fpx * 0.9 : fpx * 0.85;
         const qreal rowGap = isMatrix ? fpx * 0.35 : fpx * 0.45;

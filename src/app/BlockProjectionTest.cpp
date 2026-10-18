@@ -24,6 +24,7 @@
 #include <string>
 
 #include "app/BlockEditor.h"
+#include "app/InlineEditor.h"
 #include "app/MainWindow.h"
 #include "app/ProjectController.h"
 #include "document/InlineText.h"
@@ -146,11 +147,9 @@ int main(int argc, char* argv[]) {
         if (grid->isVisible() || grid->parentWidget() != nullptr)
             ++table_widgets;
     }
-    // 每个 figure/table 卡片都带有一个可用的题注编辑器：设置了 row_node
-    // 且 commands_enabled 为 true 的 QPlainTextEdit。（Text 行使用
-    // InlineEditor（QTextEdit 的子类），因此不计入此处。）
-    for (QPlainTextEdit* edit : window.findChildren<QPlainTextEdit*>()) {
-        if (!edit->property("commands_enabled").toBool())
+    // WP-04：题注复用正文的富文本编辑器；按提交角色识别语义目标。
+    for (InlineEditor* edit : window.findChildren<InlineEditor*>()) {
+        if (edit->property("row_commit_role").toString() != QStringLiteral("caption"))
             continue;
         const QString node = edit->property("row_node").toString();
         if (!node.isEmpty())
@@ -186,9 +185,9 @@ int main(int argc, char* argv[]) {
     // 路径使其回归）。Text 行是 InlineEditor 实例（QTextEdit），而不是
     // QPlainTextEdit。
     std::set<QString> paragraph_nodes;
-    for (QTextEdit* edit : window.findChildren<QTextEdit*>()) {
-        if (qobject_cast<QPlainTextEdit*>(edit) != nullptr)
-            continue; // 题注编辑器已在上方统计
+    for (InlineEditor* edit : window.findChildren<InlineEditor*>()) {
+        if (edit->property("row_commit_role").toString() != QStringLiteral("paragraph"))
+            continue;
         const QString node = edit->property("row_node").toString();
         if (!node.isEmpty())
             paragraph_nodes.insert(node);

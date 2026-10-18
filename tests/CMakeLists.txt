@@ -20,6 +20,11 @@ add_executable(pf_tests
     TestCitationNumbering.cpp
     TestCitationTokenCodec.cpp
     TestNumbering.cpp
+    TestMathCatalog.cpp
+    TestTableEditing.cpp
+    TestAssetVector.cpp
+    TestListFootnote.cpp
+    TestTheoremCode.cpp
 )
 
 target_include_directories(pf_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

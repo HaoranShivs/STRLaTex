@@ -1,5 +1,7 @@
 #include "document/DocumentEditor.h"
 
+#include <algorithm>
+
 #include "core/IdGenerator.h"
 #include "document/DocumentTraversal.h"
 #include "document/InlineText.h"
@@ -537,6 +539,220 @@ Result<void, EditError> DocumentEditor::SetParagraphContent(const NodeId& id, co
     return {};
 }
 
+namespace {
+
+std::vector<size_t> FootnotePositions(const InlineContent& content) {
+    std::vector<size_t> positions;
+    for (size_t i = 0; i < content.size(); ++i) {
+        if (std::holds_alternative<Footnote>(content[i]))
+            positions.push_back(i);
+    }
+    return positions;
+}
+
+ListBlock* FindListBlock(Block* block) {
+    return block ? std::get_if<ListBlock>(block) : nullptr;
+}
+
+} // namespace
+
+Result<NodeId, EditError> DocumentEditor::InsertList(const NodeId& parent, std::optional<size_t> index,
+                                                     ListStyle style, InlineContent first_item, NodeId id) {
+    ListBlock list;
+    list.id = id;
+    list.style = style;
+    ListItem item;
+    item.id = IdGenerator::NewNode();
+    item.content = std::move(first_item);
+    list.items.push_back(std::move(item));
+    return InsertBlock(parent, index, std::move(list), id);
+}
+
+Result<NodeId, EditError> DocumentEditor::InsertListItem(const NodeId& list, size_t index, InlineContent content,
+                                                         NodeId id) {
+    Block* block = FindBlock(list);
+    ListBlock* list_block = FindListBlock(block);
+    if (!list_block)
+        return Unexpected(ToString(EditError::InvalidTarget));
+    if (index > list_block->items.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    if (id.empty())
+        id = IdGenerator::NewNode();
+    ListItem item;
+    item.id = id;
+    item.content = std::move(content);
+    list_block->items.insert(list_block->items.begin() + static_cast<long>(index), std::move(item));
+    document_.BumpVersion();
+    return id;
+}
+
+Result<void, EditError> DocumentEditor::SetListItemContent(const NodeId& list, size_t index,
+                                                           const InlineContent& content) {
+    Block* block = FindBlock(list);
+    ListBlock* list_block = FindListBlock(block);
+    if (!list_block)
+        return Unexpected(ToString(EditError::InvalidTarget));
+    if (index >= list_block->items.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    list_block->items[index].content = content;
+    document_.BumpVersion();
+    return {};
+}
+
+Result<void, EditError> DocumentEditor::DeleteListItem(const NodeId& list, size_t index) {
+    Block* block = FindBlock(list);
+    ListBlock* list_block = FindListBlock(block);
+    if (!list_block)
+        return Unexpected(ToString(EditError::InvalidTarget));
+    if (index >= list_block->items.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    list_block->items.erase(list_block->items.begin() + static_cast<long>(index));
+    document_.BumpVersion();
+    return {};
+}
+
+Result<void, EditError> DocumentEditor::MoveListItem(const NodeId& list, size_t from, size_t to) {
+    Block* block = FindBlock(list);
+    ListBlock* list_block = FindListBlock(block);
+    if (!list_block)
+        return Unexpected(ToString(EditError::InvalidTarget));
+    if (from >= list_block->items.size() || to >= list_block->items.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    if (from == to)
+        return {};
+    ListItem item = std::move(list_block->items[from]);
+    list_block->items.erase(list_block->items.begin() + static_cast<long>(from));
+    list_block->items.insert(list_block->items.begin() + static_cast<long>(to), std::move(item));
+    document_.BumpVersion();
+    return {};
+}
+
+Result<void, EditError> DocumentEditor::SetListStyle(const NodeId& list, ListStyle style) {
+    Block* block = FindBlock(list);
+    ListBlock* list_block = FindListBlock(block);
+    if (!list_block)
+        return Unexpected(ToString(EditError::InvalidTarget));
+    list_block->style = style;
+    document_.BumpVersion();
+    return {};
+}
+
+Result<void, EditError> DocumentEditor::InsertFootnote(const NodeId& paragraph, std::optional<size_t> at_index,
+                                                       InlineContent body) {
+    Block* block = FindBlock(paragraph);
+    auto* para = block ? std::get_if<Paragraph>(block) : nullptr;
+    if (!para)
+        return Unexpected(ToString(EditError::InvalidTarget));
+    const size_t index = at_index.value_or(para->content.size());
+    if (index > para->content.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    para->content.insert(para->content.begin() + static_cast<long>(index), MakeFootnote(std::move(body)));
+    document_.BumpVersion();
+    return {};
+}
+
+Result<void, EditError> DocumentEditor::SetFootnote(const NodeId& paragraph, size_t at_index,
+                                                    const InlineContent& body) {
+    Block* block = FindBlock(paragraph);
+    auto* para = block ? std::get_if<Paragraph>(block) : nullptr;
+    if (!para)
+        return Unexpected(ToString(EditError::InvalidTarget));
+    const auto positions = FootnotePositions(para->content);
+    if (at_index >= positions.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    para->content[positions[at_index]] = MakeFootnote(body);
+    document_.BumpVersion();
+    return {};
+}
+
+Result<void, EditError> DocumentEditor::DeleteFootnote(const NodeId& paragraph, size_t at_index) {
+    Block* block = FindBlock(paragraph);
+    auto* para = block ? std::get_if<Paragraph>(block) : nullptr;
+    if (!para)
+        return Unexpected(ToString(EditError::InvalidTarget));
+    const auto positions = FootnotePositions(para->content);
+    if (at_index >= positions.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    para->content.erase(para->content.begin() + static_cast<long>(positions[at_index]));
+    document_.BumpVersion();
+    return {};
+}
+
+Result<NodeId, EditError> DocumentEditor::InsertTheorem(const NodeId& parent, std::optional<size_t> index,
+                                                         TheoremKind kind, InlineContent title, InlineContent body,
+                                                         bool numbered, std::string label, NodeId id) {
+    TheoremBlock theorem;
+    theorem.id = id;
+    theorem.kind = kind;
+    theorem.title = std::move(title);
+    theorem.body = std::move(body);
+    theorem.numbered = numbered && kind != TheoremKind::Proof;
+    theorem.label = std::move(label);
+    return InsertBlock(parent, index, std::move(theorem), id);
+}
+
+Result<void, EditError> DocumentEditor::SetTheorem(const NodeId& id, InlineContent body,
+                                                   std::optional<InlineContent> title,
+                                                   std::optional<bool> numbered,
+                                                   std::optional<std::string> label,
+                                                   std::optional<TheoremKind> kind) {
+    Block* block = FindBlock(id);
+    auto* theorem = block ? std::get_if<TheoremBlock>(block) : nullptr;
+    if (!theorem)
+        return Unexpected(ToString(EditError::InvalidTarget));
+    theorem->body = std::move(body);
+    if (kind) {
+        theorem->kind = *kind;
+        if (theorem->kind == TheoremKind::Proof)
+            theorem->numbered = false;
+    }
+    if (title)
+        theorem->title = std::move(*title);
+    if (numbered)
+        theorem->numbered = *numbered && theorem->kind != TheoremKind::Proof;
+    if (label)
+        theorem->label = std::move(*label);
+    document_.BumpVersion();
+    return {};
+}
+
+Result<NodeId, EditError> DocumentEditor::InsertCode(const NodeId& parent, std::optional<size_t> index,
+                                                      std::string language, std::string code,
+                                                      InlineContent caption, bool line_numbers,
+                                                      std::string label, NodeId id) {
+    CodeBlock listing;
+    listing.id = id;
+    listing.language = std::move(language);
+    listing.code = std::move(code);
+    listing.caption = std::move(caption);
+    listing.line_numbers = line_numbers;
+    listing.label = std::move(label);
+    return InsertBlock(parent, index, std::move(listing), id);
+}
+
+Result<void, EditError> DocumentEditor::SetCode(const NodeId& id, std::optional<std::string> language,
+                                                std::optional<std::string> text,
+                                                std::optional<InlineContent> caption,
+                                                std::optional<bool> line_numbers,
+                                                std::optional<std::string> label) {
+    Block* block = FindBlock(id);
+    auto* listing = block ? std::get_if<CodeBlock>(block) : nullptr;
+    if (!listing)
+        return Unexpected(ToString(EditError::InvalidTarget));
+    if (language)
+        listing->language = std::move(*language);
+    if (text)
+        listing->code = std::move(*text);
+    if (caption)
+        listing->caption = std::move(*caption);
+    if (line_numbers)
+        listing->line_numbers = *line_numbers;
+    if (label)
+        listing->label = std::move(*label);
+    document_.BumpVersion();
+    return {};
+}
+
 Result<void, EditError> DocumentEditor::SetCaption(const NodeId& id, const InlineContent& caption) {
     Block* block = FindBlock(id);
     if (!block)
@@ -613,6 +829,19 @@ Result<void, EditError> DocumentEditor::SetFigureLabel(const NodeId& id, const s
     return {};
 }
 
+Result<void, EditError> DocumentEditor::SetFigureWidth(const NodeId& id, FigureWidth width) {
+    Block* block = FindBlock(id);
+    auto* figure = block ? std::get_if<Figure>(block) : nullptr;
+    if (!figure)
+        return Unexpected(ToString(EditError::InvalidTarget));
+    if (width != FigureWidth::Percent25 && width != FigureWidth::Percent50 &&
+        width != FigureWidth::Percent75 && width != FigureWidth::Percent100)
+        return Unexpected(ToString(EditError::ConstraintViolation));
+    figure->width = width;
+    document_.BumpVersion();
+    return {};
+}
+
 Result<void, EditError> DocumentEditor::SetTableLabel(const NodeId& id, const std::string& label) {
     Block* block = FindBlock(id);
     if (!block)
@@ -652,7 +881,7 @@ std::vector<Block>* DocumentEditor::FindBlockListForNode(const NodeId& id) {
 
 Result<Table, EditError> DocumentEditor::MakeTable(std::vector<TableColumn> columns, size_t rows, bool has_header_row,
                                                    NodeId id) {
-    if (columns.empty())
+    if (columns.empty() || columns.size() > Table::kMaxColumns || rows > Table::kMaxRows)
         return Unexpected(ToString(EditError::ConstraintViolation));
     Table table;
     if (id.empty())
@@ -673,6 +902,8 @@ Result<void, EditError> DocumentEditor::InsertTableRow(const NodeId& id, size_t 
         return Unexpected(ToString(EditError::NotFound));
     if (index > table->cells.size())
         return Unexpected(ToString(EditError::InvalidTarget));
+    if (table->RowCount() >= Table::kMaxRows)
+        return Unexpected(ToString(EditError::ConstraintViolation));
     std::vector<TableCell> row(table->columns.size(), TableCell{});
     table->cells.insert(table->cells.begin() + index, std::move(row));
     document_.BumpVersion();
@@ -702,6 +933,10 @@ Result<void, EditError> DocumentEditor::InsertTableColumn(const NodeId& id, size
         return Unexpected(ToString(EditError::NotFound));
     if (index > table->columns.size())
         return Unexpected(ToString(EditError::InvalidTarget));
+    if (table->ColumnCount() >= Table::kMaxColumns)
+        return Unexpected(ToString(EditError::ConstraintViolation));
+    if (alignment != ColumnAlignment::Left && alignment != ColumnAlignment::Center && alignment != ColumnAlignment::Right)
+        return Unexpected(ToString(EditError::ConstraintViolation));
     table->columns.insert(table->columns.begin() + index, TableColumn{alignment});
     for (auto& row : table->cells) {
         row.insert(row.begin() + index, TableCell{});
@@ -719,6 +954,8 @@ Result<void, EditError> DocumentEditor::DeleteTableColumn(const NodeId& id, size
         return Unexpected(ToString(EditError::NotFound));
     if (index >= table->columns.size())
         return Unexpected(ToString(EditError::InvalidTarget));
+    if (table->columns.size() == 1)
+        return Unexpected(ToString(EditError::ConstraintViolation));
     table->columns.erase(table->columns.begin() + index);
     for (auto& row : table->cells) {
         if (index < row.size())
@@ -738,7 +975,32 @@ Result<void, EditError> DocumentEditor::SetTableCell(const NodeId& id, size_t ro
         return Unexpected(ToString(EditError::NotFound));
     if (row >= table->cells.size() || column >= table->columns.size())
         return Unexpected(ToString(EditError::InvalidTarget));
+    if (!table->IsRectangular())
+        return Unexpected(ToString(EditError::ConstraintViolation));
     table->cells[row][column].content = content;
+    document_.BumpVersion();
+    return {};
+}
+
+Result<void, EditError> DocumentEditor::SetTableColumnAlignment(const NodeId& id, size_t column,
+                                                             ColumnAlignment alignment) {
+    Block* block = FindBlock(id);
+    auto* table = block ? std::get_if<Table>(block) : nullptr;
+    if (!table || column >= table->columns.size())
+        return Unexpected(ToString(EditError::InvalidTarget));
+    if (alignment != ColumnAlignment::Left && alignment != ColumnAlignment::Center && alignment != ColumnAlignment::Right)
+        return Unexpected(ToString(EditError::ConstraintViolation));
+    table->columns[column].alignment = alignment;
+    document_.BumpVersion();
+    return {};
+}
+
+Result<void, EditError> DocumentEditor::SetTableHeaderRow(const NodeId& id, bool has_header_row) {
+    Block* block = FindBlock(id);
+    auto* table = block ? std::get_if<Table>(block) : nullptr;
+    if (!table)
+        return Unexpected(ToString(EditError::InvalidTarget));
+    table->has_header_row = has_header_row;
     document_.BumpVersion();
     return {};
 }

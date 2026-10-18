@@ -90,6 +90,7 @@ class ProjectSession {
         std::string install_root;
         // 可选的确定性编译器（测试用）。为空 -> tectonic。
         std::function<std::unique_ptr<ICompiler>()> compiler_factory;
+        std::shared_ptr<IAssetConverter> asset_converter;
     };
 
     explicit ProjectSession(Config config);
@@ -206,6 +207,7 @@ class ProjectSession {
     // 在一次面向用户的操作中完成图片的暂存、注册与插入。
     EditResult InsertFigureFromSource(const std::filesystem::path& source, const NodeId& parent,
                                       std::optional<size_t> index = std::nullopt);
+    EditResult ReplaceFigureFromSource(const NodeId& figure, const std::filesystem::path& source);
 
     // ---- Bibliography ----
     BibliographyImportResult ImportBibliography(const std::string& bibtex_text);
@@ -309,6 +311,7 @@ class ProjectSession {
     void MarkDirty();
     // 编辑成功后的统一收尾：置 Dirty 并请求一次异步 build。
     EditResult FinalizeEdit(EditResult result);
+    EditResult ApplyImportedAsset(const AssetImportResult& imported, FullEditPayload payload);
     // 打开/新建项目时唯一的路径推导入口。
     void SetProjectPaths(const std::filesystem::path& project_dir);
     void LoadTemplateCatalog();

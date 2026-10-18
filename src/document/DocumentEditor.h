@@ -83,6 +83,40 @@ class DocumentEditor {
     Result<void, EditError> MoveBlock(const NodeId& id, const NodeId& new_parent, std::optional<size_t> new_index);
 
     Result<void, EditError> SetParagraphContent(const NodeId& id, const InlineContent& content);
+
+    // 列表（WP-06）。列表块与其中的 item 共享同一条可撤销的文档命令路径。
+    Result<NodeId, EditError> InsertList(const NodeId& parent, std::optional<size_t> index, ListStyle style,
+                                         InlineContent first_item, NodeId id = NodeId{});
+    Result<NodeId, EditError> InsertListItem(const NodeId& list, size_t index, InlineContent content,
+                                             NodeId id = NodeId{});
+    Result<void, EditError> SetListItemContent(const NodeId& list, size_t index, const InlineContent& content);
+    Result<void, EditError> DeleteListItem(const NodeId& list, size_t index);
+    Result<void, EditError> MoveListItem(const NodeId& list, size_t from, size_t to);
+    Result<void, EditError> SetListStyle(const NodeId& list, ListStyle style);
+
+    // 脚注（WP-06）：按段落内 Footnote 引用的顺序定位（第 n 个）。
+    Result<void, EditError> InsertFootnote(const NodeId& paragraph, std::optional<size_t> at_index,
+                                           InlineContent body);
+    Result<void, EditError> SetFootnote(const NodeId& paragraph, size_t at_index, const InlineContent& body);
+    Result<void, EditError> DeleteFootnote(const NodeId& paragraph, size_t at_index);
+
+    // 定理/证明与代码块（WP-07）。
+    Result<NodeId, EditError> InsertTheorem(const NodeId& parent, std::optional<size_t> index,
+                                            TheoremKind kind, InlineContent title, InlineContent body,
+                                            bool numbered, std::string label, NodeId id = NodeId{});
+    Result<void, EditError> SetTheorem(const NodeId& id, InlineContent body,
+                                       std::optional<InlineContent> title = std::nullopt,
+                                       std::optional<bool> numbered = std::nullopt,
+                                       std::optional<std::string> label = std::nullopt,
+                                       std::optional<TheoremKind> kind = std::nullopt);
+    Result<NodeId, EditError> InsertCode(const NodeId& parent, std::optional<size_t> index,
+                                         std::string language, std::string code, InlineContent caption,
+                                         bool line_numbers, std::string label, NodeId id = NodeId{});
+    Result<void, EditError> SetCode(const NodeId& id, std::optional<std::string> language = std::nullopt,
+                                    std::optional<std::string> text = std::nullopt,
+                                    std::optional<InlineContent> caption = std::nullopt,
+                                    std::optional<bool> line_numbers = std::nullopt,
+                                    std::optional<std::string> label = std::nullopt);
     Result<void, EditError> SetCaption(const NodeId& id, const InlineContent& caption);
     Result<void, EditError> SetEquationSource(const NodeId& id, const std::string& source,
                                               std::optional<bool> numbered = std::nullopt,
@@ -92,6 +126,7 @@ class DocumentEditor {
     // 单栏与双栏 figure。该值会被无条件存储，仅在双栏模板中才会产生
     // 可见效果（对于 DoubleColumn，renderer 会输出带星号的 float）。
     Result<void, EditError> SetFigureSpan(const NodeId& id, FigureSpan span);
+    Result<void, EditError> SetFigureWidth(const NodeId& id, FigureWidth width);
     // 用户可读的 LaTeX label；空字符串表示回退到 node id。
     Result<void, EditError> SetFigureLabel(const NodeId& id, const std::string& label);
     Result<void, EditError> SetTableLabel(const NodeId& id, const std::string& label);
@@ -104,6 +139,8 @@ class DocumentEditor {
     Result<void, EditError> InsertTableColumn(const NodeId& id, size_t index, ColumnAlignment alignment);
     Result<void, EditError> DeleteTableColumn(const NodeId& id, size_t index);
     Result<void, EditError> SetTableCell(const NodeId& id, size_t row, size_t column, const InlineContent& content);
+    Result<void, EditError> SetTableColumnAlignment(const NodeId& id, size_t column, ColumnAlignment alignment);
+    Result<void, EditError> SetTableHeaderRow(const NodeId& id, bool has_header_row);
 
     // 查找辅助函数（仅限编辑器内部使用的可变访问）
     Section* FindSection(const NodeId& id);

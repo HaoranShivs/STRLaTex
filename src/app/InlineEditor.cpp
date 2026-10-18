@@ -10,6 +10,7 @@
 #include <QFontMetricsF>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QHelpEvent>
 #include <QHideEvent>
 #include <QKeyEvent>
 #include <QMenu>
@@ -24,6 +25,7 @@
 #include <QTextFragment>
 #include <QTimer>
 #include <QToolButton>
+#include <QToolTip>
 #include <QVBoxLayout>
 
 #include "app/InlineMathObjectRenderer.h"
@@ -60,7 +62,7 @@ InlineEditor::InlineEditor(QWidget* parent)
             return;
         ApplyMathRender(response.formula_id, response.latex, response.result.image, response.result.width,
                         response.result.height, response.result.baseline, response.result.device_pixel_ratio,
-                        response.render_font_px);
+                        response.render_font_px, response.result.exact, response.result.note);
     });
     setAcceptRichText(false);
     setWordWrapMode(QTextOption::WordWrap);
@@ -307,6 +309,30 @@ void InlineEditor::hideEvent(QHideEvent* event) {
     QTextEdit::hideEvent(event);
 }
 
+void InlineEditor::SetMathPackages(std::vector<std::string> packages) {
+    math_packages_ = std::move(packages);
+}
+
+QString InlineEditor::MathRenderNoteAt(int position) const {
+    const auto hit = TokenAt(position);
+    if (!hit || hit->kind != TokenKind::Math)
+        return {};
+    return TokenFormatAt(position).property(kMathNoteProperty).toString();
+}
+
+bool InlineEditor::event(QEvent* event) {
+    if (event->type() == QEvent::ToolTip) {
+        auto* help = static_cast<QHelpEvent*>(event);
+        const int position = document()->documentLayout()->hitTest(help->pos(), Qt::FuzzyHit);
+        const QString note = MathRenderNoteAt(position);
+        if (!note.isEmpty()) {
+            QToolTip::showText(help->globalPos(), note, this);
+            return true;
+        }
+    }
+    return QTextEdit::event(event);
+}
+
 void InlineEditor::ResizeToContent() {
     ResizeToWidth(width());
 }
@@ -352,6 +378,11 @@ void InlineEditor::InsertContent(const InlineContent& content) {
         } else if (const auto* ref = std::get_if<CrossReference>(&node)) {
             const QString target = QString::fromStdString(ref->target.value());
             InsertPillObject(cursor, TokenKind::CrossReference, target, CrossReferenceDisplayText(target));
+        } else if (const auto* footnote = std::get_if<Footnote>(&node)) {
+            const QString key = QStringLiteral("fn:%1").arg(++next_footnote_id_);
+            footnote_bodies_[key] = footnote->body ? footnote->body->content : InlineContent{};
+            InsertPillObject(cursor, TokenKind::Footnote, key,
+                             QStringLiteral("[^%1]").arg(footnote_bodies_.size()));
         }
     }
     setTextCursor(cursor);
@@ -359,6 +390,7 @@ void InlineEditor::InsertContent(const InlineContent& content) {
 
 void InlineEditor::SetContent(const InlineContent& content) {
     loading_ = true;
+    footnote_bodies_.clear();
     clear();
     QTextCursor cursor(document());
     setTextCursor(cursor);
@@ -424,6 +456,10 @@ InlineContent InlineEditor::ContentInRange(int begin, int end) const {
                             CrossReference ref;
                             ref.target = NodeId(payload.toStdString());
                             content.push_back(std::move(ref));
+                        } else if (kind == TokenKind::Footnote) {
+                            const auto body = footnote_bodies_.find(payload);
+                            if (body != footnote_bodies_.end())
+                                content.push_back(MakeFootnote(body->second));
                         } else {
                             InlineMath math;
                             math.expression.latex = payload.toStdString();
@@ -708,7 +744,8 @@ void InlineEditor::RefreshMathGeometry(int available_width, bool rerender) {
 }
 
 void InlineEditor::ApplyMathRender(const QString& formula_id, const QString& latex, const QImage& image, int width,
-                                   int height, int baseline, qreal device_pixel_ratio, int render_font_px) {
+                                   int height, int baseline, qreal device_pixel_ratio, int render_font_px, bool exact,
+                                   const QString& note) {
     if (image.isNull() || width <= 0 || height <= 0)
         return;
     ensurePolished();
@@ -754,6 +791,7 @@ void InlineEditor::ApplyMathRender(const QString& formula_id, const QString& lat
     update.setProperty(inline_math_format::kSourceHeightProperty, image.height() / dpr);
     update.setProperty(inline_math_format::kSourceBaselineProperty, baseline);
     update.setProperty(inline_math_format::kRenderFontPxProperty, render_font_px);
+    update.setProperty(kMathNoteProperty, exact ? QString() : note);
     UpdateMathGeometry(&update, viewport()->width());
     // 这里只改变对象的格式——QTextDocument 绝不会重建或重新创建，
     // 因此光标和周围文本保持原样。
@@ -795,6 +833,9 @@ std::optional<InlineEditor::TokenHit> InlineEditor::TokenAt(int position) const 
 }
 
 void InlineEditor::RemoveTokenAt(int position) {
+    const auto hit = TokenAt(position);
+    if (hit && hit->kind == TokenKind::Footnote)
+        footnote_bodies_.erase(hit->payload);
     const int start = qMax(0, position);
     QTextCursor cursor(document());
     cursor.setPosition(start);
@@ -947,6 +988,39 @@ void InlineEditor::InsertCrossReferenceObject(const QString& target_node) {
     ResizeToContent();
 }
 
+void InlineEditor::InsertFootnoteObject(const InlineContent& body) {
+    const QString key = QStringLiteral("fn:%1").arg(++next_footnote_id_);
+    footnote_bodies_[key] = body;
+    QTextCursor cursor = textCursor();
+    InsertPillObject(cursor, TokenKind::Footnote, key,
+                     QStringLiteral("[^%1]").arg(footnote_bodies_.size()));
+    setTextCursor(cursor);
+    dirty_ = true;
+    ResizeToContent();
+}
+
+std::optional<InlineEditor::FootnoteTokenInfo> InlineEditor::FootnoteAt(int position) const {
+    const auto hit = TokenAt(position);
+    if (!hit || hit->kind != TokenKind::Footnote)
+        return std::nullopt;
+    const auto body = footnote_bodies_.find(hit->payload);
+    FootnoteTokenInfo info;
+    if (body != footnote_bodies_.end())
+        info.body = body->second;
+    info.position = hit->position;
+    return info;
+}
+
+bool InlineEditor::ReplaceFootnoteAt(int position, const InlineContent& body) {
+    const auto hit = TokenAt(position);
+    if (!hit || hit->kind != TokenKind::Footnote)
+        return false;
+    footnote_bodies_[hit->payload] = body;
+    dirty_ = true;
+    ResizeToContent();
+    return true;
+}
+
 void InlineEditor::InsertInlineMath(const QString& latex) {
     if (latex.trimmed().isEmpty())
         return;
@@ -980,6 +1054,7 @@ void InlineEditor::OpenMathEditor(const std::optional<TokenHit>& hit) {
     // 堆所有权加 open() 可避免嵌套事件循环，
     // 并防止行重建时删除栈上分配的子对话框。
     auto* dialog = new MathEditorDialog(hit ? hit->payload : QString(), this);
+    dialog->SetAvailablePackages(math_packages_);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     connect(dialog, &QDialog::finished, this, [this, dialog, target](int result) mutable {
         const QString latex = dialog->latex();
@@ -1025,6 +1100,12 @@ void InlineEditor::keyPressEvent(QKeyEvent* event) {
             return;
         }
     }
+    if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) && list_item_mode_ &&
+        !event->modifiers().testFlag(Qt::ShiftModifier) && !event->modifiers().testFlag(Qt::ControlModifier)) {
+        emit Committed();
+        emit NewBlockAfter();
+        return;
+    }
     if ((event->modifiers() & Qt::ControlModifier) &&
         (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
         emit Committed();
@@ -1068,7 +1149,8 @@ void InlineEditor::insertFromMimeData(const QMimeData* source) {
     // flavour 在文档内复制/粘贴时得以保留。
     if (source->hasFormat(InlineMimeType())) {
         const std::string encoded = source->data(InlineMimeType()).toStdString();
-        const InlineContent content = InlineFromRichText(encoded);
+        const auto clipboard = InlineFromClipboard(encoded);
+        const InlineContent content = clipboard ? *clipboard : InlineFromRichText(encoded);
         InsertContent(content);
         dirty_ = true;
         ResizeToContent();
@@ -1077,6 +1159,8 @@ void InlineEditor::insertFromMimeData(const QMimeData* source) {
     // Ctrl+Shift+V：仅纯文本（方案 §14）。普通 Ctrl+V 保留粗体/斜体，
     // 丢弃字体、字号、颜色和间距。
     const bool plain_only = QApplication::keyboardModifiers().testFlag(Qt::ShiftModifier);
+    if (!plain_only && asset_paste_handler_ && asset_paste_handler_(source))
+        return;
     if (plain_only || !source->hasHtml()) {
         const QString pasted = source->text();
         if (pasted.isEmpty())
@@ -1132,7 +1216,7 @@ QMimeData* InlineEditor::createMimeDataFromSelection() const {
     const QTextCursor cursor = const_cast<InlineEditor*>(this)->textCursor();
     if (cursor.hasSelection()) {
         const InlineContent content = ContentInRange(cursor.selectionStart(), cursor.selectionEnd());
-        const std::string encoded = InlineToRichText(content);
+        const std::string encoded = InlineToClipboard(content);
         data->setData(InlineMimeType(), QByteArray::fromStdString(encoded));
     }
     return data;
@@ -1170,6 +1254,10 @@ void InlineEditor::mouseDoubleClickEvent(QMouseEvent* event) {
         if (text.at(probe) != kObjectChar)
             continue;
         const auto hit = TokenAt(probe);
+        if (hit && hit->kind == TokenKind::Footnote) {
+            emit FootnoteTokenActivated(probe);
+            return;
+        }
         if (hit && hit->kind == TokenKind::Math) {
             EditMathAt(probe);
             return;

@@ -15,6 +15,7 @@
 // Keywords 保留一个小号大写身份标签（UI 方案 §8）。
 
 #include <QScrollArea>
+#include <QPixmap>
 #include <QWidget>
 #include <functional>
 #include <map>
@@ -29,12 +30,15 @@
 #include "numbering/DocumentNumberer.h"
 
 class QLineEdit;
+class QMimeData;
 class QPlainTextEdit;
 class QVBoxLayout;
 
 #include "app/InlineEditor.h"
 
 namespace pf::gui {
+
+class InlineContentEditorDialog;
 
 class BlockEditor : public QWidget {
     Q_OBJECT
@@ -52,6 +56,10 @@ class BlockEditor : public QWidget {
     // 提供 Subsubsection Title。0 = 不限制。
     void SetMaxHeadingDepth(int depth) {
         max_heading_depth_ = depth;
+    }
+    void SetContentCapabilities(bool theorems, bool code_blocks) {
+        theorems_enabled_ = theorems;
+        code_blocks_enabled_ = code_blocks;
     }
 
     struct RequiredHints {
@@ -82,9 +90,14 @@ class BlockEditor : public QWidget {
     // （Figure 3 / Eq. (4)）与胶囊显示；cross references 是 picker 的唯一目录。
     void SetNumbering(std::shared_ptr<const pf::DocumentNumberer> numbering);
     void SetCrossReferences(std::vector<pf::CrossReferenceItem> items);
+    // 模板实际加载的宏包（WP-02）：数学面板禁用缺包按钮，补全列表显示警告。
+    void SetMathPackages(std::vector<std::string> packages);
 
     // 把文档中的 AssetId 解析为本地图片路径，用于图片预览。
     void SetAssetPathResolver(std::function<QString(const AssetId&)> resolver);
+    using FigurePreviewResolver = std::function<QPixmap(const AssetId&, const QSize&)>;
+    void SetFigurePreviewResolver(FigurePreviewResolver resolver);
+    void RefreshFigurePreviews(const QString& path = QString());
 
     std::optional<QString> FocusedNodeId() const;
 
@@ -114,6 +127,19 @@ class BlockEditor : public QWidget {
     void SubsectionRenamed(const QString& node_id, const QString& text);
     void SubsubsectionRenamed(const QString& node_id, const QString& text);
     void CaptionEdited(const QString& node_id, const QString& text);
+    void CaptionContentEdited(const QString& node_id, const InlineContent& content);
+    void TableCellEdited(const QString& table_id, int row, int column, const InlineContent& content);
+    void TableRowInsertRequested(const QString& table_id, int index);
+    void TableRowDeleteRequested(const QString& table_id, int index);
+    void TableColumnInsertRequested(const QString& table_id, int index);
+    void TableColumnDeleteRequested(const QString& table_id, int index);
+    void TableColumnAlignmentChanged(const QString& table_id, int column, pf::ColumnAlignment alignment);
+    void TableHeaderRowChanged(const QString& table_id, bool has_header_row);
+    void FigureWidthChanged(const QString& figure_id, pf::FigureWidth width);
+    void FigureAssetReplaceRequested(const QString& figure_id);
+    void AssetFileDropped(const QString& path, const QString& after_node);
+    void AssetPasted(const QString& temp_path, const QString& after_node);
+    void AssetInputFailed(const QString& detail);
     // 图片布局：true = 图片横跨双栏模板的两栏（无论当前模板如何都会存储）。
     void FigureSpanChanged(const QString& node_id, bool double_column);
     // Figure/Table 的自定义 LaTeX label（WP-03）。空字符串表示回退到 node id。
@@ -135,14 +161,21 @@ class BlockEditor : public QWidget {
 
     // 来自 "/" 菜单、block 之间的 "+" 以及 block 菜单的结构操作。
     void InsertBlockRequested(const QString& block_type, const QString& after_node);
+    void ListItemContentEdited(const QString& list_node, int index, const pf::InlineContent& content);
+    void ListItemInsertRequested(const QString& list_node, int index);
+    void ListItemDeleteRequested(const QString& list_node, int index);
+    void ListItemMoveRequested(const QString& list_node, int from, int to);
+    void ListStyleChangeRequested(const QString& list_node, int style);
+    void TheoremEdited(const QString& node, int kind, const QString& title, const pf::InlineContent& body,
+                       bool numbered, const QString& label);
+    void CodeEdited(const QString& node, const QString& language, const QString& code,
+                    const QString& caption, bool line_numbers, const QString& label);
     void DeleteBlockRequested(const QString& node_id);
     void MoveBlockRequested(const QString& node_id, int direction); // -1 / +1
 
   public:
-    // 针对某一正文段落的语义化引用插入，供工具栏选择器和 OutlinePanel 双击
-    // 使用。它经由该行的 InlineEditor 立即提交，因此唯一的数据路径是
-    // InlineEditor -> ParagraphContentEdited -> EditParagraphRich
-    // （引用方案 §4/§5）。当该行不是 Text 行时返回 false。
+    // 针对正文或图表题注插入语义引用，供工具栏和 OutlinePanel 双击使用。
+    // 保留旧方法名；提交由行的 commit_role 路由到正文或题注命令。
     bool InsertCitationIntoParagraph(const QString& node_id, const QString& citation_key, int insert_offset = -1);
 
     // Citation / Reference 选择器（WP-01 §4.3）。选择器在插入/替换对象后立即
@@ -173,18 +206,34 @@ class BlockEditor : public QWidget {
                          // Subsection Title/Subsubsection Title/Text/
                          // Equation/Figure/Table
         QWidget* card = nullptr;
-        QPlainTextEdit* editor = nullptr;      // 仅 figure/table 的 block 为 null
-        InlineEditor* inline_editor = nullptr; // 在 Text 行上设置
+        QPlainTextEdit* editor = nullptr;       // 元数据/标题/公式源码
+        InlineEditor* inline_editor = nullptr; // 正文与图表题注
         QString commit_role;                   // 提交时发出哪个信号
         // 该行在文档中最后一次已知的文本。会写入相同值的提交被丢弃，正是这样
         // 才能避免程序化重设样式陷入 edit -> rebuild -> edit 的循环。
         QString committed_text;
-        // 文档为某个 Text 行保存的内容，保留它以便在内容未变时跳过提交，而无需
+        // 文档为某个富文本行保存的内容，保留它以便在内容未变时跳过提交，而无需
         // 把 mark/token 压平。
         pf::InlineContent committed_content;
+        // List item 行（一个列表卡片可有多个 InlineEditor）。
+        QString list_id;
+        size_t list_index = 0;
+        QString list_item_id;
+        // 定理/代码卡片附带的结构属性。
+        int theorem_kind = 0;
+        QString theorem_title;
+        bool theorem_numbered = true;
+        QString theorem_label;
+        QString code_language;
+        QString code_caption;
+        bool code_line_numbers = true;
+        QString code_label;
         // Equation 行携带紧邻源文本的属性。
         bool equation_numbered = true;
         QString equation_label;
+        // 公式行的“展示/编辑”两种状态；只有编辑态显示源码与 Palette。
+        std::function<void(bool)> set_equation_editing;
+        bool equation_editing = false;
         bool required = false;
         // 拥有此行的 Outline 条目（标题 node id、"front:abstract" 或空）；
         // 当该行获得焦点时随 FocusOutlineChanged 一起发出。
@@ -199,6 +248,9 @@ class BlockEditor : public QWidget {
     QWidget* MakeFigureCard(const pf::Figure& figure, const QString& outline_key);
     // Table 行：网格预览加题注编辑器（P0-05）。
     QWidget* MakeTableCard(const pf::Table& table, const QString& outline_key);
+    QWidget* MakeListCard(const pf::ListBlock& list, const QString& outline_key);
+    QWidget* MakeTheoremCard(const pf::TheoremBlock& theorem, const QString& outline_key);
+    QWidget* MakeCodeCard(const pf::CodeBlock& code, const QString& outline_key);
     // P0-05：为每个标题层级提供唯一的 block 卡片工厂和唯一的追加路径。
     // 此前 Section 循环知道全部四种 block 类型，而 Subsection/Subsubsection
     // 循环只处理 Paragraph 和 Equation，因此嵌套在 Section 之下的 Figure 或
@@ -206,7 +258,12 @@ class BlockEditor : public QWidget {
     QWidget* CreateBlockCard(const pf::Block& block, const QString& outline_key);
     void AppendBlocks(const std::vector<pf::Block>& blocks, const QString& outline_key);
     // Selection and context menus share the same semantic editing actions.
-    void ConfigureFormatActions(InlineEditor* editor);
+    QList<QAction*> ConfigureFormatActions(InlineEditor* editor, bool include_footnote = true);
+    InlineEditor* NewInlineEditor(QWidget* card, const QString& node_id, const InlineContent& content,
+                                  const QString& outline_key, theme::BlockVisualRole role, const QString& commit_role);
+    void OpenTableCellEditor(const QString& node_id, int row, int column, const InlineContent& initial);
+    // 脚注正文编辑（position < 0 表示新建）。
+    void ShowFootnoteEditor(InlineEditor* editor, int position, const InlineContent& initial);
     // 交叉引用 pill 的 node id -> 显示编号（"Figure 3"/"Section 2.1"）。
     std::map<QString, QString> CrossReferenceLabels() const;
 
@@ -236,6 +293,12 @@ class BlockEditor : public QWidget {
                               const QString& placeholder, const std::function<void(const QString&)>& commit);
     void OpenSlashMenu(QPlainTextEdit* origin);
     void ApplyHints();
+    // 公式卡片：display 只显示预览+编号，editing 显示源码/Palette/属性控件。
+    void SetEquationEditing(QWidget* card, bool editing);
+    bool IsEquationEditing(QWidget* card) const;
+    void UpdateEquationEventFilter();
+    QString AssetAnchorAt(QWidget* target, const QPoint& position) const;
+    bool HandleAssetMime(const QMimeData* mime, const QString& anchor);
 
     QScrollArea* scroll_;
     QWidget* host_;
@@ -246,12 +309,19 @@ class BlockEditor : public QWidget {
     std::vector<pf::CitationView> citation_catalog_;
     std::vector<pf::CrossReferenceItem> cross_reference_items_;
     std::shared_ptr<const pf::DocumentNumberer> numbering_;
+    bool app_filter_installed_ = false;
+    QPointer<InlineContentEditorDialog> cell_dialog_;
+    QPointer<InlineContentEditorDialog> footnote_dialog_;
+    std::vector<std::string> math_packages_;
     std::shared_ptr<const pf::CitationNumberResolver> citation_numbers_;
     std::function<QString(const AssetId&)> asset_path_resolver_;
+    FigurePreviewResolver figure_preview_resolver_;
     // 插入菜单用于查询锚点所在容器的文档。仅在 RebuildFromDocument 驱动的
     // 使用期间有效；每次重建时刷新。
     const Document* container_document_ = nullptr;
     int max_heading_depth_ = 3;
+    bool theorems_enabled_ = true;
+    bool code_blocks_enabled_ = true;
     bool rebuilding_ = false;
     // 析构期间不再响应子控件事件（标签输入框的 editingFinished 等）。
     bool shutting_down_ = false;

@@ -1,5 +1,7 @@
 #include "math/MathValidator.h"
 
+#include "math/MathCommandCatalog.h"
+
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -170,6 +172,7 @@ bool IsForbiddenMathEnvironment(const std::string& environment) {
 
 MathValidation ValidateMath(const std::string& latex, MathFlavor /*flavor*/) {
     MathValidation result;
+    result.required_packages = MathCommandCatalog::Instance().RequiredPackages(latex);
 
     // 空源码不是错误 - 它是用户尚未输入完成的表达式
     // （设计 §8：Pending）。

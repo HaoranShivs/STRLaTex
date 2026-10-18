@@ -8,6 +8,10 @@ set(CMAKE_AUTOMOC ON)
 
 add_library(pf_gui_objects OBJECT
     InlineEditor.cpp
+    InlineContentEditorDialog.cpp
+    InsertTableDialog.cpp
+    AssetConverters.cpp
+    FigurePreviewRenderer.cpp
     AddReferenceDialog.cpp
     TemplateImportDialog.cpp
     ProjectController.cpp
@@ -23,6 +27,8 @@ add_library(pf_gui_objects OBJECT
     InlineMathObjectRenderer.cpp
     CitationObjectRenderer.cpp
     MathEditorDialog.cpp
+    MathPaletteWidget.cpp
+    MathCommandCompleter.cpp
 )
 set_target_properties(pf_gui_objects PROPERTIES AUTOMOC ON)
 target_include_directories(pf_gui_objects PUBLIC
@@ -77,7 +83,10 @@ paperforge_gui_executable(paperforge-inline-editor-test
     ${CMAKE_SOURCE_DIR}/tests/TestInlinePdf.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestInlineToolbar.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestMathPreview.cpp
+    ${CMAKE_SOURCE_DIR}/tests/TestMathPalette.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestInlineMathGui.cpp
+    ${CMAKE_SOURCE_DIR}/tests/TestCaptionTableGui.cpp
+    ${CMAKE_SOURCE_DIR}/tests/TestFigureGui.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestCitationGui.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestProblemsPanel.cpp
     ${CMAKE_SOURCE_DIR}/tests/TestMathRenderService.cpp

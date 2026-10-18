@@ -157,6 +157,85 @@ struct InsertEquationPayload {
     std::string label;
 };
 
+struct InsertListPayload {
+    NodeId parent;
+    std::optional<size_t> index;
+    ListStyle style = ListStyle::Bullet;
+    InlineContent first_item;
+};
+struct InsertListItemPayload {
+    NodeId list;
+    size_t index = 0;
+    InlineContent content;
+};
+struct EditListItemPayload {
+    NodeId list;
+    size_t index = 0;
+    InlineContent content;
+};
+struct DeleteListItemPayload {
+    NodeId list;
+    size_t index = 0;
+};
+struct MoveListItemPayload {
+    NodeId list;
+    size_t from = 0;
+    size_t to = 0;
+};
+struct SetListStylePayload {
+    NodeId list;
+    ListStyle style = ListStyle::Bullet;
+};
+struct InsertFootnotePayload {
+    NodeId paragraph;
+    std::optional<size_t> at_index;
+    InlineContent body;
+};
+struct EditFootnotePayload {
+    NodeId paragraph;
+    size_t at_index = 0;
+    InlineContent body;
+};
+struct DeleteFootnotePayload {
+    NodeId paragraph;
+    size_t at_index = 0;
+};
+
+struct InsertTheoremPayload {
+    NodeId parent;
+    std::optional<size_t> index;
+    TheoremKind kind = TheoremKind::Theorem;
+    InlineContent title;
+    InlineContent body;
+    bool numbered = true;
+    std::string label;
+};
+struct EditTheoremPayload {
+    NodeId theorem;
+    InlineContent body;
+    std::optional<InlineContent> title;
+    std::optional<bool> numbered;
+    std::optional<std::string> label;
+    std::optional<TheoremKind> kind;
+};
+struct InsertCodePayload {
+    NodeId parent;
+    std::optional<size_t> index;
+    std::string language;
+    std::string code;
+    InlineContent caption;
+    bool line_numbers = true;
+    std::string label;
+};
+struct EditCodePayload {
+    NodeId code;
+    std::optional<std::string> language;
+    std::optional<std::string> text;
+    std::optional<InlineContent> caption;
+    std::optional<bool> line_numbers;
+    std::optional<std::string> label;
+};
+
 struct DeleteBlockPayload {
     NodeId node;
 };
@@ -230,6 +309,48 @@ struct ChangeTemplatePayload {
     std::string template_id;
     std::optional<TemplateBinding> binding;
 };
+
+// WP-04：图宽与表格编辑使用同一条可撤销的文档命令路径。
+struct EditFigureWidthPayload {
+    NodeId figure;
+    FigureWidth width = FigureWidth::Percent100;
+};
+struct SetTableCellPayload {
+    NodeId table;
+    size_t row = 0;
+    size_t column = 0;
+    InlineContent content;
+};
+struct InsertTableRowPayload {
+    NodeId table;
+    size_t index = 0;
+};
+struct DeleteTableRowPayload {
+    NodeId table;
+    size_t index = 0;
+};
+struct InsertTableColumnPayload {
+    NodeId table;
+    size_t index = 0;
+    ColumnAlignment alignment = ColumnAlignment::Left;
+};
+struct DeleteTableColumnPayload {
+    NodeId table;
+    size_t index = 0;
+};
+struct SetTableColumnAlignmentPayload {
+    NodeId table;
+    size_t column = 0;
+    ColumnAlignment alignment = ColumnAlignment::Left;
+};
+struct SetTableHeaderRowPayload {
+    NodeId table;
+    bool has_header_row = false;
+};
+struct SetFigureAssetPayload {
+    NodeId figure;
+    AssetId asset_id;
+};
 // 仅 Document 的载荷变体（不含模板变更）。
 using EditPayload = std::variant<
     SetTitlePayload, SetAbstractPayload, SetKeywordsPayload, AddAuthorPayload, RemoveAuthorPayload, UpdateAuthorPayload,
@@ -237,9 +358,14 @@ using EditPayload = std::variant<
     RenameSubsectionPayload, MoveSubsectionPayload, InsertSubsectionPayload, InsertSubsectionAfterPayload,
     DeleteSubsectionPayload, InsertSubsubsectionPayload, RenameSubsubsectionPayload, MoveSubsubsectionPayload,
     DeleteSubsubsectionPayload, InsertSubsubsectionAfterPayload, InsertParagraphPayload, InsertFigurePayload,
-    InsertTablePayload, InsertEquationPayload, DeleteBlockPayload, MoveBlockPayload, EditParagraphPayload,
+    InsertTablePayload, InsertEquationPayload, InsertListPayload, InsertListItemPayload, EditListItemPayload,
+    DeleteListItemPayload, MoveListItemPayload, SetListStylePayload, InsertFootnotePayload, EditFootnotePayload,
+    DeleteFootnotePayload, InsertTheoremPayload, EditTheoremPayload, InsertCodePayload, EditCodePayload,
+    DeleteBlockPayload, MoveBlockPayload, EditParagraphPayload,
     EditCaptionPayload, EditEquationPayload, EditFigureSpanPayload, InsertCitationPayload, InsertCrossReferencePayload,
-    EditFigureLabelPayload, EditTableLabelPayload>;
+    EditFigureLabelPayload, EditTableLabelPayload, EditFigureWidthPayload, SetTableCellPayload,
+    InsertTableRowPayload, DeleteTableRowPayload, InsertTableColumnPayload, DeleteTableColumnPayload,
+    SetTableColumnAlignmentPayload, SetTableHeaderRowPayload, SetFigureAssetPayload>;
 
 using FullEditPayload =
     std::variant<SetTitlePayload, SetAbstractPayload, SetKeywordsPayload, AddAuthorPayload, RemoveAuthorPayload,
@@ -248,10 +374,16 @@ using FullEditPayload =
                  InsertSubsectionPayload, InsertSubsectionAfterPayload, DeleteSubsectionPayload,
                  InsertSubsubsectionPayload, RenameSubsubsectionPayload, MoveSubsubsectionPayload,
                  DeleteSubsubsectionPayload, InsertSubsubsectionAfterPayload, InsertParagraphPayload,
-                 InsertFigurePayload, InsertTablePayload, InsertEquationPayload, DeleteBlockPayload, MoveBlockPayload,
+                 InsertFigurePayload, InsertTablePayload, InsertEquationPayload, InsertListPayload,
+                 InsertListItemPayload, EditListItemPayload, DeleteListItemPayload, MoveListItemPayload,
+                 SetListStylePayload, InsertFootnotePayload, EditFootnotePayload, DeleteFootnotePayload,
+                 InsertTheoremPayload, EditTheoremPayload, InsertCodePayload, EditCodePayload,
+                 DeleteBlockPayload, MoveBlockPayload,
                  EditParagraphPayload, EditCaptionPayload, EditEquationPayload, EditFigureSpanPayload,
                  InsertCitationPayload, InsertCrossReferencePayload, EditFigureLabelPayload, EditTableLabelPayload,
-                 ChangeTemplatePayload>;
+                 ChangeTemplatePayload, EditFigureWidthPayload, SetTableCellPayload, InsertTableRowPayload,
+                 DeleteTableRowPayload, InsertTableColumnPayload, DeleteTableColumnPayload,
+                 SetTableColumnAlignmentPayload, SetTableHeaderRowPayload, SetFigureAssetPayload>;
 
 // ---------------- 信封 ----------------
 

@@ -4,6 +4,7 @@
 // 此处不包含任何 LaTeX 知识（架构规则 52）。
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <variant>
@@ -72,8 +73,23 @@ struct CrossReference {
     bool operator==(const CrossReference&) const = default;
 };
 
-using InlineNode = std::variant<TextRun, InlineMath, Citation, CrossReference>;
+// 脚注采用“行内引用 + 共享 body”的模型，避免递归 variant 的完整类型问题。
+struct FootnoteBody;
+struct Footnote {
+    std::shared_ptr<const FootnoteBody> body;
+    bool operator==(const Footnote& other) const;
+};
+
+using InlineNode = std::variant<TextRun, InlineMath, Citation, CrossReference, Footnote>;
 using InlineContent = std::vector<InlineNode>;
+
+struct FootnoteBody {
+    InlineContent content;
+};
+
+inline Footnote MakeFootnote(InlineContent content) {
+    return Footnote{std::make_shared<const FootnoteBody>(FootnoteBody{std::move(content)})};
+}
 
 // ---------------- Block 模型（架构 6） ----------------
 
@@ -126,6 +142,9 @@ struct TableCell {
 };
 
 struct Table {
+    // 编辑、插入对话框与文件读取共用同一上限，避免创建无法重新加载的表格。
+    static constexpr size_t kMaxRows = 100;
+    static constexpr size_t kMaxColumns = 50;
     NodeId id;
     InlineContent caption;
     bool has_header_row = false;
@@ -160,7 +179,54 @@ struct EquationBlock {
     bool operator==(const EquationBlock&) const = default;
 };
 
-using Block = std::variant<Paragraph, Figure, Table, EquationBlock>;
+enum class ListStyle : std::uint8_t {
+    Bullet,
+    Numbered,
+};
+
+struct ListItem {
+    NodeId id;
+    InlineContent content;
+};
+
+struct ListBlock {
+    NodeId id;
+    ListStyle style = ListStyle::Bullet;
+    std::vector<ListItem> items;
+};
+
+enum class TheoremKind : std::uint8_t {
+    Theorem,
+    Lemma,
+    Proposition,
+    Corollary,
+    Definition,
+    Proof,
+    Remark,
+    Example,
+};
+
+const char* ToString(TheoremKind kind);
+
+struct TheoremBlock {
+    NodeId id;
+    TheoremKind kind = TheoremKind::Theorem;
+    InlineContent title; // 可选，例如 "Main result"
+    InlineContent body;  // v1 单段
+    bool numbered = true; // Proof 默认 false
+    std::string label;
+};
+
+struct CodeBlock {
+    NodeId id;
+    std::string language;
+    std::string code; // 原文，不转义
+    InlineContent caption;
+    bool line_numbers = true;
+    std::string label;
+};
+
+using Block = std::variant<Paragraph, Figure, Table, EquationBlock, ListBlock, TheoremBlock, CodeBlock>;
 
 // ---------------- Section 模型（架构 5） ----------------
 
@@ -227,6 +293,9 @@ enum class NodeKind : std::uint8_t {
     Figure,
     Table,
     Equation,
+    List,
+    Theorem,
+    Code,
 };
 
 const char* ToString(NodeKind kind);

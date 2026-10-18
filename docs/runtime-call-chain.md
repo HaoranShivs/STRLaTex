@@ -207,7 +207,7 @@ ProjectSession::OpenProject(dir, error)
  ├─ EnsureDirectories()                  ← 四个目录逐个创建，任一失败即结构化错误
  ├─ ProjectPersistence::Load(project_file)
  │   ├─ 32MB 上限 → 读取 → Json 解析（深度/类型校验）
- │   ├─ ProjectMigrator::MigrateToCurrent（V1/V2/V3 → V4，只在内存中）
+ │   ├─ ProjectMigrator::MigrateToCurrent（V1/V2/V3/V4 → V5，只在内存中）
  │   └─ SerializedProject
  ├─ state_.Reset(); SetId; SetRevision; document = sp.document;
  │  template/binding/settings; LoadTemplateCatalog(); assets Register

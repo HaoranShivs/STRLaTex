@@ -62,8 +62,8 @@ void VisitBlocks(const Document& document, const std::function<void(const Block&
 // 仅遍历标题（Section/Subsection/Subsubsection），按文档顺序。
 void VisitHeadings(const Document& document, const std::function<void(const NodeAddress&)>& visit);
 
-// document 中的所有内联内容（front matter 的标题/摘要/图表标题以及段落
-// 正文），按文档顺序。供交叉引用/引文搜索使用。
+// 所有内联内容（前置信息、各层标题、图表题注、单元格与段落），按 PDF
+// 阅读顺序访问。供交叉引用校验与首次引用编号使用。
 void VisitInlineContent(const Document& document,
                         const std::function<void(const InlineContent&, const NodeAddress&)>& visit);
 

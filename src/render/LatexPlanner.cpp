@@ -79,9 +79,9 @@ JsonValue NodeJson(const Node& node) {
 
 class CommonPlanner {
   public:
-    explicit CommonPlanner(const RenderRequest& request,
-                           CrossReferenceStyle cross_reference = CrossReferenceStyle::Ref)
-        : request_(request), labels_(LabelRegistry::Build(*request.document)),
+    CommonPlanner(const RenderRequest& request, const TemplateDefinition& definition,
+                  CrossReferenceStyle cross_reference = CrossReferenceStyle::Ref)
+        : request_(request), definition_(definition), labels_(LabelRegistry::Build(*request.document)),
           cross_reference_(cross_reference) {
         // Validator 会先给出 E-DUPLICATE-LABEL；这里拒绝生成会被 TeX 静默
         // 覆盖的重复 \label，避免“PDF 编译成功但引用指向错误目标”。
@@ -127,12 +127,127 @@ class CommonPlanner {
                 out.push_back(Cmd(
                     cite->mode == CitationMode::Narrative ? "citet" : "citep",
                     std::move(keys)));
-            } else if (const auto* ref = std::get_if<CrossReference>(&item))
+            } else if (const auto* ref = std::get_if<CrossReference>(&item)) {
                 out.push_back(Cmd(cross_reference_ == CrossReferenceStyle::Cleveref ? "cref" : "ref",
                                   {Id(LabelFor(ref->target))}));
+            } else if (const auto* footnote = std::get_if<Footnote>(&item)) {
+                Nodes body = footnote->body ? Inline(footnote->body->content) : Nodes{};
+                out.push_back(Cmd("footnote", std::move(body)));
+            }
         }
         return out;
     }
+    const TheoremEnvironmentDecl* TheoremDecl(TheoremKind kind) const {
+        for (const auto& decl : definition_.theorem_environments) {
+            if (decl.kind == kind)
+                return &decl;
+        }
+        return nullptr;
+    }
+
+    static std::string CodeLanguageOption(const std::string& language) {
+        static const std::map<std::string, std::string> names = {
+            {"python", "Python"}, {"py", "Python"}, {"c", "C"}, {"cpp", "C++"}, {"c++", "C++"},
+            {"java", "Java"}, {"javascript", "JavaScript"}, {"js", "JavaScript"}, {"typescript", "TypeScript"},
+            {"ts", "TypeScript"}, {"rust", "Rust"}, {"go", "Go"}, {"bash", "bash"}, {"sh", "bash"},
+            {"shell", "bash"}, {"sql", "SQL"}, {"json", "JSON"}, {"yaml", "YAML"}, {"xml", "XML"},
+            {"html", "HTML"}, {"css", "CSS"}, {"latex", "TeX"}, {"tex", "TeX"}, {"matlab", "Matlab"},
+            {"r", "R"}, {"swift", "Swift"}, {"kotlin", "Kotlin"}, {"scala", "Scala"}};
+        if (language.empty())
+            return {};
+        const auto it = names.find(language);
+        if (it == names.end())
+            return {}; // Validator 报 W-CODE-LANGUAGE；planner 安全降级。
+        return it->second;
+    }
+
+    static std::string PlainOption(const InlineContent& content) {
+        const std::string out = InlineToPlainText(content);
+        std::string safe;
+        for (char c : out) {
+            if (c == '}' || c == '{' || c == ']' || c == '[' || c == '\\' || c == '%' || c == '\n' ||
+                c == '\r' || c == '_' || c == '&' || c == '#' || c == '$' || c == '^' || c == '~') {
+                safe += ' ';
+            } else {
+                safe += c;
+            }
+        }
+        return safe;
+    }
+
+    Node TheoremPlan(const TheoremBlock& theorem) const {
+        const TheoremEnvironmentDecl* decl = TheoremDecl(theorem.kind);
+        const std::string name = decl ? decl->latex_name : "theorem";
+        if (theorem.kind == TheoremKind::Proof) {
+            Node env = Env("proof", Inline(theorem.body));
+            if (!theorem.title.empty())
+                env.option = PlainOption(theorem.title);
+            return env;
+        }
+        const bool numbered = theorem.numbered && (!decl || decl->numbered);
+        Node env = Env(numbered ? name : name + "*", Inline(theorem.body));
+        if (!theorem.title.empty())
+            env.option = PlainOption(theorem.title);
+        if (numbered) {
+            // label 必须在环境内、正文之前；编号由 LaTeX 环境负责。
+            env.children.insert(env.children.begin(), Cmd("label", {Id(LabelFor(theorem.id))}));
+            env.children.insert(env.children.begin(), Lit("\n"));
+        }
+        return env;
+    }
+
+    Node CodePlan(const CodeBlock& code) const {
+        const bool listings = definition_.code_listing.package == "listings";
+        const char* end_marker = listings ? "\\end{lstlisting}" : "\\end{verbatim}";
+        if (code.code.find(end_marker) != std::string::npos)
+            throw std::runtime_error(std::string("code block contains ") + end_marker);
+        if (!listings) {
+            // 基础 runtime 没有 listings.sty：用 verbatim 保留原文，并用模板
+            // 导言区声明的计数宏提供 Listing N + label。
+            Nodes out;
+            Node caption = Leaf(Node::Kind::Command, "paperforgeListing");
+            caption.arguments = {{Lit(LabelFor(code.id))}, {Text(PlainOption(code.caption))}};
+            out.push_back(std::move(caption));
+            out.push_back(Lit("\n"));
+            std::string body = code.code;
+            if (code.line_numbers) {
+                std::string numbered;
+                int line = 1;
+                size_t start = 0;
+                while (start <= body.size()) {
+                    const size_t newline = body.find('\n', start);
+                    const std::string chunk = body.substr(start, newline == std::string::npos
+                                                                  ? std::string::npos
+                                                                  : newline - start);
+                    numbered += std::to_string(line++) + "  " + chunk;
+                    if (newline == std::string::npos)
+                        break;
+                    numbered += '\n';
+                    start = newline + 1;
+                }
+                body = std::move(numbered);
+            }
+            Node env = Env("verbatim", {Lit(body)});
+            out.push_back(std::move(env));
+            Node group = Lit("");
+            group.children = std::move(out);
+            return group;
+        }
+        Node env = Env("lstlisting", {Lit(code.code)});
+        std::string options;
+        const std::string language = CodeLanguageOption(code.language);
+        if (!language.empty())
+            options += "language=" + language;
+        if (code.line_numbers)
+            options += (options.empty() ? "" : ",") + std::string("numbers=left");
+        if (!code.caption.empty()) {
+            options += (options.empty() ? "" : ",") + std::string("caption={") + PlainOption(code.caption) + "}";
+        }
+        options += (options.empty() ? "" : ",") + std::string("label={") + LabelFor(code.id) + "}";
+        env.option = options;
+        return env;
+    }
+
     Node BlockPlan(const Block& block) const {
         Node group = Lit("");
         group.source_node =
@@ -205,6 +320,27 @@ class CommonPlanner {
                 Node::Kind::DisplayMath,
                 GenerateDisplayMath(eq->expression, eq->numbered,
                                     eq->numbered ? label : std::string{})));
+        } else if (const auto* list = std::get_if<ListBlock>(&block)) {
+            group.source_label = "List";
+            Nodes items;
+            for (const auto& item : list->items) {
+                // \item 是声明而不是带参数的命令；若包装成 Cmd()，生成器会
+                // 输出 \item{...}，虽然多数情况下可编译但语义不标准。
+                items.push_back(Lit("\\item "));
+                Append(items, Inline(item.content));
+                items.push_back(Lit("\n"));
+            }
+            body.push_back(Env(list->style == ListStyle::Numbered ? "enumerate" : "itemize",
+                               std::move(items)));
+            body.push_back(Lit("\n"));
+        } else if (const auto* theorem = std::get_if<TheoremBlock>(&block)) {
+            group.source_label = ToString(theorem->kind);
+            body.push_back(TheoremPlan(*theorem));
+            body.push_back(Lit("\n"));
+        } else if (const auto* code = std::get_if<CodeBlock>(&block)) {
+            group.source_label = "Code";
+            body.push_back(CodePlan(*code));
+            body.push_back(Lit("\n"));
         }
         // A zero-syntax group retains provenance without manufacturing an
         // environment.
@@ -219,6 +355,7 @@ class CommonPlanner {
 
   private:
     const RenderRequest& request_;
+    const TemplateDefinition& definition_;
     LabelRegistry labels_;
     CrossReferenceStyle cross_reference_ = CrossReferenceStyle::Ref;
 };
@@ -401,7 +538,7 @@ PlanResult LatexPlanner::Plan(const RenderRequest& request,
         if (def.toolchain.bibliography_engine != BibliographyEngine::BibTex)
             throw std::runtime_error(
                 "The numeric citation component requires BibTeX");
-        CommonPlanner common(request, def.capabilities.cross_reference);
+        CommonPlanner common(request, def, def.capabilities.cross_reference);
         auto plan =
             std::shared_ptr<LatexGenerationPlan>(new LatexGenerationPlan());
         auto& nodes = plan->nodes_;
@@ -459,6 +596,36 @@ PlanResult LatexPlanner::Plan(const RenderRequest& request,
                 auto node = Cmd("usepackage", {Id(p.name)});
                 node.option = p.options;
                 Line(nodes, std::move(node));
+            }
+        }
+        if (def.capabilities.theorems) {
+            if (seen.find("amsthm") == seen.end()) {
+                Line(nodes, Cmd("usepackage", {Id("amsthm")}));
+                seen.emplace("amsthm", "");
+            }
+            for (const auto& theorem : def.theorem_environments) {
+                Node definition = Leaf(Node::Kind::Command, "newtheorem");
+                definition.arguments = {{Lit(theorem.latex_name)}, {Text(ToString(theorem.kind))}};
+                Line(nodes, std::move(definition));
+                // 即使模板默认编号，也声明星号版本，使单个定理可以关闭 numbered。
+                Node starred = Leaf(Node::Kind::Command, "newtheorem*");
+                starred.arguments = {{Lit(theorem.latex_name + "*")}, {Text(ToString(theorem.kind))}};
+                Line(nodes, std::move(starred));
+            }
+        }
+        if (def.capabilities.code_blocks) {
+            if (def.code_listing.package == "listings") {
+                if (seen.find("listings") == seen.end())
+                    Line(nodes, Cmd("usepackage", {Id("listings")}));
+            } else {
+                Node counter = Leaf(Node::Kind::Command, "newcounter");
+                counter.arguments = {{Lit("listing")}};
+                Line(nodes, std::move(counter));
+                // \newcommand 的 [2] 必须位于命令名之后、宏体之前；不能
+                // 用 Cmd()（它会把每个参数都包成 {...}）。
+                Line(nodes,
+                     Lit("\\newcommand{\\paperforgeListing}[2]"
+                         "{\\refstepcounter{listing}\\label{#1}\\textbf{Listing \\thelisting: #2}}"));
             }
         }
         nodes.push_back(Lit("\n\\begin{document}\n\n"));

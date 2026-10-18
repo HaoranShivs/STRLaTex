@@ -110,6 +110,8 @@ class MainWindow : public QMainWindow {
     void RefreshCitationCatalog();
     // WP-03：把编号与交叉引用目标注入编辑器（卡片标题、picker、胶囊共用）。
     void RefreshCrossReferences();
+    // WP-02：把模板实际加载的数学宏包交给面板/补全/缺包诊断。
+    void RefreshMathPackages();
     int CountWords() const;
     // 专注编辑模式（UI 方案 §11）：折叠大纲 + 预览，让编辑器
     // 在长时间写作时独占整个窗口；再次点击恢复先前的分隔条尺寸。

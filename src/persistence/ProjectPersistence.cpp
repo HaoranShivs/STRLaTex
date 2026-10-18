@@ -21,8 +21,6 @@ namespace {
 // 不可信输入；超出这些界限的内容一律以结构化错误拒绝，而不是将其载入
 // （或留到之后崩溃）。
 constexpr std::size_t kMaxStringFieldBytes = 64 * 1024; // 单个文本字段
-constexpr std::size_t kMaxTableRows = 100;
-constexpr std::size_t kMaxTableColumns = 50;
 constexpr std::size_t kMaxNodes = 200000;
 
 bool CheckStringField(const std::string& value) {
@@ -32,9 +30,9 @@ bool CheckStringField(const std::string& value) {
 std::string DescribeTableProblem(const Table& table) {
     if (table.columns.empty())
         return "table has no columns";
-    if (table.columns.size() > kMaxTableColumns)
+    if (table.columns.size() > Table::kMaxColumns)
         return "table exceeds column limit (max 50)";
-    if (table.RowCount() > kMaxTableRows)
+    if (table.RowCount() > Table::kMaxRows)
         return "table exceeds row limit (max 100)";
     if (!table.IsRectangular())
         return "table cells do not match declared column count";
@@ -77,6 +75,7 @@ std::string ValidateSerializedProject(const SerializedProject& project) {
     for (const auto& section : project.document.body().sections) {
         if (auto err = count_id(section.id, "section"); !err.empty())
             return err;
+        reference_targets.insert(section.id.value());
         if (!CheckStringField(InlineToPlainText(section.title)))
             return "section title too long";
         for (const auto& block : section.blocks) {
@@ -98,7 +97,32 @@ std::string ValidateSerializedProject(const SerializedProject& project) {
                 if (!CheckStringField(equation->expression.latex))
                     return "equation latex too long";
                 reference_targets.insert(equation->id.value());
+            } else if (const auto* list = std::get_if<ListBlock>(&block)) {
+                if (auto err = count_id(list->id, "list"); !err.empty())
+                    return err;
+                for (const auto& item : list->items) {
+                    if (!item.id.empty()) {
+                        if (auto err = count_id(item.id, "list item"); !err.empty())
+                            return err;
+                    }
+                    if (!CheckStringField(InlineToPlainText(item.content)))
+                        return "list item content too long";
+                }
+            } else if (const auto* theorem = std::get_if<TheoremBlock>(&block)) {
+                if (auto err = count_id(theorem->id, "theorem"); !err.empty())
+                    return err;
+                if (!CheckStringField(theorem->label))
+                    return "theorem label too long";
+                if (!CheckStringField(InlineToPlainText(theorem->title)) ||
+                    !CheckStringField(InlineToPlainText(theorem->body)))
+                    return "theorem content too long";
+            } else if (const auto* code = std::get_if<CodeBlock>(&block)) {
+                if (auto err = count_id(code->id, "code"); !err.empty())
+                    return err;
+                if (!CheckStringField(code->language) || !CheckStringField(code->code) || !CheckStringField(code->label))
+                    return "code block field too long";
             } else if (const auto* paragraph = std::get_if<Paragraph>(&block)) {
+
                 if (auto err = count_id(paragraph->id, "paragraph"); !err.empty())
                     return err;
             }
@@ -106,6 +130,7 @@ std::string ValidateSerializedProject(const SerializedProject& project) {
         for (const auto& sub : section.subsections) {
             if (auto err = count_id(sub.id, "subsection"); !err.empty())
                 return err;
+            reference_targets.insert(sub.id.value());
             if (!CheckStringField(InlineToPlainText(sub.title)))
                 return "subsection title too long";
             for (const auto& block : sub.blocks) {
@@ -123,7 +148,32 @@ std::string ValidateSerializedProject(const SerializedProject& project) {
                     if (auto err = count_id(equation->id, "equation"); !err.empty())
                         return err;
                     reference_targets.insert(equation->id.value());
+                } else if (const auto* list = std::get_if<ListBlock>(&block)) {
+                    if (auto err = count_id(list->id, "list"); !err.empty())
+                        return err;
+                    for (const auto& item : list->items) {
+                        if (!item.id.empty()) {
+                            if (auto err = count_id(item.id, "list item"); !err.empty())
+                                return err;
+                        }
+                        if (!CheckStringField(InlineToPlainText(item.content)))
+                            return "list item content too long";
+                    }
+                } else if (const auto* theorem = std::get_if<TheoremBlock>(&block)) {
+                    if (auto err = count_id(theorem->id, "theorem"); !err.empty())
+                        return err;
+                    if (!CheckStringField(theorem->label))
+                        return "theorem label too long";
+                    if (!CheckStringField(InlineToPlainText(theorem->title)) ||
+                        !CheckStringField(InlineToPlainText(theorem->body)))
+                        return "theorem content too long";
+                } else if (const auto* code = std::get_if<CodeBlock>(&block)) {
+                    if (auto err = count_id(code->id, "code"); !err.empty())
+                        return err;
+                    if (!CheckStringField(code->language) || !CheckStringField(code->code) || !CheckStringField(code->label))
+                        return "code block field too long";
                 } else if (const auto* paragraph = std::get_if<Paragraph>(&block)) {
+
                     if (auto err = count_id(paragraph->id, "paragraph"); !err.empty())
                         return err;
                 }
@@ -131,6 +181,7 @@ std::string ValidateSerializedProject(const SerializedProject& project) {
             for (const auto& subsub : sub.subsubsections) {
                 if (auto err = count_id(subsub.id, "subsubsection"); !err.empty())
                     return err;
+                reference_targets.insert(subsub.id.value());
                 for (const auto& block : subsub.blocks) {
                     if (const auto* table = std::get_if<Table>(&block)) {
                         if (auto err = count_id(table->id, "table"); !err.empty())
@@ -146,7 +197,32 @@ std::string ValidateSerializedProject(const SerializedProject& project) {
                         if (auto err = count_id(equation->id, "equation"); !err.empty())
                             return err;
                         reference_targets.insert(equation->id.value());
+                    } else if (const auto* list = std::get_if<ListBlock>(&block)) {
+                        if (auto err = count_id(list->id, "list"); !err.empty())
+                            return err;
+                        for (const auto& item : list->items) {
+                            if (!item.id.empty()) {
+                                if (auto err = count_id(item.id, "list item"); !err.empty())
+                                    return err;
+                            }
+                            if (!CheckStringField(InlineToPlainText(item.content)))
+                                return "list item content too long";
+                        }
+                    } else if (const auto* theorem = std::get_if<TheoremBlock>(&block)) {
+                        if (auto err = count_id(theorem->id, "theorem"); !err.empty())
+                            return err;
+                        if (!CheckStringField(theorem->label))
+                            return "theorem label too long";
+                        if (!CheckStringField(InlineToPlainText(theorem->title)) ||
+                            !CheckStringField(InlineToPlainText(theorem->body)))
+                            return "theorem content too long";
+                    } else if (const auto* code = std::get_if<CodeBlock>(&block)) {
+                        if (auto err = count_id(code->id, "code"); !err.empty())
+                            return err;
+                        if (!CheckStringField(code->language) || !CheckStringField(code->code) || !CheckStringField(code->label))
+                            return "code block field too long";
                     } else if (const auto* paragraph = std::get_if<Paragraph>(&block)) {
+
                         if (auto err = count_id(paragraph->id, "paragraph"); !err.empty())
                             return err;
                     }
@@ -156,43 +232,20 @@ std::string ValidateSerializedProject(const SerializedProject& project) {
     }
 
     // 交叉引用必须指向一个存在且可被引用的节点。
-    for (const auto& section : project.document.body().sections) {
-        auto check_ref = [&](const CrossReference& ref) -> std::string {
-            if (ref.target.empty())
-                return {};
-            if (reference_targets.count(ref.target.value()) == 0)
-                return "cross-reference target does not exist: " + ref.target.value();
-            return {};
-        };
-        auto walk_inline = [&](const InlineContent& content) -> std::string {
-            for (const auto& node : content) {
-                if (const auto* ref = std::get_if<CrossReference>(&node)) {
-                    if (auto err = check_ref(*ref); !err.empty())
-                        return err;
-                }
-            }
-            return {};
-        };
-        if (auto err = walk_inline(section.title); !err.empty())
-            return err;
-        for (const auto& block : section.blocks) {
-            if (const auto* para = std::get_if<Paragraph>(&block)) {
-                if (auto err = walk_inline(para->content); !err.empty())
-                    return err;
-            } else if (const auto* table = std::get_if<Table>(&block)) {
-                if (auto err = walk_inline(table->caption); !err.empty())
-                    return err;
-                for (const auto& row : table->cells)
-                    for (const auto& cell : row) {
-                        if (auto err = walk_inline(cell.content); !err.empty())
-                            return err;
-                    }
-            } else if (const auto* figure = std::get_if<Figure>(&block)) {
-                if (auto err = walk_inline(figure->caption); !err.empty())
-                    return err;
+    std::string reference_error;
+    VisitInlineContent(project.document, [&](const InlineContent& content, const NodeAddress&) {
+        if (!reference_error.empty())
+            return;
+        for (const auto& node : content) {
+            const auto* ref = std::get_if<CrossReference>(&node);
+            if (ref && !ref->target.empty() && reference_targets.count(ref->target.value()) == 0) {
+                reference_error = "cross-reference target does not exist: " + ref->target.value();
+                return;
             }
         }
-    }
+    });
+    if (!reference_error.empty())
+        return reference_error;
 
     // asset 表：id 唯一，声明的路径为项目内相对路径。
     std::set<std::string> asset_ids;
@@ -242,14 +295,17 @@ JsonValue InlineToJson(const InlineContent& content) {
         } else if (const auto* ref = std::get_if<CrossReference>(&node)) {
             obj["type"] = "crossReference";
             obj["target"] = ref->target.value();
+        } else if (const auto* footnote = std::get_if<Footnote>(&node)) {
+            obj["type"] = "footnote";
+            obj["body"] = footnote->body ? InlineToJson(footnote->body->content) : JsonValue(JsonArray{});
         }
         arr.push_back(JsonValue(std::move(obj)));
     }
     return JsonValue(std::move(arr));
 }
 
-std::optional<InlineContent> InlineFromJson(const JsonValue* value) {
-    if (!value || !value->is_array())
+std::optional<InlineContent> InlineFromJson(const JsonValue* value, int depth = 0) {
+    if (!value || !value->is_array() || depth > 1)
         return std::nullopt;
     InlineContent content;
     for (const auto& item : value->as_array()) {
@@ -290,6 +346,11 @@ std::optional<InlineContent> InlineFromJson(const JsonValue* value) {
                 ref.target = NodeId(target->as_string());
             }
             content.push_back(std::move(ref));
+        } else if (t == "footnote") {
+            InlineContent body;
+            if (const auto* body_json = item.find("body"))
+                body = InlineFromJson(body_json, depth + 1).value_or(InlineContent{});
+            content.push_back(MakeFootnote(std::move(body)));
         } else {
             return std::nullopt;
         }
@@ -361,6 +422,24 @@ std::optional<Table> TableFromJson(const JsonValue* value) {
     return table;
 }
 
+TheoremKind TheoremKindFromJson(const std::string& value) {
+    if (value == "Lemma" || value == "lemma")
+        return TheoremKind::Lemma;
+    if (value == "Proposition" || value == "proposition")
+        return TheoremKind::Proposition;
+    if (value == "Corollary" || value == "corollary")
+        return TheoremKind::Corollary;
+    if (value == "Definition" || value == "definition")
+        return TheoremKind::Definition;
+    if (value == "Proof" || value == "proof")
+        return TheoremKind::Proof;
+    if (value == "Remark" || value == "remark")
+        return TheoremKind::Remark;
+    if (value == "Example" || value == "example")
+        return TheoremKind::Example;
+    return TheoremKind::Theorem;
+}
+
 JsonValue BlockToJson(const Block& block) {
     JsonObject obj;
     if (const auto* para = std::get_if<Paragraph>(&block)) {
@@ -405,6 +484,34 @@ JsonValue BlockToJson(const Block& block) {
         obj["latex"] = eq->expression.latex;
         obj["numbered"] = eq->numbered;
         obj["label"] = eq->label;
+    } else if (const auto* list = std::get_if<ListBlock>(&block)) {
+        obj["type"] = "list";
+        obj["id"] = list->id.value();
+        obj["style"] = list->style == ListStyle::Numbered ? "numbered" : "bullet";
+        JsonArray items;
+        for (const auto& item : list->items) {
+            JsonObject entry;
+            entry["id"] = item.id.value();
+            entry["content"] = InlineToJson(item.content);
+            items.push_back(JsonValue(std::move(entry)));
+        }
+        obj["items"] = std::move(items);
+    } else if (const auto* theorem = std::get_if<TheoremBlock>(&block)) {
+        obj["type"] = "theorem";
+        obj["id"] = theorem->id.value();
+        obj["kind"] = ToString(theorem->kind);
+        obj["title"] = InlineToJson(theorem->title);
+        obj["body"] = InlineToJson(theorem->body);
+        obj["numbered"] = theorem->numbered;
+        obj["label"] = theorem->label;
+    } else if (const auto* code = std::get_if<CodeBlock>(&block)) {
+        obj["type"] = "code";
+        obj["id"] = code->id.value();
+        obj["language"] = code->language;
+        obj["text"] = code->code;
+        obj["caption"] = InlineToJson(code->caption);
+        obj["lineNumbers"] = code->line_numbers;
+        obj["label"] = code->label;
     }
     return JsonValue(std::move(obj));
 }
@@ -469,6 +576,64 @@ std::optional<Block> BlockFromJson(const JsonValue* value) {
         if (const auto* l = value->find("label"))
             eq.label = l->as_string();
         return eq;
+    }
+    if (t == "theorem") {
+        TheoremBlock theorem;
+        if (const auto* id = value->find("id"))
+            theorem.id = NodeId(id->as_string());
+        if (const auto* kind = value->find("kind"))
+            theorem.kind = TheoremKindFromJson(kind->as_string());
+        if (const auto* title = value->find("title"))
+            theorem.title = InlineFromJson(title).value_or(InlineContent{});
+        if (const auto* body = value->find("body"))
+            theorem.body = InlineFromJson(body).value_or(InlineContent{});
+        if (const auto* numbered = value->find("numbered"))
+            theorem.numbered = numbered->as_bool();
+        if (const auto* label = value->find("label"))
+            theorem.label = label->as_string();
+        if (theorem.kind == TheoremKind::Proof)
+            theorem.numbered = false;
+        return theorem;
+    }
+    if (t == "code") {
+        CodeBlock code;
+        if (const auto* id = value->find("id"))
+            code.id = NodeId(id->as_string());
+        if (const auto* language = value->find("language"))
+            code.language = language->as_string();
+        if (const auto* text = value->find("text"))
+            code.code = text->as_string();
+        if (const auto* caption = value->find("caption"))
+            code.caption = InlineFromJson(caption).value_or(InlineContent{});
+        if (const auto* numbers = value->find("lineNumbers"))
+            code.line_numbers = numbers->as_bool();
+        if (const auto* label = value->find("label"))
+            code.label = label->as_string();
+        return code;
+    }
+    if (t == "list") {
+        ListBlock list;
+        if (const auto* id = value->find("id"))
+            list.id = NodeId(id->as_string());
+        if (const auto* style = value->find("style"))
+            list.style = style->as_string() == "numbered" ? ListStyle::Numbered : ListStyle::Bullet;
+        if (const auto* items = value->find("items")) {
+            if (!items->is_array())
+                return std::nullopt;
+            for (const auto& entry : items->as_array()) {
+                if (!entry.is_object())
+                    return std::nullopt;
+                ListItem item;
+                if (const auto* id = entry.find("id"))
+                    item.id = NodeId(id->as_string());
+                if (const auto* content = entry.find("content"))
+                    item.content = InlineFromJson(content).value_or(InlineContent{});
+                if (item.id.empty())
+                    item.id = IdGenerator::NewNode();
+                list.items.push_back(std::move(item));
+            }
+        }
+        return list;
     }
     return std::nullopt;
 }
@@ -620,7 +785,15 @@ void HealDuplicateNodeIds(Document& document) {
     };
     auto heal_blocks = [&heal](std::vector<Block>& blocks) {
         for (auto& block : blocks) {
-            std::visit([&heal](auto& b) { heal(b.id); }, block);
+            std::visit(
+                [&heal](auto& b) {
+                    heal(b.id);
+                    if constexpr (std::is_same_v<std::decay_t<decltype(b)>, ListBlock>) {
+                        for (auto& item : b.items)
+                            heal(item.id);
+                    }
+                },
+                block);
         }
     };
     Body& body = DocumentMutableAccess::body(document);
@@ -644,6 +817,12 @@ void ObserveIdsFromProject(const SerializedProject& project) {
     for (const auto& id : project.document.CollectNodeIds()) {
         IdGenerator::ObserveNodeId(id.value());
     }
+    VisitBlocks(project.document, [](const Block& block, const NodeAddress&) {
+        if (const auto* list = std::get_if<ListBlock>(&block)) {
+            for (const auto& item : list->items)
+                IdGenerator::ObserveNodeId(item.id.value());
+        }
+    });
     for (const auto& asset : project.assets) {
         IdGenerator::ObserveAssetId(asset.id.value());
     }
@@ -824,6 +1003,8 @@ Result<SerializedProject, std::string> ProjectSerializer::Deserialize(const std:
                 meta.relative_path = p->as_string();
             if (const auto* m = item.find("mediaType"))
                 meta.media_type = m->as_string();
+            // Derived from an existing field, so v4 files need no migration.
+            meta.kind = AssetKindForMediaType(meta.media_type);
             if (const auto* o = item.find("originalName"))
                 meta.original_name = o->as_string();
             if (const auto* s = item.find("fileSize")) {

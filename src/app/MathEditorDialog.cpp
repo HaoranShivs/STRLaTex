@@ -3,6 +3,7 @@
 #include <atomic>
 
 #include <QDialogButtonBox>
+#include <algorithm>
 #include <QFontDatabase>
 #include <QLabel>
 #include <QPlainTextEdit>
@@ -10,6 +11,8 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include "app/MathCommandCompleter.h"
+#include "app/MathPaletteWidget.h"
 #include "app/MathPreviewRenderer.h"
 #include "app/Theme.h"
 #include "app/math/MathRenderService.h"
@@ -27,7 +30,7 @@ constexpr int kDebounceMs = 140;
 MathEditorDialog::MathEditorDialog(const QString& latex, QWidget* parent) : QDialog(parent) {
     setWindowTitle(QStringLiteral("Inline Math"));
     setModal(true);
-    resize(520, 380);
+    resize(620, 540);
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(14, 12, 14, 12);
@@ -44,6 +47,14 @@ MathEditorDialog::MathEditorDialog(const QString& latex, QWidget* parent) : QDia
     source_->setFixedHeight(96);
     source_->setTabChangesFocus(false);
     layout->addWidget(source_);
+
+    // WP-02：结构/字体/符号面板 + `\` 命令补全。两者共用同一份命令目录，
+    // 因此按钮与补全不会给出不同的事实。
+    palette_ = new MathPaletteWidget(this);
+    palette_->SetTarget(source_);
+    layout->addWidget(palette_);
+    completer_ = new MathCommandCompleter(this);
+    completer_->Attach(source_);
 
     auto* preview_label = new QLabel(QStringLiteral("Preview"), this);
     preview_label->setStyleSheet(QString("color: %1; font-weight: 600;").arg(theme::kSecondaryText));
@@ -97,6 +108,22 @@ QString MathEditorDialog::latex() const {
     return source_ ? source_->toPlainText() : QString();
 }
 
+void MathEditorDialog::SetAvailablePackages(std::vector<std::string> packages) {
+    packages_ = std::move(packages);
+    if (palette_)
+        palette_->SetAvailablePackages(packages_);
+    if (completer_)
+        completer_->SetAvailablePackages(packages_);
+    // 重新计算状态行：对话框构造时可能还没有宏包列表。
+    if (source_ && !packages_.empty())
+        RefreshPreviewNow();
+}
+
+void MathEditorDialog::SetPaletteVisible(bool visible) {
+    if (palette_)
+        palette_->setVisible(visible);
+}
+
 void MathEditorDialog::SetSourceForTest(const QString& latex) {
     if (source_)
         source_->setPlainText(latex);
@@ -117,14 +144,30 @@ void MathEditorDialog::RefreshPreview() {
     if (!source_ || !preview_ || !status_)
         return;
     const QString body = source_->toPlainText();
-    const pf::MathValidation validation = pf::ValidateMath(body.toStdString(), pf::MathFlavor::Inline);
+    validation_ = pf::ValidateMath(body.toStdString(), pf::MathFlavor::Inline);
 
-    if (validation.invalid()) {
-        status_->setText(QStringLiteral("Invalid — %1").arg(QString::fromStdString(validation.error)));
+    bool missing_package = false;
+    std::string missing_name;
+    if (!packages_.empty()) {
+        for (const auto& package : validation_.required_packages) {
+            if (std::find(packages_.begin(), packages_.end(), package) == packages_.end()) {
+                missing_package = true;
+                missing_name = package;
+                break;
+            }
+        }
+    }
+
+    if (validation_.invalid()) {
+        status_->setText(QStringLiteral("Invalid — %1").arg(QString::fromStdString(validation_.error)));
         status_->setStyleSheet(QString("color: %1;").arg(theme::kError));
-    } else if (validation.pending()) {
+    } else if (validation_.pending()) {
         status_->setText(QStringLiteral("Type a math body, e.g. \\frac{a}{b}"));
         status_->setStyleSheet(QString("color: %1;").arg(theme::kSecondaryText));
+    } else if (missing_package) {
+        status_->setText(QStringLiteral("Valid — requires \\usepackage{%1}; the current template does not load it")
+                             .arg(QString::fromStdString(missing_name)));
+        status_->setStyleSheet(QString("color: %1;").arg(theme::kWarning));
     } else {
         status_->setText(QStringLiteral("Valid"));
         status_->setStyleSheet(QString("color: %1;").arg(theme::kAccent));
@@ -134,7 +177,7 @@ void MathEditorDialog::RefreshPreview() {
     style.font_px = kPreviewFontPx;
     // 无效/不完整的源码通过有界回退保持可见；
     // 只有有效的 body 才交给真正的 TeX 渲染器。
-    if (!validation.valid()) {
+    if (!validation_.valid()) {
         style.backend = MathRenderBackend::ApproximateOnly;
     }
     // P0-07：改为入队，避免在 TeX 上阻塞 GUI 线程。上方的防抖

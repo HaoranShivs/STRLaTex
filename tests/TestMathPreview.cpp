@@ -15,6 +15,7 @@
 #include <QStringList>
 
 #include "app/MathPreviewRenderer.h"
+#include "math/MathCommandCatalog.h"
 
 using namespace pf::gui;
 
@@ -276,4 +277,58 @@ PF_TEST(MathPreviewNeverNullOnFuzz) {
     std::cout << "  fuzz: rendered " << rendered << " inputs in " << ms << " ms\n";
     PF_CHECK(rendered > 30);
     PF_CHECK(ms < 5000);
+}
+
+PF_TEST(MathPreviewRendersExtendedCommandsInsteadOfLiteralFallback) {
+    const MathRenderStyle style = Style();
+    const MathRenderResult plainR = RenderMathPreview(QStringLiteral("R"), style);
+    const MathRenderResult mathbb = RenderMathPreview(QStringLiteral("\\mathbb{R}"), style);
+    PF_CHECK(mathbb.HasPixels());
+    PF_CHECK(mathbb.width > 0 && mathbb.height > 0);
+    // 不再把 "\mathbb{R}" 当字面命令画出来。
+    PF_CHECK(mathbb.width < plainR.width * 3 + 8);
+
+    const QStringList formulas = {
+        QStringLiteral("\\binom{n}{k}"),
+        QStringLiteral("\\boxed{x}"),
+        QStringLiteral("\\overbrace{x}^{n}"),
+        QStringLiteral("\\underbrace{x}_{n}"),
+        QStringLiteral("\\overset{a}{b}"),
+        QStringLiteral("\\underset{a}{b}"),
+        QStringLiteral("\\substack{a\\\\b}"),
+        QStringLiteral("\\overrightarrow{x}"),
+        QStringLiteral("\\begin{array}{cc}a&b\\\\c&d\\end{array}"),
+        QStringLiteral("\\begin{split}a&=b\\\\&=c\\end{split}"),
+        QStringLiteral("\\pmod{n}"),
+        QStringLiteral("\\mathscr{F} + \\mathfrak{g}"),
+    };
+    for (const QString& formula : formulas) {
+        const MathRenderResult result = RenderMathPreview(formula, style);
+        PF_CHECK(result.HasPixels());
+        PF_CHECK(result.width > 0 && result.height > 0);
+    }
+
+    // 无法精确绘制的结构必须把命令名放进 note，供 GUI 显示。
+    const MathRenderResult brace = RenderMathPreview(QStringLiteral("\\overbrace{x}^{n}"), style);
+    PF_CHECK(!brace.exact);
+    PF_CHECK(brace.note.contains(QStringLiteral("overbrace")));
+    const MathRenderResult array =
+        RenderMathPreview(QStringLiteral("\\begin{array}{cc}a&b\\\\c&d\\end{array}"), style);
+    PF_CHECK(array.note.contains(QStringLiteral("array")));
+}
+
+PF_TEST(MathPreviewCoversEveryCatalogCommand) {
+    const MathRenderStyle style = Style();
+    const auto& catalog = pf::MathCommandCatalog::Instance();
+    QStringList unsupported;
+    for (const auto& command : catalog.All()) {
+        QString snippet = QString::fromStdString(command.snippet);
+        snippet.replace(QLatin1Char('$'), QStringLiteral("x"));
+        const MathRenderResult result = RenderMathPreview(snippet, style);
+        if (result.note.contains(QStringLiteral("unsupported command")))
+            unsupported << QString::fromStdString(command.command) + QStringLiteral(": ") + result.note;
+    }
+    if (!unsupported.isEmpty())
+        std::cout << "  unsupported preview: " << unsupported.join(QStringLiteral(" | ")).toStdString() << "\n";
+    PF_CHECK(unsupported.isEmpty());
 }

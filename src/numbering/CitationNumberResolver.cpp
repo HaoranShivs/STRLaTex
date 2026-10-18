@@ -1,6 +1,8 @@
 #include "numbering/CitationNumberResolver.h"
 
 #include <cctype>
+#include <functional>
+#include <set>
 
 #include "document/DocumentTraversal.h"
 
@@ -67,22 +69,33 @@ CitationNumberResolver CitationNumberResolver::Build(const Document& document, c
     }
 
     // 编号由首次引用顺序决定。VisitInlineContent 遍历的正是渲染器所输出的
-    // inline run（标题、摘要，然后按文档顺序的每个 block），因此这里算出的
-    // 编号就是 \bibliographystyle{citation-order} 在 PDF 中产生的编号。
-    VisitInlineContent(document, [&](const InlineContent& content, const NodeAddress&) {
+    // inline run（标题、摘要，然后按文档顺序的每个 block）。脚注 body 必须
+    // 在引用点处展开，否则脚注内的 citation 会被排到后续正文 citation 之后。
+    std::set<const InlineContent*> expanded_footnotes;
+    std::function<void(const InlineContent&)> walk = [&](const InlineContent& content) {
         for (const auto& node : content) {
-            const auto* citation = std::get_if<Citation>(&node);
-            if (!citation)
-                continue;
-            for (const auto& key : citation->keys) {
-                // 未知 key 渲染为 [?]，且从不占用编号。
-                if (!resolver.known_keys_.count(key))
+            if (const auto* citation = std::get_if<Citation>(&node)) {
+                for (const auto& key : citation->keys) {
+                    // 未知 key 渲染为 [?]，且从不占用编号。
+                    if (!resolver.known_keys_.count(key))
+                        continue;
+                    if (resolver.numbers_.count(key))
+                        continue;
+                    resolver.numbers_[key] = static_cast<int>(resolver.numbers_.size()) + 1;
+                }
+            } else if (const auto* footnote = std::get_if<Footnote>(&node)) {
+                if (!footnote->body)
                     continue;
-                if (resolver.numbers_.count(key))
-                    continue;
-                resolver.numbers_[key] = static_cast<int>(resolver.numbers_.size()) + 1;
+                const InlineContent* body = &footnote->body->content;
+                if (expanded_footnotes.insert(body).second)
+                    walk(*body);
             }
         }
+    };
+    VisitInlineContent(document, [&](const InlineContent& content, const NodeAddress&) {
+        if (expanded_footnotes.count(&content))
+            return; // body 已在其引用点展开
+        walk(content);
     });
 
     // 把编号投影回条目视图。Views() 是 picker 与 References 面板的

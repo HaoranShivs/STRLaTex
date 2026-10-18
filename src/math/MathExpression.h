@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace pf {
 
@@ -56,6 +57,9 @@ struct MathValidation {
     MathState state = MathState::Valid;
     std::string code;
     std::string error;
+    // 源码中命令所需的宏包（去重、稳定顺序）。Validator 用它与模板包
+    // 列表比较，因此在“预览正常、PDF 缺包”之前给出诊断。
+    std::vector<std::string> required_packages;
 
     bool valid() const noexcept {
         return state == MathState::Valid;

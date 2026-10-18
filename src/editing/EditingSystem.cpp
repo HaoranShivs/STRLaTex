@@ -230,6 +230,52 @@ EditResult EditingSystem::ApplyDocumentPayload(const EditCommand& cmd, const Edi
         eq.label = p->label;
         return finish(editor.InsertBlock(p->parent, p->index, eq));
     }
+    if (const auto* p = std::get_if<InsertListPayload>(&payload)) {
+        return finish(editor.InsertList(p->parent, p->index, p->style, p->first_item));
+    }
+    if (const auto* p = std::get_if<InsertListItemPayload>(&payload)) {
+        return finish(editor.InsertListItem(p->list, p->index, p->content));
+    }
+    if (const auto* p = std::get_if<EditListItemPayload>(&payload)) {
+        return finishVoid(editor.SetListItemContent(p->list, p->index, p->content), {p->list},
+                          ChangeKind::TextChanged);
+    }
+    if (const auto* p = std::get_if<DeleteListItemPayload>(&payload)) {
+        return finishVoid(editor.DeleteListItem(p->list, p->index), {p->list}, ChangeKind::StructureChanged);
+    }
+    if (const auto* p = std::get_if<MoveListItemPayload>(&payload)) {
+        return finishVoid(editor.MoveListItem(p->list, p->from, p->to), {p->list}, ChangeKind::StructureChanged);
+    }
+    if (const auto* p = std::get_if<SetListStylePayload>(&payload)) {
+        return finishVoid(editor.SetListStyle(p->list, p->style), {p->list}, ChangeKind::MetadataChanged);
+    }
+    if (const auto* p = std::get_if<InsertFootnotePayload>(&payload)) {
+        return finishVoid(editor.InsertFootnote(p->paragraph, p->at_index, p->body), {p->paragraph},
+                          ChangeKind::StructureChanged);
+    }
+    if (const auto* p = std::get_if<EditFootnotePayload>(&payload)) {
+        return finishVoid(editor.SetFootnote(p->paragraph, p->at_index, p->body), {p->paragraph},
+                          ChangeKind::TextChanged);
+    }
+    if (const auto* p = std::get_if<DeleteFootnotePayload>(&payload)) {
+        return finishVoid(editor.DeleteFootnote(p->paragraph, p->at_index), {p->paragraph},
+                          ChangeKind::StructureChanged);
+    }
+    if (const auto* p = std::get_if<InsertTheoremPayload>(&payload)) {
+        return finish(editor.InsertTheorem(p->parent, p->index, p->kind, p->title, p->body, p->numbered, p->label));
+    }
+    if (const auto* p = std::get_if<EditTheoremPayload>(&payload)) {
+        return finishVoid(editor.SetTheorem(p->theorem, p->body, p->title, p->numbered, p->label, p->kind),
+                          {p->theorem}, ChangeKind::TextChanged);
+    }
+    if (const auto* p = std::get_if<InsertCodePayload>(&payload)) {
+        return finish(editor.InsertCode(p->parent, p->index, p->language, p->code, p->caption, p->line_numbers,
+                                        p->label));
+    }
+    if (const auto* p = std::get_if<EditCodePayload>(&payload)) {
+        return finishVoid(editor.SetCode(p->code, p->language, p->text, p->caption, p->line_numbers, p->label),
+                          {p->code}, ChangeKind::TextChanged);
+    }
     if (const auto* p = std::get_if<DeleteBlockPayload>(&payload)) {
         return finishVoid(editor.DeleteBlock(p->node), {p->node}, ChangeKind::StructureChanged);
     }
@@ -258,6 +304,35 @@ EditResult EditingSystem::ApplyDocumentPayload(const EditCommand& cmd, const Edi
     }
     if (const auto* p = std::get_if<EditTableLabelPayload>(&payload)) {
         return finishVoid(editor.SetTableLabel(p->table, p->label), {p->table}, ChangeKind::MetadataChanged);
+    }
+    if (const auto* p = std::get_if<EditFigureWidthPayload>(&payload)) {
+        return finishVoid(editor.SetFigureWidth(p->figure, p->width), {p->figure}, ChangeKind::MetadataChanged);
+    }
+    if (const auto* p = std::get_if<SetFigureAssetPayload>(&payload)) {
+        return finishVoid(editor.SetFigureAsset(p->figure, p->asset_id), {p->figure}, ChangeKind::AssetReferenceChanged);
+    }
+    if (const auto* p = std::get_if<SetTableCellPayload>(&payload)) {
+        return finishVoid(editor.SetTableCell(p->table, p->row, p->column, p->content), {p->table});
+    }
+    if (const auto* p = std::get_if<InsertTableRowPayload>(&payload)) {
+        return finishVoid(editor.InsertTableRow(p->table, p->index), {p->table}, ChangeKind::StructureChanged);
+    }
+    if (const auto* p = std::get_if<DeleteTableRowPayload>(&payload)) {
+        return finishVoid(editor.DeleteTableRow(p->table, p->index), {p->table}, ChangeKind::StructureChanged);
+    }
+    if (const auto* p = std::get_if<InsertTableColumnPayload>(&payload)) {
+        return finishVoid(editor.InsertTableColumn(p->table, p->index, p->alignment), {p->table},
+                          ChangeKind::StructureChanged);
+    }
+    if (const auto* p = std::get_if<DeleteTableColumnPayload>(&payload)) {
+        return finishVoid(editor.DeleteTableColumn(p->table, p->index), {p->table}, ChangeKind::StructureChanged);
+    }
+    if (const auto* p = std::get_if<SetTableColumnAlignmentPayload>(&payload)) {
+        return finishVoid(editor.SetTableColumnAlignment(p->table, p->column, p->alignment), {p->table},
+                          ChangeKind::MetadataChanged);
+    }
+    if (const auto* p = std::get_if<SetTableHeaderRowPayload>(&payload)) {
+        return finishVoid(editor.SetTableHeaderRow(p->table, p->has_header_row), {p->table}, ChangeKind::MetadataChanged);
     }
     if (const auto* p = std::get_if<InsertCitationPayload>(&payload)) {
         // 将 citation 以内联方式插入段落内容。

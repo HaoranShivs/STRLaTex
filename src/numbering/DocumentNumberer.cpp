@@ -1,5 +1,6 @@
 #include "numbering/DocumentNumberer.h"
 
+#include <map>
 #include <utility>
 
 #include "document/DocumentTraversal.h"
@@ -32,6 +33,8 @@ DocumentNumberer DocumentNumberer::Build(const Document& document, const Numberi
     int figure = 0;
     int table = 0;
     int equation = 0;
+    int code = 0;
+    std::map<TheoremKind, int> theorems;
 
     auto add = [&](const NodeId& node, NodeKind kind, int number, std::string kind_label, std::string display,
                    std::string title) {
@@ -114,6 +117,21 @@ DocumentNumberer DocumentNumberer::Build(const Document& document, const Numberi
                 ++equation;
                 add(eq->id, NodeKind::Equation, equation, "Equation", "Eq. (" + std::to_string(equation) + ")", {});
             }
+            return;
+        }
+        if (const auto* theorem = std::get_if<TheoremBlock>(&block)) {
+            if (theorem->kind == TheoremKind::Proof || !theorem->numbered)
+                return;
+            const int number = ++theorems[theorem->kind];
+            const std::string label = ToString(theorem->kind);
+            add(theorem->id, NodeKind::Theorem, number, label, label + " " + std::to_string(number),
+                InlineToPlainText(theorem->title));
+            return;
+        }
+        if (const auto* listing = std::get_if<CodeBlock>(&block)) {
+            ++code;
+            add(listing->id, NodeKind::Code, code, "Listing", "Listing " + std::to_string(code),
+                InlineToPlainText(listing->caption));
             return;
         }
     });

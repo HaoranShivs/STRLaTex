@@ -36,9 +36,15 @@ std::string InlineToRichText(const InlineContent& content);
 // document 绝不会因解析失败而丢失内容。
 InlineContent InlineFromRichText(const std::string& text);
 
-// 当内容带有任何字符标记、公式、引文或引用时为真——即任何会被纯文本
-// 字段抹平的东西。
+// 当内容带有任何字符标记、公式、引文、引用或脚注时为真——即任何会被
+// 纯文本字段抹平的东西。
 bool InlineIsRich(const InlineContent& content);
+
+// 版本化的行内剪贴板编码（WP-06）：保留 Footnote 的 body，而
+// InlineToRichText 只输出可读占位符。v2 使用 `PFINLINE2` 头部；
+// InlineFromClipboard 对损坏/未知版本返回 nullopt。
+std::string InlineToClipboard(const InlineContent& content);
+std::optional<InlineContent> InlineFromClipboard(const std::string& text);
 
 // 还原从 PDF 或其他文字处理软件复制出来的文本中的硬换行。这类粘贴内容
 // 在到达时已按固定列宽预先折行，导致段落永远无法按编辑器宽度重新排版。

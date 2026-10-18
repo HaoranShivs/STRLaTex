@@ -16,10 +16,13 @@ namespace pf {
 // 因此 V2 文件加载后数据不变。
 // V4 为交叉引用增加 Figure/Table 的可选 "label" 字段；旧文件缺省为空，
 // 读取时回退到 node id，因此 V3 -> V4 只是版本戳（不重写磁盘）。
+// V5 增加 ListBlock、脚注 body、TheoremBlock 与 CodeBlock；旧 V4 文件没有
+// 新类型，迁移同样只打版本戳。
 inline constexpr const char* kSchemaVersionV1 = "1";
 inline constexpr const char* kSchemaVersionV2 = "2";
 inline constexpr const char* kSchemaVersionV3 = "3";
-inline constexpr const char* kSchemaVersion = "4";
+inline constexpr const char* kSchemaVersionV4 = "4";
+inline constexpr const char* kSchemaVersion = "5";
 
 struct MigrationStep {
     std::string from_version;

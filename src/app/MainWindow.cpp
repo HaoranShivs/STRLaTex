@@ -28,6 +28,8 @@
 
 #include "app/AddReferenceDialog.h"
 #include "app/BlockEditor.h"
+#include "app/FigurePreviewRenderer.h"
+#include "app/InsertTableDialog.h"
 #include "app/OutlinePanel.h"
 #include "app/PdfPreview.h"
 #include "app/ProblemsPanel.h"
@@ -42,6 +44,15 @@ namespace pf::gui {
 
 namespace {
 constexpr const char* kSettingsKey = "recent_projects";
+
+std::vector<std::string> MathPackagesFor(const TemplateDefinition& definition) {
+    std::vector<std::string> packages = {"amsmath", "amssymb"};
+    for (const auto& package : definition.packages) {
+        if (std::find(packages.begin(), packages.end(), package.name) == packages.end())
+            packages.push_back(package.name);
+    }
+    return packages;
+}
 
 } // namespace
 
@@ -111,7 +122,7 @@ void MainWindow::BuildUi() {
     main_splitter_ = new QSplitter(Qt::Horizontal, workspace_);
     outline_ = new OutlinePanel(main_splitter_);
     editor_ = new BlockEditor(main_splitter_);
-    editor_->SetAssetPathResolver([this](const AssetId& id) {
+    const auto resolve_asset_path = [this](const AssetId& id) {
         if (!controller_->has_project())
             return QString();
         const auto* metadata = controller_->session().assets().registry().Find(id);
@@ -124,7 +135,13 @@ void MainWindow::BuildUi() {
         if (!resolved.ok())
             return QString();
         return ToQ(resolved.value().string());
+    };
+    editor_->SetAssetPathResolver(resolve_asset_path);
+    auto* figure_previews = new FigurePreviewRenderer(this);
+    editor_->SetFigurePreviewResolver([figure_previews, resolve_asset_path](const AssetId& id, const QSize& target) {
+        return figure_previews->Request(resolve_asset_path(id), target);
     });
+    connect(figure_previews, &FigurePreviewRenderer::PreviewReady, editor_, &BlockEditor::RefreshFigurePreviews);
 
     vertical_splitter_ = new QSplitter(Qt::Vertical, main_splitter_);
     preview_ = new PdfPreview(vertical_splitter_);
@@ -345,9 +362,24 @@ void MainWindow::WireEditor() {
         } else if (type == "equation") {
             result = controller_->InsertEquationAfter(anchor, "", true);
         } else if (type == "table") {
-            result = controller_->InsertTableAfter(anchor);
+            editor_->CommitFocused();
+            InsertTableDialog dialog(this);
+            if (dialog.exec() != QDialog::Accepted)
+                return;
+            result = controller_->InsertTableAfter(anchor, static_cast<size_t>(dialog.Rows()),
+                                                    static_cast<size_t>(dialog.Columns()), dialog.HasHeaderRow());
+        } else if (type == "list") {
+            result = controller_->InsertListAfter(anchor, ListStyle::Bullet);
+        } else if (type == "theorem") {
+            result = controller_->InsertTheoremAfter(anchor, TheoremKind::Theorem, {}, true);
+        } else if (type == "proof") {
+            result = controller_->InsertTheoremAfter(anchor, TheoremKind::Proof, {}, false);
+        } else if (type == "code") {
+            result = controller_->InsertCodeAfter(anchor, QStringLiteral("python"), {}, true);
         } else if (type == "figure") {
-            QString path = QFileDialog::getOpenFileName(this, "Insert Figure", {}, "Images (*.png *.jpg *.jpeg *.gif)");
+            editor_->CommitFocused();
+            QString path = QFileDialog::getOpenFileName(this, "Insert Figure", {},
+                "Figures (*.png *.jpg *.jpeg *.gif *.pdf *.svg *.eps)");
             if (!path.isEmpty()) {
                 result = controller_->InsertFigureAfter(anchor, path);
             } else {
@@ -360,8 +392,144 @@ void MainWindow::WireEditor() {
             statusBar()->showMessage("Could not insert block: " + ToQ(result.detail), 5000);
         }
     });
+    const auto insert_asset = [this](const QString& path, const QString& after) {
+        if (shutting_down_ || !controller_->has_project())
+            return;
+        editor_->CommitFocused();
+        const auto result = controller_->InsertFigureAfter(NodeId(after.toStdString()), path);
+        if (result.status != EditStatus::Applied)
+            statusBar()->showMessage("Could not import figure: " + ToQ(result.detail), 12000);
+        else
+            editor_->RevealNode(ToQ(result.created_node.value()));
+    };
+    connect(editor_, &BlockEditor::AssetFileDropped, this, insert_asset);
+    connect(editor_, &BlockEditor::AssetPasted, this, insert_asset);
+    connect(editor_, &BlockEditor::AssetInputFailed, this,
+            [this](const QString& detail) { statusBar()->showMessage(detail, 12000); });
+    connect(editor_, &BlockEditor::FigureAssetReplaceRequested, this, [this](const QString& node) {
+        if (shutting_down_)
+            return;
+        editor_->CommitFocused();
+        const QString path = QFileDialog::getOpenFileName(this, "Replace Figure", {},
+            "Figures (*.png *.jpg *.jpeg *.gif *.pdf *.svg *.eps)");
+        if (path.isEmpty())
+            return;
+        const auto result = controller_->ReplaceFigureAsset(NodeId(node.toStdString()), path);
+        if (result.status != EditStatus::Applied)
+            statusBar()->showMessage("Could not replace figure: " + ToQ(result.detail), 12000);
+    });
     connect(editor_, &BlockEditor::CaptionEdited, this,
             [this](QString node, QString caption) { controller_->EditCaption(NodeId(node.toStdString()), caption); });
+    connect(editor_, &BlockEditor::CaptionContentEdited, this, [this](QString node, const InlineContent& content) {
+        if (shutting_down_)
+            return;
+        QScopedValueRollback<bool> keep_rows(editor_change_in_progress_, true);
+        const auto result = controller_->EditCaptionRich(NodeId(node.toStdString()), content);
+        if (result.status != EditStatus::Applied)
+            statusBar()->showMessage(ToQ(result.detail), 3000);
+    });
+
+    connect(editor_, &BlockEditor::ListItemContentEdited, this,
+            [this](QString list, int index, const InlineContent& content) {
+                if (shutting_down_)
+                    return;
+                QScopedValueRollback<bool> keep_rows(editor_change_in_progress_, true);
+                const auto result = controller_->EditListItem(NodeId(list.toStdString()), static_cast<size_t>(index),
+                                                              content);
+                if (result.status != EditStatus::Applied)
+                    statusBar()->showMessage(ToQ(result.detail), 3000);
+            });
+    connect(editor_, &BlockEditor::ListItemInsertRequested, this, [this](QString list, int index) {
+        if (shutting_down_)
+            return;
+        editor_->CommitFocused();
+        const auto result = controller_->InsertListItem(NodeId(list.toStdString()), static_cast<size_t>(index), {});
+        if (result.status != EditStatus::Applied)
+            statusBar()->showMessage(ToQ(result.detail), 3000);
+    });
+    connect(editor_, &BlockEditor::ListItemDeleteRequested, this, [this](QString list, int index) {
+        if (shutting_down_)
+            return;
+        const auto result = controller_->DeleteListItem(NodeId(list.toStdString()), static_cast<size_t>(index));
+        if (result.status != EditStatus::Applied)
+            statusBar()->showMessage(ToQ(result.detail), 3000);
+    });
+    connect(editor_, &BlockEditor::ListItemMoveRequested, this, [this](QString list, int from, int to) {
+        if (shutting_down_)
+            return;
+        const auto result = controller_->MoveListItem(NodeId(list.toStdString()), static_cast<size_t>(from),
+                                                      static_cast<size_t>(to));
+        if (result.status != EditStatus::Applied)
+            statusBar()->showMessage(ToQ(result.detail), 3000);
+    });
+    connect(editor_, &BlockEditor::ListStyleChangeRequested, this, [this](QString list, int style) {
+        if (shutting_down_)
+            return;
+        const auto result = controller_->SetListStyle(NodeId(list.toStdString()), static_cast<ListStyle>(style));
+        if (result.status != EditStatus::Applied)
+            statusBar()->showMessage(ToQ(result.detail), 3000);
+    });
+
+    connect(editor_, &BlockEditor::TheoremEdited, this,
+            [this](QString node, int kind, QString title, const InlineContent& body, bool numbered, QString label) {
+                if (shutting_down_)
+                    return;
+                const auto result = controller_->EditTheorem(NodeId(node.toStdString()), InlineFromText(ToStd(title)),
+                                                             body, numbered, label, static_cast<TheoremKind>(kind));
+                if (result.status != EditStatus::Applied)
+                    statusBar()->showMessage(ToQ(result.detail), 3000);
+            });
+    connect(editor_, &BlockEditor::CodeEdited, this,
+            [this](QString node, QString language, QString text, QString caption, bool line_numbers, QString label) {
+                if (shutting_down_)
+                    return;
+                const auto result = controller_->EditCode(NodeId(node.toStdString()), language, text,
+                                                          InlineFromText(ToStd(caption)), line_numbers, label);
+                if (result.status != EditStatus::Applied)
+                    statusBar()->showMessage(ToQ(result.detail), 3000);
+            });
+    // 先提交题注，再执行结构命令；表格重新投影时不能丢失尚未失焦的输入。
+    const auto table_change = [this](auto apply) {
+        if (shutting_down_)
+            return;
+        editor_->CommitFocused();
+        const auto result = apply();
+        if (result.status != EditStatus::Applied)
+            statusBar()->showMessage(ToQ(result.detail), 3000);
+    };
+    connect(editor_, &BlockEditor::TableCellEdited, this,
+            [this, table_change](QString node, int row, int column, const InlineContent& content) {
+                table_change([&]() { return controller_->SetTableCell(NodeId(node.toStdString()),
+                    static_cast<size_t>(row), static_cast<size_t>(column), content); });
+            });
+    connect(editor_, &BlockEditor::TableRowInsertRequested, this, [this, table_change](QString node, int index) {
+        table_change([&]() { return controller_->InsertTableRow(NodeId(node.toStdString()), static_cast<size_t>(index)); });
+    });
+    connect(editor_, &BlockEditor::TableRowDeleteRequested, this, [this, table_change](QString node, int index) {
+        table_change([&]() { return controller_->DeleteTableRow(NodeId(node.toStdString()), static_cast<size_t>(index)); });
+    });
+    connect(editor_, &BlockEditor::TableColumnInsertRequested, this, [this, table_change](QString node, int index) {
+        table_change([&]() { return controller_->InsertTableColumn(NodeId(node.toStdString()), static_cast<size_t>(index)); });
+    });
+    connect(editor_, &BlockEditor::TableColumnDeleteRequested, this, [this, table_change](QString node, int index) {
+        table_change([&]() { return controller_->DeleteTableColumn(NodeId(node.toStdString()), static_cast<size_t>(index)); });
+    });
+    connect(editor_, &BlockEditor::TableColumnAlignmentChanged, this,
+            [this, table_change](QString node, int column, ColumnAlignment alignment) {
+                table_change([&]() { return controller_->SetTableColumnAlignment(NodeId(node.toStdString()),
+                    static_cast<size_t>(column), alignment); });
+            });
+    connect(editor_, &BlockEditor::TableHeaderRowChanged, this, [this, table_change](QString node, bool has_header) {
+        table_change([&]() { return controller_->SetTableHeaderRow(NodeId(node.toStdString()), has_header); });
+    });
+    connect(editor_, &BlockEditor::FigureWidthChanged, this, [this](QString node, FigureWidth width) {
+        if (shutting_down_)
+            return;
+        QScopedValueRollback<bool> keep_rows(editor_change_in_progress_, true);
+        const auto result = controller_->EditFigureWidth(NodeId(node.toStdString()), width);
+        if (result.status != EditStatus::Applied)
+            statusBar()->showMessage(ToQ(result.detail), 3000);
+    });
     connect(editor_, &BlockEditor::FigureSpanChanged, this, [this](QString node, bool double_column) {
         if (shutting_down_)
             return;
@@ -455,6 +623,16 @@ void MainWindow::RefreshCrossReferences() {
     const auto numbering = controller_->Numbering();
     editor_->SetNumbering(numbering);
     editor_->SetCrossReferences(controller_->CrossReferences());
+}
+
+void MainWindow::RefreshMathPackages() {
+    if (!controller_->has_project())
+        return;
+    const auto definition = controller_->session().ResolveTemplate(
+        controller_->session().state().template_selection());
+    if (!definition)
+        return;
+    editor_->SetMathPackages(MathPackagesFor(*definition));
 }
 
 int MainWindow::CountWords() const {
@@ -918,6 +1096,7 @@ void MainWindow::RefreshDocumentView() {
     // WP-03：编号必须在重建之前就位，卡片的 "Figure 3"/"Eq. (4)" 标签与
     // 胶囊显示都读取它。
     RefreshCrossReferences();
+    RefreshMathPackages();
     // InlineEditor 的富内容和 Figure 的复选框已经显示了刚提交的值。
     // documentChanged 在提交栈内同步发出；此时只刷新由文档派生的 UI。
     // 若先前有结构变更待处理，RowCommitted 仍会在提交后完成那次重建。
@@ -929,6 +1108,7 @@ void MainWindow::RefreshDocumentView() {
     if (const auto tpl = controller_->session().ResolveTemplate(
             controller_->session().state().template_selection())) {
         editor_->SetMaxHeadingDepth(tpl->capabilities.max_heading_depth);
+        editor_->SetContentCapabilities(tpl->capabilities.theorems, tpl->capabilities.code_blocks);
     } else {
         editor_->SetMaxHeadingDepth(3);
     }
@@ -951,6 +1131,7 @@ void MainWindow::RefreshSidePanels() {
         return;
     RefreshCitationCatalog();
     RefreshCrossReferences();
+    RefreshMathPackages();
     // picker 与 References 面板共用同一份 CitationView：author · year · title、
     // [n] 与 cited 状态不会在两处各拼一次。
     outline_->RebuildFromDocument(controller_->session().state().document(),

@@ -177,8 +177,8 @@ PF_TEST(TraversalInlineCoversParagraphsAndCaptions) {
         if (InlineToPlainText(content) == "the caption")
             saw_caption = true;
     });
-    // 论文标题 + 段落正文 + figure caption。
-    PF_CHECK(seen == 3);
+    // 论文标题 + section 标题 + 段落正文 + figure caption。
+    PF_CHECK(seen == 4);
     PF_CHECK(saw_caption);
 }
 
@@ -440,8 +440,8 @@ PF_TEST(SchemaMigrationV1ToV2KeepsDocumentAndStampsVersion) {
     auto migration = ProjectMigrator::MigrateToCurrent(&loaded.value());
     PF_CHECK(migration.migrated);
     PF_CHECK(migration.from_version == "1");
-    PF_CHECK(migration.to_version == "4");
-    PF_CHECK(migration.applied.size() == 3); // V1->V2、V2->V3、V3->V4
+    PF_CHECK(migration.to_version == "5");
+    PF_CHECK(migration.applied.size() == 4); // V1->V2、V2->V3、V3->V4、V4->V5
     PF_CHECK(migration.warnings.empty());
 
     // 没有任何内容丢失。
@@ -462,32 +462,40 @@ PF_TEST(SchemaMigrationV1ToV2KeepsDocumentAndStampsVersion) {
     const std::string saved = ProjectSerializer::Serialize(loaded.value());
     auto reloaded = ProjectSerializer::Deserialize(saved);
     PF_CHECK(reloaded.ok());
-    PF_CHECK(reloaded.value().schema_version == "4");
+    PF_CHECK(reloaded.value().schema_version == "5");
     PF_CHECK(BodyOf(reloaded.value().document).sections.size() == 1);
 }
 
 PF_TEST(SchemaMigrationIsIdempotentAndFlagsUnknownVersions) {
     SerializedProject current;
-    current.schema_version = "4";
+    current.schema_version = "5";
     auto untouched = ProjectMigrator::MigrateToCurrent(&current);
     PF_CHECK(!untouched.migrated);
-    PF_CHECK(untouched.to_version == "4");
+    PF_CHECK(untouched.to_version == "5");
 
-    // V3 文件只因图表 label 字段而补版本戳。
+    // V4 文件只因列表/脚注而补版本戳。
+    SerializedProject v4;
+    v4.schema_version = "4";
+    auto from_v4 = ProjectMigrator::MigrateToCurrent(&v4);
+    PF_CHECK(from_v4.migrated);
+    PF_CHECK(from_v4.applied.size() == 1);
+    PF_CHECK(from_v4.to_version == "5");
+
+    // V3 文件补上图表 label + 列表/脚注两个版本标记。
     SerializedProject v3;
     v3.schema_version = "3";
     auto from_v3 = ProjectMigrator::MigrateToCurrent(&v3);
     PF_CHECK(from_v3.migrated);
-    PF_CHECK(from_v3.applied.size() == 1);
-    PF_CHECK(from_v3.to_version == "4");
+    PF_CHECK(from_v3.applied.size() == 2);
+    PF_CHECK(from_v3.to_version == "5");
 
     // V2 文件会补上两个版本标记（公式格式 + 图表 label）。
     SerializedProject v2;
     v2.schema_version = "2";
     auto from_v2 = ProjectMigrator::MigrateToCurrent(&v2);
     PF_CHECK(from_v2.migrated);
-    PF_CHECK(from_v2.applied.size() == 2);
-    PF_CHECK(from_v2.to_version == "4");
+    PF_CHECK(from_v2.applied.size() == 3);
+    PF_CHECK(from_v2.to_version == "5");
 
     SerializedProject blank;
     blank.schema_version = "";
@@ -520,9 +528,9 @@ PF_TEST(LoadMigratesOldProjectFileInMemory) {
     auto result = ProjectPersistence::Load(request);
     PF_CHECK(result.status == LoadResult::Status::Ok);
     PF_CHECK(result.migration.migrated);
-    PF_CHECK(result.migration.to_version == "4");
+    PF_CHECK(result.migration.to_version == "5");
     PF_CHECK(result.project.has_value());
-    PF_CHECK(result.project->schema_version == "4");
+    PF_CHECK(result.project->schema_version == "5");
 
     // 旧文件在磁盘上保持不变——只有执行保存才会重写它。
     std::ifstream in(file, std::ios::binary);

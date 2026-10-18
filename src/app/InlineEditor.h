@@ -32,6 +32,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "app/CitationObjectRenderer.h"
 #include "document/Document.h"
@@ -78,14 +79,25 @@ class InlineEditor : public QTextEdit {
     // payload 中的 formula id 定位对象；当对象已不存在（被删除、被 undo、被
     // 重新加载）时，丢弃该回复。
     void ApplyMathRender(const QString& formula_id, const QString& latex, const QImage& image, int width, int height,
-                         int baseline, qreal device_pixel_ratio, int render_font_px);
+                         int baseline, qreal device_pixel_ratio, int render_font_px, bool exact = true,
+                         const QString& note = {});
+
+    // 模板实际加载的宏包；打开数学编辑器时传给 palette/completer。
+    void SetMathPackages(std::vector<std::string> packages);
+    // 列表项模式：Enter 提交并新建下一个 item（Shift+Enter 仍可换行）。
+    void SetListItemMode(bool enabled) {
+        list_item_mode_ = enabled;
+    }
+
+    // 某个行内公式最近一次渲染的 note（空 = 精确/无问题）。
+    QString MathRenderNoteAt(int position) const;
 
     // 让控件重新适配其内容；宽度变化后调用。
     void ResizeToContent();
     // 使用一个尚未应用到控件上的宽度重新适配。
     void ResizeToWidth(int width);
 
-    enum class TokenKind : int { Citation = 1, CrossReference = 2, Math = 3 };
+    enum class TokenKind : int { Citation = 1, CrossReference = 2, Math = 3, Footnote = 4 };
 
     // pill 的 citation 顺序编号（citation 方案 §3）。以 shared_ptr 持有，使每一
     // 行都能基于同一份 document 级映射解析显示编号；重新加载该行会重绘 pill。
@@ -103,6 +115,9 @@ class InlineEditor : public QTextEdit {
     // Shared actions for the selection toolbar and the standard context menu.
     // The toolbar floats above the text and never participates in row layout.
     void SetFormattingActions(const QList<QAction*>& actions);
+    void SetAssetPasteHandler(std::function<bool(const QMimeData*)> handler) {
+        asset_paste_handler_ = std::move(handler);
+    }
 
     // 在光标处插入语义行内对象。每个都构建真正的可渲染对象（citation 方案
     // §2）：不存在共享的 "InsertToken(kind, payload, label)" 伪接口。
@@ -127,6 +142,16 @@ class InlineEditor : public QTextEdit {
     };
     std::optional<CrossReferenceTokenInfo> CrossReferenceAt(int position) const;
     bool ReplaceCrossReferenceAt(int position, const QString& target);
+    // 脚注（WP-06）：token payload 是行内 id，body 保存在本行的 map 中；
+    // Content() 再把它还原为 Footnote 节点。
+    struct FootnoteTokenInfo {
+        InlineContent body;
+        int position = -1;
+    };
+    std::optional<FootnoteTokenInfo> FootnoteAt(int position) const;
+    bool ReplaceFootnoteAt(int position, const InlineContent& body);
+    void InsertFootnoteObject(const InlineContent& body);
+
     // 从 LaTeX body 插入一个 inline math 对象（不含定界符）。
     void InsertInlineMath(const QString& latex);
     // 工具栏入口：向用户索取 math body，然后插入。
@@ -166,6 +191,8 @@ class InlineEditor : public QTextEdit {
     void CitationTokenActivated(const QStringList& keys, int position, int mode);
     // 某个 cross-reference token 被激活以重新挑选。
     void CrossReferenceTokenActivated(const QString& target, int position);
+    // 双击脚注 token：打开脚注正文编辑器。
+    void FootnoteTokenActivated(int position);
     // 用户在行首/空白后输入 '@'：请求引用/交叉引用选择器。'@' 本身已被
     // 编辑器消费，取消选择器不会留下一个多余的触发字符。
     void ReferenceMenuRequested(const QPoint& global_pos);
@@ -186,6 +213,7 @@ class InlineEditor : public QTextEdit {
     void focusOutEvent(QFocusEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
     void hideEvent(QHideEvent* event) override;
+    bool event(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
@@ -214,6 +242,8 @@ class InlineEditor : public QTextEdit {
     // P0-07：标识该行内某一个已渲染的公式对象，使异步回复能够找到（或安全地
     // 找不到）其目标。
     static constexpr int kMathFormulaIdProperty = QTextFormat::UserProperty + 20;
+    // WP-02：该公式最近一次渲染的 note（近似预览原因）。
+    static constexpr int kMathNoteProperty = QTextFormat::UserProperty + 27;
     // 保留 math 对象、标记与语义 token 的剪贴板类型。
     static const char* InlineMimeType();
 
@@ -259,11 +289,13 @@ class InlineEditor : public QTextEdit {
     bool refreshing_displays_ = false;
     bool updating_math_geometry_ = false;
     bool math_editor_open_ = false;
+    bool list_item_mode_ = false;
     int protected_inserts_ = 0;
     // P0-07：该行渲染过的每个公式都会获得一个稳定 id，而每次渲染请求都会递增该
     // 行的 generation，从而丢弃针对旧公式的迟到回复。editor id 是创建该行时赋予
     // 的 objectName。
     std::uint64_t next_formula_id_ = 0;
+    int next_footnote_id_ = 0;
     // 正文排版（UI 方案 §5）：每次重新加载都重新应用比例行高，使 150% 在
     // SetContent/clear 之后依然保留。
     int line_height_percent_ = 0;
@@ -271,6 +303,9 @@ class InlineEditor : public QTextEdit {
     std::unique_ptr<CitationObjectRenderer> citation_object_renderer_;
     std::shared_ptr<const CitationNumberResolver> citation_numbers_;
     std::map<QString, QString> xref_labels_;
+    std::map<QString, InlineContent> footnote_bodies_;
+    std::vector<std::string> math_packages_;
+    std::function<bool(const QMimeData*)> asset_paste_handler_;
 };
 
 } // namespace pf::gui

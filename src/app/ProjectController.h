@@ -88,7 +88,25 @@ class ProjectController : public QObject {
     EditResult InsertEquationAfter(const NodeId& anchor, const QString& math, bool numbered,
                                    const QString& label = QString());
     EditResult InsertFigureAfter(const NodeId& anchor, const QString& image_path);
-    EditResult InsertTableAfter(const NodeId& anchor);
+    EditResult ReplaceFigureAsset(const NodeId& figure, const QString& image_path);
+    EditResult InsertTableAfter(const NodeId& anchor, size_t rows = 3, size_t columns = 3, bool has_header_row = true);
+    EditResult InsertListAfter(const NodeId& anchor, ListStyle style = ListStyle::Bullet);
+    EditResult InsertListItem(const NodeId& list, size_t index, const InlineContent& content);
+    EditResult EditListItem(const NodeId& list, size_t index, const InlineContent& content);
+    EditResult DeleteListItem(const NodeId& list, size_t index);
+    EditResult MoveListItem(const NodeId& list, size_t from, size_t to);
+    EditResult SetListStyle(const NodeId& list, ListStyle style);
+    EditResult InsertFootnote(const NodeId& paragraph, std::optional<size_t> at_index, const InlineContent& body);
+    EditResult EditFootnote(const NodeId& paragraph, size_t at_index, const InlineContent& body);
+    EditResult DeleteFootnote(const NodeId& paragraph, size_t at_index);
+    EditResult InsertTheoremAfter(const NodeId& anchor, TheoremKind kind, const InlineContent& title,
+                                  bool numbered, const QString& label = QString());
+    EditResult EditTheorem(const NodeId& theorem, const InlineContent& title, const InlineContent& body,
+                           bool numbered, const QString& label, TheoremKind kind = TheoremKind::Theorem);
+    EditResult InsertCodeAfter(const NodeId& anchor, const QString& language, const QString& code,
+                               bool line_numbers, const QString& label = QString());
+    EditResult EditCode(const NodeId& code, const QString& language, const QString& text,
+                        const InlineContent& caption, bool line_numbers, const QString& label);
     // InlineEditor 使用的结构化提交：粗体／斜体片段、引文、
     // 交叉引用和行内公式都能完整往返。正文进入文档的数据路径
     // 有且仅有一条（引用方案 §5）。
@@ -97,6 +115,15 @@ class ProjectController : public QObject {
     EditResult RenameSection(const NodeId& section, const QString& title);
     EditResult RenameSubsection(const NodeId& subsection, const QString& title);
     EditResult EditCaption(const NodeId& block, const QString& caption);
+    EditResult EditCaptionRich(const NodeId& block, const InlineContent& caption);
+    EditResult SetTableCell(const NodeId& table, size_t row, size_t column, const InlineContent& content);
+    EditResult InsertTableRow(const NodeId& table, size_t index);
+    EditResult DeleteTableRow(const NodeId& table, size_t index);
+    EditResult InsertTableColumn(const NodeId& table, size_t index, ColumnAlignment alignment = ColumnAlignment::Left);
+    EditResult DeleteTableColumn(const NodeId& table, size_t index);
+    EditResult SetTableColumnAlignment(const NodeId& table, size_t column, ColumnAlignment alignment);
+    EditResult SetTableHeaderRow(const NodeId& table, bool has_header_row);
+    EditResult EditFigureWidth(const NodeId& figure, FigureWidth width);
     // 单栏与双栏图。无论使用哪种模板都会保存；只有双栏模板
     // 才会体现差异（通栏浮动体）。
     EditResult EditFigureSpan(const NodeId& figure, bool double_column);

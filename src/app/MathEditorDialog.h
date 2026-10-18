@@ -13,12 +13,19 @@
 
 #include <QString>
 #include <cstdint>
+#include <string>
+#include <vector>
+
+#include "math/MathExpression.h"
 
 class QLabel;
 class QPlainTextEdit;
 class QTimer;
 
 namespace pf::gui {
+
+class MathCommandCompleter;
+class MathPaletteWidget;
 
 class MathEditorDialog : public QDialog {
     Q_OBJECT
@@ -28,6 +35,18 @@ class MathEditorDialog : public QDialog {
 
     // 编辑后的数学 body。
     QString latex() const;
+
+    // 模板实际加载的宏包：面板据此禁用缺包按钮，补全列表显示 ⚠。
+    void SetAvailablePackages(std::vector<std::string> packages);
+    // 对话框默认显示面板；公式卡片用它做折叠显示。
+    void SetPaletteVisible(bool visible);
+    MathPaletteWidget* Palette() const {
+        return palette_;
+    }
+    // 最近一次预览/校验结果（含 required_packages）。
+    const pf::MathValidation& Validation() const {
+        return validation_;
+    }
 
     // 测试/嵌入钩子。
     QPlainTextEdit* SourceEdit() const {
@@ -44,9 +63,13 @@ class MathEditorDialog : public QDialog {
                               qreal device_pixel_ratio, const QString& note, bool exact);
 
     QPlainTextEdit* source_ = nullptr;
+    MathPaletteWidget* palette_ = nullptr;
+    MathCommandCompleter* completer_ = nullptr;
     QLabel* preview_ = nullptr;
     QLabel* status_ = nullptr;
     QTimer* debounce_ = nullptr;
+    std::vector<std::string> packages_;
+    pf::MathValidation validation_;
     // P0-07：对话框通过共享 worker 渲染；只有防抖留在 GUI 线程，
     // 且它仅用于降低请求量。
     std::uint64_t preview_generation_ = 0;

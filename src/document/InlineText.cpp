@@ -2,11 +2,16 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <map>
+#include <optional>
+#include <sstream>
 
 namespace pf {
 
 std::string InlineToPlainText(const InlineContent& content) {
     std::string out;
+    int footnote = 0;
     for (const auto& node : content) {
         if (const auto* run = std::get_if<TextRun>(&node)) {
             out += run->text;
@@ -24,6 +29,8 @@ std::string InlineToPlainText(const InlineContent& content) {
             out += "]";
         } else if (const auto* ref = std::get_if<CrossReference>(&node)) {
             out += "[ref:" + ref->target.value() + "]";
+        } else if (std::holds_alternative<Footnote>(node)) {
+            out += "[^" + std::to_string(++footnote) + "]";
         }
     }
     return out;
@@ -149,6 +156,7 @@ bool NeedsSpaceBeforeFence(const std::string& out) {
 
 std::string InlineToRichText(const InlineContent& content) {
     std::string out;
+    int footnote = 0;
     for (const auto& node : content) {
         if (const auto* run = std::get_if<TextRun>(&node)) {
             const std::string fence = FenceFor(run->marks);
@@ -175,12 +183,49 @@ std::string InlineToRichText(const InlineContent& content) {
             out += "]";
         } else if (const auto* ref = std::get_if<CrossReference>(&node)) {
             out += "[ref:" + ref->target.value() + "]";
+        } else if (std::holds_alternative<Footnote>(node)) {
+            out += "[^" + std::to_string(++footnote) + "]";
         }
     }
     return out;
 }
 
 namespace {
+
+std::string HexEncode(const std::string& value) {
+    static constexpr char kHex[] = "0123456789abcdef";
+    std::string out;
+    out.reserve(value.size() * 2);
+    for (unsigned char c : value) {
+        out += kHex[c >> 4];
+        out += kHex[c & 0x0F];
+    }
+    return out;
+}
+
+std::optional<std::string> HexDecode(const std::string& value) {
+    if (value.size() % 2 != 0)
+        return std::nullopt;
+    auto digit = [](char c) -> int {
+        if (c >= '0' && c <= '9')
+            return c - '0';
+        if (c >= 'a' && c <= 'f')
+            return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F')
+            return c - 'A' + 10;
+        return -1;
+    };
+    std::string out;
+    out.reserve(value.size() / 2);
+    for (size_t i = 0; i < value.size(); i += 2) {
+        const int hi = digit(value[i]);
+        const int lo = digit(value[i + 1]);
+        if (hi < 0 || lo < 0)
+            return std::nullopt;
+        out += static_cast<char>((hi << 4) | lo);
+    }
+    return out;
+}
 
 // 当 `pos` 处开始的、恰好由 `count` 个星号组成的围栏被解读为标记而非
 // 行文中的字面星号时为真。
@@ -406,6 +451,119 @@ std::string ReflowHardWrappedText(std::string_view text) {
         }
         append_space = true;
         paragraph_break = false;
+    }
+    return out;
+}
+
+
+std::string InlineToClipboard(const InlineContent& content) {
+    std::string main;
+    std::vector<std::pair<int, std::string>> footnotes;
+    int next_id = 1;
+    auto append = [&](const InlineContent& source, bool allow_footnotes) {
+        for (const auto& node : source) {
+            if (const auto* run = std::get_if<TextRun>(&node)) {
+                main += InlineToRichText(InlineContent{*run});
+            } else if (const auto* math = std::get_if<InlineMath>(&node)) {
+                main += InlineToRichText(InlineContent{*math});
+            } else if (const auto* cit = std::get_if<Citation>(&node)) {
+                main += InlineToRichText(InlineContent{*cit});
+            } else if (const auto* ref = std::get_if<CrossReference>(&node)) {
+                main += InlineToRichText(InlineContent{*ref});
+            } else if (const auto* footnote = std::get_if<Footnote>(&node)) {
+                if (!allow_footnotes || !footnote->body) {
+                    main += "[^]";
+                    continue;
+                }
+                const int id = next_id++;
+                main += '\x01';
+                main += std::to_string(id);
+                main += '\x01';
+                footnotes.emplace_back(id, InlineToRichText(footnote->body->content));
+            }
+        }
+    };
+    append(content, true);
+    std::string out = "PFINLINE2\n";
+    out += HexEncode(main);
+    out += "\n";
+    for (const auto& [id, body] : footnotes) {
+        out += std::to_string(id);
+        out += '\t';
+        out += HexEncode(body);
+        out += '\n';
+    }
+    return out;
+}
+
+std::optional<InlineContent> InlineFromClipboard(const std::string& text) {
+    const std::string header = "PFINLINE2\n";
+    if (text.rfind(header, 0) != 0)
+        return std::nullopt;
+    const size_t main_start = header.size();
+    const size_t main_end = text.find('\n', main_start);
+    if (main_end == std::string::npos)
+        return std::nullopt;
+    const auto main = HexDecode(text.substr(main_start, main_end - main_start));
+    if (!main)
+        return std::nullopt;
+    std::map<int, InlineContent> bodies;
+    size_t cursor = main_end + 1;
+    while (cursor < text.size()) {
+        const size_t line_end = text.find('\n', cursor);
+        const std::string line = text.substr(cursor, line_end == std::string::npos ? std::string::npos
+                                                                                 : line_end - cursor);
+        if (!line.empty()) {
+            const size_t tab = line.find('\t');
+            if (tab == std::string::npos)
+                return std::nullopt;
+            int id = 0;
+            const std::string id_text = line.substr(0, tab);
+            if (id_text.empty() || id_text.find_first_not_of("0123456789") != std::string::npos)
+                return std::nullopt;
+            id = std::stoi(id_text);
+            const auto body_text = HexDecode(line.substr(tab + 1));
+            if (!body_text)
+                return std::nullopt;
+            bodies[id] = InlineFromRichText(*body_text);
+        }
+        if (line_end == std::string::npos)
+            break;
+        cursor = line_end + 1;
+    }
+
+    InlineContent parsed = InlineFromRichText(*main);
+    InlineContent out;
+    for (auto& node : parsed) {
+        auto* run = std::get_if<TextRun>(&node);
+        if (!run) {
+            out.push_back(std::move(node));
+            continue;
+        }
+        std::string text_value = run->text;
+        size_t pos = 0;
+        while (pos < text_value.size()) {
+            const size_t open = text_value.find('\x01', pos);
+            if (open == std::string::npos) {
+                if (pos < text_value.size())
+                    out.push_back(TextRun{text_value.substr(pos), run->marks});
+                break;
+            }
+            if (open > pos)
+                out.push_back(TextRun{text_value.substr(pos, open - pos), run->marks});
+            const size_t close = text_value.find('\x01', open + 1);
+            if (close == std::string::npos)
+                return std::nullopt;
+            const std::string id_text = text_value.substr(open + 1, close - open - 1);
+            if (id_text.empty() || id_text.find_first_not_of("0123456789") != std::string::npos)
+                return std::nullopt;
+            const int id = std::stoi(id_text);
+            const auto body = bodies.find(id);
+            if (body == bodies.end())
+                return std::nullopt;
+            out.push_back(MakeFootnote(body->second));
+            pos = close + 1;
+        }
     }
     return out;
 }

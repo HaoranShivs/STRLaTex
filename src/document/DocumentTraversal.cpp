@@ -22,6 +22,12 @@ NodeKind BlockKind(const Block& block) {
                 return NodeKind::Figure;
             if constexpr (std::is_same_v<T, Table>)
                 return NodeKind::Table;
+            if constexpr (std::is_same_v<T, ListBlock>)
+                return NodeKind::List;
+            if constexpr (std::is_same_v<T, TheoremBlock>)
+                return NodeKind::Theorem;
+            if constexpr (std::is_same_v<T, CodeBlock>)
+                return NodeKind::Code;
             return NodeKind::Equation;
         },
         block);
@@ -29,6 +35,23 @@ NodeKind BlockKind(const Block& block) {
 
 NodeId BlockId(const Block& block) {
     return std::visit([](const auto& b) { return b.id; }, block);
+}
+
+// 脚注 body 按引用点递归访问：citation 首次引用编号、交叉引用校验和
+// 数学校验都必须覆盖脚注里的行内内容。非法嵌套由 Validator 报告；这里
+// 仍限制深度，防止手工构造的共享 body 形成环。
+void VisitInlineContentRecursive(const InlineContent& content, const NodeAddress& address,
+                                 const std::function<void(const InlineContent&, const NodeAddress&)>& visit,
+                                 int depth) {
+    visit(content, address);
+    if (depth >= 2)
+        return;
+    for (const auto& node : content) {
+        if (const auto* footnote = std::get_if<Footnote>(&node)) {
+            if (footnote->body && !footnote->body->content.empty())
+                VisitInlineContentRecursive(footnote->body->content, address, visit, depth + 1);
+        }
+    }
 }
 
 } // namespace
@@ -263,29 +286,75 @@ void VisitInlineContent(const Document& document,
                         const std::function<void(const InlineContent&, const NodeAddress&)>& visit) {
     if (!visit)
         return;
+    auto visit_content = [&](const InlineContent& content, const NodeAddress& address) {
+        VisitInlineContentRecursive(content, address, visit, 0);
+    };
     const FrontMatter& front = FrontMatterOf(document);
     {
         NodeAddress address;
         address.node = NodeId("front:title");
         address.kind = NodeKind::Paragraph;
         if (!front.title.empty())
-            visit(front.title, address);
+            visit_content(front.title, address);
     }
     if (front.abstract_text) {
         NodeAddress address;
         address.node = NodeId("front:abstract");
         address.kind = NodeKind::Paragraph;
-        visit(*front.abstract_text, address);
+        visit_content(*front.abstract_text, address);
     }
-    VisitBlocks(document, [&](const Block& block, const NodeAddress& address) {
+    // 与 renderer 保持阅读顺序：标题、该标题下的块、下一层标题；表格题注
+    // 在单元格之前，列表按 item 顺序。citation 首次出现编号与所有引用校验
+    // 都消费此遍历。
+    VisitNodes(document, [&](const NodeAddress& address) {
+        const auto& section = document.body().sections[*address.section];
+        if (address.kind == NodeKind::Section) {
+            visit_content(section.title, address);
+            return;
+        }
+        if (address.kind == NodeKind::Subsection) {
+            visit_content(section.subsections[*address.subsection].title, address);
+            return;
+        }
+        if (address.kind == NodeKind::Subsubsection) {
+            visit_content(section.subsections[*address.subsection].subsubsections[*address.subsubsection].title,
+                          address);
+            return;
+        }
+        const auto* blocks = FindBlockList(document, address);
+        if (!blocks || !address.block)
+            return;
+        const Block& block = (*blocks)[*address.block];
         std::visit(
             [&](const auto& b) {
                 using T = std::decay_t<decltype(b)>;
                 if constexpr (std::is_same_v<T, Paragraph>) {
-                    visit(b.content, address);
-                } else if constexpr (std::is_same_v<T, Figure> || std::is_same_v<T, Table>) {
+                    visit_content(b.content, address);
+                } else if constexpr (std::is_same_v<T, Figure>) {
                     if (!b.caption.empty())
-                        visit(b.caption, address);
+                        visit_content(b.caption, address);
+                } else if constexpr (std::is_same_v<T, Table>) {
+                    if (!b.caption.empty())
+                        visit_content(b.caption, address);
+                    for (const auto& row : b.cells) {
+                        for (const auto& cell : row) {
+                            if (!cell.content.empty())
+                                visit_content(cell.content, address);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, ListBlock>) {
+                    for (const auto& item : b.items) {
+                        if (!item.content.empty())
+                            visit_content(item.content, address);
+                    }
+                } else if constexpr (std::is_same_v<T, TheoremBlock>) {
+                    if (!b.title.empty())
+                        visit_content(b.title, address);
+                    if (!b.body.empty())
+                        visit_content(b.body, address);
+                } else if constexpr (std::is_same_v<T, CodeBlock>) {
+                    if (!b.caption.empty())
+                        visit_content(b.caption, address);
                 }
             },
             block);
